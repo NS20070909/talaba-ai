@@ -20,11 +20,29 @@ Talaba AI ga xush kelibsiz!
   `);
 });
 
+bot.command("scan", async (ctx) => {
+  await ctx.reply("📸 Bilet Scan ochilmoqda...", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: "📸 Open Bilet Scan",
+            web_app: {
+              url: "https://talaba-ai-production.up.railway.app?tab=scan",
+            },
+          },
+        ],
+      ],
+    },
+  });
+});
+
 export async function POST(req: Request) {
   const body = await req.json();
 
   try {
     await bot.handleUpdate(body);
+
     return NextResponse.json({
       ok: true,
     });
