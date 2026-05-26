@@ -1,8 +1,17 @@
 import { Telegraf } from "telegraf";
 import { NextResponse } from "next/server";
 
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!);
+const bot = new Telegraf(
+  process.env.TELEGRAM_BOT_TOKEN!
+);
 
+// USER STATE
+const userState: Record<
+  number,
+  string
+> = {};
+
+// START
 bot.start(async (ctx) => {
   await ctx.reply(`
 🎓 Talaba AI — AI Student Assistant
@@ -10,99 +19,248 @@ bot.start(async (ctx) => {
 Assalomu alaykum 👋
 Talaba AI ga xush kelibsiz!
 
-📸 Bilet Scan
-📄 PDF/PPTX (tez orada)
-🧠 Quiz (tez orada)
-🤖 AI Chat (tez orada)
-📝 Smart Notes (tez orada)
+📸 /scan — Bilet Scan
+🆘 /help — Yordam
+ℹ️ /about — Platforma haqida
 
-📸 Boshlash uchun bilet rasmini yuboring.
+Boshlash uchun:
+/scan ni bosing
   `);
 });
-bot.command("help", async (ctx) => {
-  await ctx.reply(`
+
+// HELP
+bot.command(
+  "help",
+  async (ctx) => {
+    await ctx.reply(`
 🆘 Talaba AI — Yordam
 
-Quyidagi buyruqlardan foydalaning:
+Buyruqlar:
 
 🚀 /start — Botni ishga tushirish
-📸 /scan — Bilet rasmini AI orqali tahlil qilish
-ℹ️ /about — Talaba AI haqida ma'lumot
+📸 /scan — Bilet Scan
+ℹ️ /about — Platforma haqida
 
-📌 Qanday ishlatish?
+Qanday ishlaydi?
 
-1️⃣ /scan bosing  
-2️⃣ "Open Bilet Scan" tugmasini oching  
-3️⃣ Bilet yoki savol rasmini yuklang  
-4️⃣ 🚀 AI tahlil qilish ni bosing  
-5️⃣ Tayyor shpargalka va Word faylni oling
+🖥 Kompyuter:
+Mini App orqali
 
-👨‍💻 Developer bilan aloqa:
-
-📸 Instagram: @iits_nkb  
-✈️ Telegram: @Narkabilov_S_07
+📱 Telefon:
+Telegram ichida rasm yuborib
 
 ⚡ Muammo bo‘lsa:
-Qayta urinib ko‘ring yoki /start ni qayta bosing.
-  `);
-});
-bot.command("about", async (ctx) => {
-  await ctx.reply(`
+/start ni qayta bosing
+    `);
+  }
+);
+
+// ABOUT
+bot.command(
+  "about",
+  async (ctx) => {
+    await ctx.reply(`
 🎓 Talaba AI haqida
 
-🤖 Talaba AI — talabalar uchun yaratilgan AI yordamchi platforma.
+🤖 Talaba AI —
+talabalar uchun AI yordamchi.
 
-Maqsad:
-📚 Bilet va savollarni AI orqali tahlil qilish  
-📝 Tez shpargalka tayyorlash  
-📄 Word (.docx) eksport qilish  
-🧠 Quiz va testlar yaratish (tez orada)  
+Imkoniyatlar:
+
+📸 Bilet Scan
+📄 File Tools
+📝 Word export
+🧠 Quiz (tez orada)
 🤖 AI Chat (tez orada)
 
-⚡ Hozirgi versiya:
-Talaba AI MVP v1.0
-
-👨‍💻 Developer:
-📸 Instagram: @iits_nkb
-✈️ Telegram: @Narkabilov_S_07
+⚡ Versiya:
+MVP v1.0
 
 🔥 Powered by:
-Gemini AI + Telegram Mini App + Railway
-  `);
-});
+Gemini AI
+Telegram Bot
+Railway
+    `);
+  }
+);
 
-bot.command("scan", async (ctx) => {
-  await ctx.reply("📸 Bilet Scan ochilmoqda...", {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          {
-            text: "📸 Open Bilet Scan",
-            web_app: {
-              url: "https://talaba-ai-production.up.railway.app?tab=scan",
-            },
-          },
-        ],
-      ],
-    },
-  });
-});
+// SCAN COMMAND
+bot.command(
+  "scan",
+  async (ctx) => {
+    await ctx.reply(
+      `
+📸 Bilet Scan
 
-export async function POST(req: Request) {
-  const body = await req.json();
+Usulni tanlang:
+
+🖥 Kompyuter —
+Mini App
+
+📱 Telefon —
+Telegram ichida
+scan qilish
+      `,
+      {
+        reply_markup: {
+          inline_keyboard:
+            [
+              [
+                {
+                  text:
+                    "🖥 Open Mini App",
+
+                  web_app: {
+                    url:
+                      "https://talaba-ai-production.up.railway.app?tab=scan",
+                  },
+                },
+              ],
+
+              [
+                {
+                  text:
+                    "📱 Telegram Scan",
+
+                  callback_data:
+                    "telegram_scan",
+                },
+              ],
+            ],
+        },
+      }
+    );
+  }
+);
+
+// BUTTON HANDLER
+bot.action(
+  "telegram_scan",
+  async (ctx) => {
+    const userId =
+      ctx.from.id;
+
+    userState[
+      userId
+    ] =
+      "waiting_for_scan";
+
+    await ctx.answerCbQuery();
+
+    await ctx.reply(`
+📸 Telegram Scan boshlandi
+
+Iltimos,
+bilet yoki savol
+rasmini yuboring.
+
+AI:
+✅ Savolni aniqlaydi
+✅ Javob tayyorlaydi
+✅ Word fayl yaratadi
+    `);
+  }
+);
+
+// PHOTO HANDLER
+bot.on(
+  "photo",
+  async (ctx) => {
+    const userId =
+      ctx.from.id;
+
+    // scan mode emas
+    if (
+      userState[
+        userId
+      ] !==
+      "waiting_for_scan"
+    ) {
+      return;
+    }
+
+    try {
+      await ctx.reply(
+        "🧠 AI tahlil qilmoqda..."
+      );
+
+      const photos =
+        ctx.message.photo;
+
+      const photo =
+        photos[
+          photos.length - 1
+        ];
+
+      // TELEGRAM FILE
+      const file =
+        await ctx.telegram.getFile(
+          photo.file_id
+        );
+
+      const fileUrl =
+        `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+
+      console.log(
+        "IMAGE URL:",
+        fileUrl
+      );
+
+      // TEMP RESPONSE
+      await ctx.reply(`
+✅ Rasm qabul qilindi
+
+📸 AI savollarni aniqladi
+
+⏳ Keyingi bosqich:
+Gemini analyze
+va Word export
+      `);
+
+      // RESET STATE
+      delete userState[
+        userId
+      ];
+    } catch (
+      error
+    ) {
+      console.log(
+        error
+      );
+
+      await ctx.reply(
+        "❌ Xatolik yuz berdi"
+      );
+    }
+  }
+);
+
+// WEBHOOK
+export async function POST(
+  req: Request
+) {
+  const body =
+    await req.json();
 
   try {
-    await bot.handleUpdate(body);
+    await bot.handleUpdate(
+      body
+    );
 
     return NextResponse.json({
       ok: true,
     });
-  } catch (error) {
-    console.error(error);
+  } catch (
+    error
+  ) {
+    console.error(
+      error
+    );
 
     return NextResponse.json(
       {
-        error: "Telegram error",
+        error:
+          "Telegram error",
       },
       {
         status: 500,
