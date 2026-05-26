@@ -206,6 +206,14 @@ export default function ScanPage() {
             }
           );
 
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            "Word export error"
+          );
+        }
+
         const blob =
           await response.blob();
 
@@ -214,6 +222,24 @@ export default function ScanPage() {
             blob
           );
 
+        const isMobile =
+          /Android|iPhone|iPad|iPod/i.test(
+            navigator.userAgent
+          );
+
+        // MOBILE / TELEGRAM
+        if (
+          isMobile
+        ) {
+          window.open(
+            url,
+            "_blank"
+          );
+
+          return;
+        }
+
+        // DESKTOP
         const a =
           document.createElement(
             "a"
@@ -231,6 +257,10 @@ export default function ScanPage() {
         a.click();
 
         a.remove();
+
+        window.URL.revokeObjectURL(
+          url
+        );
       } catch (
         error
       ) {
