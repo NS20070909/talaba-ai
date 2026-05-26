@@ -217,29 +217,21 @@ export default function ScanPage() {
         const blob =
           await response.blob();
 
+        const file =
+          new File(
+            [blob],
+            "TalabaAI-Shpargalka.docx",
+            {
+              type:
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            }
+          );
+
         const url =
-          window.URL.createObjectURL(
-            blob
+          URL.createObjectURL(
+            file
           );
 
-        const isMobile =
-          /Android|iPhone|iPad|iPod/i.test(
-            navigator.userAgent
-          );
-
-        // MOBILE / TELEGRAM
-        if (
-          isMobile
-        ) {
-          window.open(
-            url,
-            "_blank"
-          );
-
-          return;
-        }
-
-        // DESKTOP
         const a =
           document.createElement(
             "a"
@@ -256,11 +248,15 @@ export default function ScanPage() {
 
         a.click();
 
-        a.remove();
-
-        window.URL.revokeObjectURL(
-          url
+        document.body.removeChild(
+          a
         );
+
+        setTimeout(() => {
+          URL.revokeObjectURL(
+            url
+          );
+        }, 2000);
       } catch (
         error
       ) {
@@ -277,8 +273,6 @@ export default function ScanPage() {
   return (
     <main className="min-h-screen bg-[#071424] text-white">
       <div className="max-w-md mx-auto px-4 py-5">
-
-        {/* BACK */}
         <button
           onClick={() =>
             window.history.back()
@@ -288,7 +282,6 @@ export default function ScanPage() {
           ← Orqaga
         </button>
 
-        {/* HEADER */}
         <div className="mb-5">
           <h1 className="text-4xl font-bold">
             📸 Bilet Scan
@@ -303,7 +296,6 @@ export default function ScanPage() {
           </p>
         </div>
 
-        {/* UPLOAD */}
         <div
           {...getRootProps()}
           className="
@@ -352,7 +344,6 @@ export default function ScanPage() {
           )}
         </div>
 
-        {/* BUTTON */}
         {image && (
           <button
             onClick={
@@ -378,7 +369,6 @@ export default function ScanPage() {
           </button>
         )}
 
-        {/* RESULT */}
         {result && (
           <div
             className="
@@ -390,7 +380,6 @@ export default function ScanPage() {
               p-5
             "
           >
-            {/* WORD */}
             <button
               onClick={
                 exportWord
