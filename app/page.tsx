@@ -24,11 +24,11 @@ export default function Home() {
       link: "/scan",
     },
     {
-      icon: "📄",
-      title: "PDF / PPTX",
-      desc: "Fayldan quiz va konspekt",
-      color: "from-emerald-500/20 to-green-500/10",
-      link: "#",
+       icon: "📄",
+ title: "File Tools",
+desc: "PDF, Word va PPTX converterlar",
+  color: "from-emerald-500/20 to-green-500/10",
+  link: "/file-tools",
     },
     {
       icon: "🧠",
