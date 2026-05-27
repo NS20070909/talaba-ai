@@ -1,101 +1,10 @@
 import { NextResponse } from "next/server";
-import PDFParser from "pdf2json";
-import {
-  GoogleGenerativeAI,
-} from "@google/generative-ai";
+import libre from "libreoffice-convert";
+import { promisify } from "util";
 
-import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-} from "docx";
-
-const genAI =
-  new GoogleGenerativeAI(
-    process.env
-      .GEMINI_DOCUMENT_API_KEY!
-  );
-
-function extractTextFromPdf(
-  buffer: Buffer
-): Promise<string> {
-  return new Promise(
-    (
-      resolve,
-      reject
-    ) => {
-      const pdfParser =
-        new PDFParser(
-          undefined,
-          true
-        );
-
-      // Error handler
-      pdfParser.on(
-        "pdfParser_dataError",
-        (errData: any) => {
-          reject(
-            errData
-          );
-        }
-      );
-
-      // Success handler
-      pdfParser.on(
-        "pdfParser_dataReady",
-        (pdfData: any) => {
-          try {
-            let text = "";
-
-            pdfData.Pages.forEach(
-              (
-                page: any
-              ) => {
-                page.Texts.forEach(
-                  (
-                    textItem: any
-                  ) => {
-                    try {
-                      text +=
-                        decodeURIComponent(
-                          textItem
-                            ?.R?.[0]
-                            ?.T ||
-                            ""
-                        ) + " ";
-                    } catch {
-                      text +=
-                        textItem
-                          ?.R?.[0]
-                          ?.T ||
-                        "";
-                    }
-                  }
-                );
-
-                text +=
-                  "\n\n";
-              }
-            );
-
-            resolve(
-              text
-            );
-          } catch (err) {
-            reject(
-              err
-            );
-          }
-        }
-      );
-
-      pdfParser.parseBuffer(
-        buffer
-      );
-    }
-  );
-}
+const convertAsync = promisify(
+  libre.convert
+);
 
 export async function POST(
   request: Request
@@ -104,12 +13,9 @@ export async function POST(
     const formData =
       await request.formData();
 
-    const file =
-      formData.get(
-        "file"
-      ) as
-        | File
-        | null;
+    const file = formData.get(
+      "file"
+    ) as File | null;
 
     if (!file) {
       return NextResponse.json(
@@ -123,116 +29,24 @@ export async function POST(
       );
     }
 
-    // File → Buffer
     const bytes =
       await file.arrayBuffer();
 
     const buffer =
-      Buffer.from(
-        bytes
-      );
+      Buffer.from(bytes);
 
-    // PDF text extract
-    const extractedText =
-      await extractTextFromPdf(
-        buffer
-      );
+    // Linux Docker path
+    process.env.SOFFICE_PATH =
+      "/usr/bin/soffice";
 
-    if (
-      !extractedText ||
-      extractedText.trim()
-        .length < 20
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "PDF ichidan matn topilmadi",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    // Gemini
-    const model =
-      genAI.getGenerativeModel(
-        {
-          model:
-            "gemini-2.5-flash",
-        }
-      );
-
-    // AI formatting
-    const result =
-      await model.generateContent(`
-Sen professional document formatter san.
-
-PDF dan olingan matnni professional Word formatiga keltir.
-
-Qoidalar:
-- Headinglarni saqla
-- Paragraflarni tartibla
-- Keraksiz bo‘sh joylarni olib tashla
-- Original ma'noni o‘zgartirma
-- Markdown ishlatma
-- Faqat clean text qaytar
-
-TEXT:
-
-${extractedText}
-`);
-
-    const cleanText =
-      result.response
-        .text()
-        .trim();
-
-    // Word paragraphs
-    const paragraphs =
-      cleanText
-        .split(
-          "\n"
-        )
-        .filter(
-          (
-            line
-          ) =>
-            line.trim()
-        )
-        .map(
-          (
-            line
-          ) =>
-            new Paragraph(
-              {
-                children:
-                  [
-                    new TextRun(
-                      line
-                    ),
-                  ],
-              }
-            )
-        );
-
-    // DOCX create
-    const doc =
-      new Document({
-        sections: [
-          {
-            children:
-              paragraphs,
-          },
-        ],
-      });
-
+    // PDF → DOCX
     const docxBuffer =
-      await Packer.toBuffer(
-        doc
+      await convertAsync(
+        buffer,
+        ".docx",
+        undefined
       );
 
-    // Download response
     return new Response(
       new Uint8Array(
         docxBuffer
@@ -252,6 +66,7 @@ ${extractedText}
     );
   } catch (error) {
     console.error(
+      "PDF to Word error:",
       error
     );
 
