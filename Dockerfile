@@ -3,6 +3,8 @@ FROM node:20-bullseye
 RUN apt-get update && apt-get install -y \
     libreoffice \
     libreoffice-writer \
+    libreoffice-core \
+    libreoffice-common \
     ghostscript \
     fonts-dejavu \
     && apt-get clean
