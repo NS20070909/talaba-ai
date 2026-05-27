@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
+import { Document, Packer, Paragraph } from "docx";
 import fs from "fs";
-import path from "path";
 import os from "os";
+import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 
 const execAsync = promisify(exec);
+
+const ai = new GoogleGenAI({
+  apiKey:
+    process.env
+      .GEMINI_DOCUMENT_API_KEY!,
+});
 
 export async function POST(
   request: Request
@@ -24,13 +32,10 @@ export async function POST(
           error:
             "Fayl topilmadi",
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    // Temp paths
     const tempDir =
       os.tmpdir();
 
@@ -40,13 +45,14 @@ export async function POST(
         `${Date.now()}.pdf`
       );
 
-    const docxPath =
+    const imgDir =
       path.join(
         tempDir,
-        `${Date.now()}.docx`
+        `pdf-images-${Date.now()}`
       );
 
-    // Save uploaded PDF
+    fs.mkdirSync(imgDir);
+
     const bytes =
       await file.arrayBuffer();
 
@@ -55,30 +61,105 @@ export async function POST(
       Buffer.from(bytes)
     );
 
-    // Python convert
-    await execAsync(
-  `python3 /app/convert.py "${pdfPath}" "${docxPath}"`
-);
+    // PDF → PNG
+    await execAsync(`
+      pdftoppm -png "${pdfPath}" "${imgDir}/page"
+    `);
 
-    // Read DOCX
-    const docxBuffer =
-      fs.readFileSync(
-        docxPath
+    const imageFiles =
+      fs
+        .readdirSync(imgDir)
+        .filter((f) =>
+          f.endsWith(".png")
+        );
+
+    let finalText = "";
+
+    for (const img of imageFiles) {
+      const imagePath =
+        path.join(
+          imgDir,
+          img
+        );
+
+      const base64 =
+        fs.readFileSync(
+          imagePath
+        ).toString("base64");
+
+      const result =
+        await ai.models.generateContent(
+          {
+            model:
+              "gemini-2.5-flash",
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text:
+                      "Bu PDF sahifasidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma."
+                  },
+                  {
+                    inlineData:
+                      {
+                        mimeType:
+                          "image/png",
+                        data: base64,
+                      },
+                  },
+                ],
+              },
+            ],
+          }
+        );
+
+      finalText +=
+        result.text + "\n\n";
+    }
+
+    // DOCX yaratish
+    const doc = new Document(
+      {
+        sections: [
+          {
+            properties:
+              {},
+            children:
+              finalText
+                .split("\n")
+                .map(
+                  (line) =>
+                    new Paragraph(
+                      line
+                    )
+                ),
+          },
+        ],
+      }
+    );
+
+    const buffer =
+      await Packer.toBuffer(
+        doc
       );
 
-    // Cleanup
+    // cleanup
+    fs.rmSync(imgDir, {
+      recursive: true,
+      force: true,
+    });
+
     fs.unlinkSync(pdfPath);
-    fs.unlinkSync(docxPath);
 
     return new Response(
       new Uint8Array(
-        docxBuffer
+        buffer
       ),
       {
         headers: {
           "Content-Type":
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-
           "Content-Disposition":
             `attachment; filename="${file.name.replace(
               ".pdf",
@@ -96,11 +177,9 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "PDF → Word da xatolik",
+          "PDF → Word xatolik",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }

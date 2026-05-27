@@ -1,17 +1,15 @@
 FROM node:20-bullseye
 
 RUN apt-get update && apt-get install -y \
+    poppler-utils \
     libreoffice \
     libreoffice-writer \
     libreoffice-core \
     libreoffice-common \
     ghostscript \
     fonts-dejavu \
-    python3 \
-    python3-pip \
-    && apt-get clean
-
-RUN pip3 install pdf2docx python-docx pymupdf
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
