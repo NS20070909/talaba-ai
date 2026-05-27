@@ -1,5 +1,0 @@
-[phases.setup]
-nixPkgs = ["nodejs", "libreoffice-qt", "ghostscript"]
-
-[start]
-cmd = "npm start"
