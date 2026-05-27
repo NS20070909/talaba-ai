@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import libre from "libreoffice-convert";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import { exec } from "child_process";
 import { promisify } from "util";
 
-const convertAsync = promisify(
-  libre.convert
-);
+const execAsync = promisify(exec);
 
 export async function POST(
   request: Request
@@ -29,23 +30,45 @@ export async function POST(
       );
     }
 
+    // Temp paths
+    const tempDir =
+      os.tmpdir();
+
+    const pdfPath =
+      path.join(
+        tempDir,
+        `${Date.now()}.pdf`
+      );
+
+    const docxPath =
+      path.join(
+        tempDir,
+        `${Date.now()}.docx`
+      );
+
+    // Save uploaded PDF
     const bytes =
       await file.arrayBuffer();
 
-    const buffer =
-      Buffer.from(bytes);
+    fs.writeFileSync(
+      pdfPath,
+      Buffer.from(bytes)
+    );
 
-    // Linux Docker path
-    process.env.SOFFICE_PATH =
-      "/usr/bin/soffice";
+    // Python convert
+    await execAsync(
+      `python3 convert.py "${pdfPath}" "${docxPath}"`
+    );
 
-    // PDF → DOCX
+    // Read DOCX
     const docxBuffer =
-      await convertAsync(
-        buffer,
-        ".docx",
-        undefined
+      fs.readFileSync(
+        docxPath
       );
+
+    // Cleanup
+    fs.unlinkSync(pdfPath);
+    fs.unlinkSync(docxPath);
 
     return new Response(
       new Uint8Array(
