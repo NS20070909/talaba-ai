@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -27,7 +28,33 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+
+        {/* Telegram WebApp */}
+        <Script src="https://telegram.org/js/telegram-web-app.js" />
+
+        <Script id="telegram-user">
+          {`
+            if (window.Telegram?.WebApp) {
+              const tg = window.Telegram.WebApp;
+
+              tg.expand();
+
+              const userId =
+                tg.initDataUnsafe?.user?.id;
+
+              if (userId) {
+                localStorage.setItem(
+                  "telegram_user_id",
+                  userId.toString()
+                );
+              }
+            }
+          `}
+        </Script>
+
+        {children}
+      </body>
     </html>
   );
 }
