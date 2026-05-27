@@ -26,18 +26,16 @@ export async function POST(
       );
     }
 
-    // LibreOffice path
-    process.env.LIBREOFFICE_PATH =
-      "C:\\Program Files\\LibreOffice\\program\\soffice.exe";
+    // Railway Linux path
+    process.env.SOFFICE_PATH =
+      "/usr/bin/soffice";
 
     const bytes =
       await file.arrayBuffer();
 
-    const buffer = Buffer.from(
-      bytes
-    );
+    const buffer =
+      Buffer.from(bytes);
 
-    // DOCX → PDF
     const pdfBuffer =
       await convertAsync(
         buffer,
@@ -61,7 +59,10 @@ export async function POST(
       }
     );
   } catch (error) {
-    console.error(error);
+    console.error(
+      "PDF convert error:",
+      error
+    );
 
     return NextResponse.json(
       {
