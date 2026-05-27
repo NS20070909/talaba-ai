@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y \
     libreoffice-writer \
     libreoffice-core \
     libreoffice-common \
+    libreoffice-java-common \
+    default-jre \
     ghostscript \
     fonts-dejavu \
     && apt-get clean
