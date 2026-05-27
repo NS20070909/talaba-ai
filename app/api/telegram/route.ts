@@ -26,7 +26,7 @@ export async function sendFileToTelegram(
         ),
         {
           caption:
-            "✅ PDF faylingiz tayyor"
+            "✅ PDF faylingiz tayyor",
         }
       );
 
@@ -56,7 +56,7 @@ const userState: Record<
 bot.start(async (ctx) => {
   await ctx.reply(
     `
-🎓 *Talaba AI — AI Student Assistant*
+🎓 Talaba AI — AI Student Assistant
 
 Assalomu alaykum 👋
 
@@ -64,7 +64,7 @@ Talaba AI ga xush kelibsiz!
 
 📚 Talabalar uchun zamonaviy AI yordamchi.
 
-*Buyruqlar:*
+Buyruqlar:
 
 🚀 /talabaai — Mini App
 📸 /scan — Bilet Scan
@@ -73,14 +73,12 @@ Talaba AI ga xush kelibsiz!
 
 Boshlash uchun:
 
-*/start*
+/start
 yoki
-*/talabaai*
+/talabaai
 buyrug'ini bosing 👇
 `,
     {
-      parse_mode:
-        "Markdown",
       reply_markup: {
         inline_keyboard: [
           [
@@ -105,7 +103,7 @@ bot.command(
   async (ctx) => {
     await ctx.reply(
       `
-🎓 *Talaba AI*
+🎓 Talaba AI
 
 AI Student Assistant 🚀
 
@@ -113,8 +111,6 @@ Mini App ni ochish uchun
 pastdagi tugmani bosing 👇
 `,
       {
-        parse_mode:
-          "Markdown",
         reply_markup: {
           inline_keyboard: [
             [
@@ -138,40 +134,34 @@ pastdagi tugmani bosing 👇
 bot.command(
   "help",
   async (ctx) => {
-    await ctx.reply(
-      `
-🆘 *Talaba AI — Yordam Markazi*
+    await ctx.reply(`
+🆘 Talaba AI — Yordam Markazi
 
-*Buyruqlar:*
+Buyruqlar:
 
 🚀 /start — Botni ishga tushirish
 🎓 /talabaai — Mini App
 📸 /scan — Bilet Scan
 ℹ️ /about — Platforma haqida
 
-*Imkoniyatlar:*
+Imkoniyatlar:
 
-📄 Word → PDF  
-📄 PDF → Word  
-🗜 PDF Compress  
-🧠 AI yordamchi  
+📄 Word → PDF
+📄 PDF → Word
+🗜 PDF Compress
+🧠 AI yordamchi
 📸 Scan Tools
 
-*Bog‘lanish:*
+Bog‘lanish:
 
 📷 Instagram:
-@iits_nkb
+iits_nkb
 
 ✈️ Telegram:
 @Narkabilov_S_07
 
 💡 Taklif yoki muammo bo‘lsa yozishingiz mumkin.
-`,
-      {
-        parse_mode:
-          "Markdown",
-      }
-    );
+`);
   }
 );
 
@@ -179,35 +169,29 @@ bot.command(
 bot.command(
   "about",
   async (ctx) => {
-    await ctx.reply(
-      `
-🎓 *Talaba AI haqida*
+    await ctx.reply(`
+🎓 Talaba AI haqida
 
 🤖 Talaba AI —
-talabalar uchun
-AI yordamchi platforma.
+talabalar uchun AI yordamchi platforma.
 
-*Imkoniyatlar:*
+Imkoniyatlar:
 
-📄 File Tools  
-📸 Bilet Scan  
-🧠 AI Assistant  
+📄 File Tools
+📸 Bilet Scan
+🧠 AI Assistant
 📝 Export Tools
 
-⚡ *Versiya:* MVP v1.0
+⚡ Versiya:
+MVP v1.0
 
 🔥 Powered by:
 
-Gemini AI  
-Telegram Bot  
-Railway  
+Gemini AI
+Telegram Bot
+Railway
 Next.js
-`,
-      {
-        parse_mode:
-          "Markdown",
-      }
-    );
+`);
   }
 );
 
@@ -220,22 +204,21 @@ bot.command(
 
     await ctx.reply(
       `
-📸 *Bilet Scan*
+📸 Bilet Scan
 
-Usulni tanlang 👇
+Bilet Scan ochish uchun
+pastdagi tugmani bosing 👇
 `,
       {
-        parse_mode:
-          "Markdown",
         reply_markup: {
           inline_keyboard: [
             [
               {
                 text:
-                  "🖥 Open Mini App",
+                  "📸 Open Bilet Scan",
                 web_app: {
                   url:
-                    `https://talaba-ai-production.up.railway.app?userId=${userId}`,
+                    `https://talaba-ai-production.up.railway.app?tab=scan&userId=${userId}`,
                 },
               },
             ],
