@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && apt-get clean
 
-RUN pip3 install pdf2docx
+RUN pip3 install pdf2docx python-docx pymupdf
 
 WORKDIR /app
 

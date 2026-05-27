@@ -57,8 +57,8 @@ export async function POST(
 
     // Python convert
     await execAsync(
-      `python3 convert.py "${pdfPath}" "${docxPath}"`
-    );
+  `python3 /app/convert.py "${pdfPath}" "${docxPath}"`
+);
 
     // Read DOCX
     const docxBuffer =
