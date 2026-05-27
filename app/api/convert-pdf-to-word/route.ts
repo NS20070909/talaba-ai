@@ -22,6 +22,83 @@ const ai =
         .GEMINI_DOCUMENT_API_KEY!,
   });
 
+// FALLBACK MODELS
+const MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-3-flash",
+];
+
+// OCR GENERATOR
+async function generateOCR(
+  base64: string
+) {
+  let lastError;
+
+  for (const model of MODELS) {
+    try {
+      console.log(
+        `Trying model: ${model}`
+      );
+
+      const result =
+        await ai.models.generateContent(
+          {
+            model,
+            contents: [
+              {
+                role:
+                  "user",
+                parts: [
+                  {
+                    text:
+                      "Bu PDF sahifasidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma. Matn strukturasini saqla.",
+                  },
+                  {
+                    inlineData:
+                      {
+                        mimeType:
+                          "image/png",
+                        data: base64,
+                      },
+                  },
+                ],
+              },
+            ],
+          }
+        );
+
+      console.log(
+        `Success model: ${model}`
+      );
+
+      return (
+        result.text ||
+        ""
+      );
+    } catch (
+      error
+    ) {
+      console.log(
+        `Failed model: ${model}`
+      );
+
+      console.error(
+        error
+      );
+
+      lastError =
+        error;
+
+      continue;
+    }
+  }
+
+  throw lastError;
+}
+
 export async function POST(
   request: Request
 ) {
@@ -29,11 +106,11 @@ export async function POST(
     const formData =
       await request.formData();
 
-    const file = formData.get(
-      "file"
-    ) as File | null;
+    const file =
+      formData.get(
+        "file"
+      ) as File | null;
 
-    // YANGI
     const userId =
       formData.get(
         "telegram_user_id"
@@ -69,14 +146,18 @@ export async function POST(
         `pdf-images-${Date.now()}`
       );
 
-    fs.mkdirSync(imgDir);
+    fs.mkdirSync(
+      imgDir
+    );
 
     const bytes =
       await file.arrayBuffer();
 
     fs.writeFileSync(
       pdfPath,
-      Buffer.from(bytes)
+      Buffer.from(
+        bytes
+      )
     );
 
     // PDF → PNG
@@ -86,12 +167,17 @@ export async function POST(
 
     const imageFiles =
       fs
-        .readdirSync(imgDir)
+        .readdirSync(
+          imgDir
+        )
         .filter((f) =>
-          f.endsWith(".png")
+          f.endsWith(
+            ".png"
+          )
         );
 
-    let finalText = "";
+    let finalText =
+      "";
 
     for (const img of imageFiles) {
       const imagePath =
@@ -101,43 +187,26 @@ export async function POST(
         );
 
       const base64 =
-        fs.readFileSync(
-          imagePath
-        ).toString("base64");
+        fs
+          .readFileSync(
+            imagePath
+          )
+          .toString(
+            "base64"
+          );
 
-      const result =
-        await ai.models.generateContent(
-          {
-            model:
-              "gemini-2.5-flash",
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text:
-                      "Bu PDF sahifasidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma.",
-                  },
-                  {
-                    inlineData:
-                      {
-                        mimeType:
-                          "image/png",
-                        data: base64,
-                      },
-                  },
-                ],
-              },
-            ],
-          }
+      // OCR
+      const text =
+        await generateOCR(
+          base64
         );
 
       finalText +=
-        result.text +
+        text +
         "\n\n";
     }
 
-    // DOCX yaratish
+    // DOCX
     const doc =
       new Document({
         sections: [
@@ -146,9 +215,13 @@ export async function POST(
               {},
             children:
               finalText
-                .split("\n")
+                .split(
+                  "\n"
+                )
                 .map(
-                  (line) =>
+                  (
+                    line
+                  ) =>
                     new Paragraph(
                       line
                     )
@@ -163,12 +236,19 @@ export async function POST(
       );
 
     // CLEANUP
-    fs.rmSync(imgDir, {
-      recursive: true,
-      force: true,
-    });
+    fs.rmSync(
+      imgDir,
+      {
+        recursive:
+          true,
+        force:
+          true,
+      }
+    );
 
-    fs.unlinkSync(pdfPath);
+    fs.unlinkSync(
+      pdfPath
+    );
 
     const fileName =
       file.name.replace(
@@ -176,25 +256,30 @@ export async function POST(
         ".docx"
       );
 
-    // TELEGRAMGA YUBORISH
+    // TELEGRAM
     if (
       sendToTelegram &&
       userId
     ) {
       await sendFileToTelegram(
-        Number(userId),
-        Buffer.from(buffer),
+        Number(
+          userId
+        ),
+        Buffer.from(
+          buffer
+        ),
         fileName
       );
 
       return NextResponse.json(
         {
-          success: true,
+          success:
+            true,
         }
       );
     }
 
-    // BROWSER DOWNLOAD
+    // DOWNLOAD
     return new Response(
       new Uint8Array(
         buffer
@@ -209,7 +294,9 @@ export async function POST(
         },
       }
     );
-  } catch (error) {
+  } catch (
+    error
+  ) {
     console.error(
       "PDF to Word error:",
       error
