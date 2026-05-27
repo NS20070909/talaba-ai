@@ -110,27 +110,34 @@ export default function WordToPdfPage() {
   }, []);
 
   // TELEGRAM USER ID SAVE
-  useEffect(() => {
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
+useEffect(() => {
+  const tg =
+    (window as any)
+      ?.Telegram
+      ?.WebApp;
 
-    const userId =
-      params.get("userId");
+  tg?.ready();
 
-    if (userId) {
-      localStorage.setItem(
-        "telegram_user_id",
-        userId
-      );
+  const userId =
+    tg?.initDataUnsafe
+      ?.user?.id;
 
-      console.log(
-        "Telegram User ID:",
-        userId
-      );
-    }
-  }, []);
+  if (userId) {
+    localStorage.setItem(
+      "telegram_user_id",
+      String(userId)
+    );
+
+    console.log(
+      "Telegram User ID:",
+      userId
+    );
+  } else {
+    console.log(
+      "Telegram user id topilmadi"
+    );
+  }
+}, []);
 
   // PDF GA AYLANTIRISH
   const handleDownload =

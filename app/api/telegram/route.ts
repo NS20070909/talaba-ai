@@ -1,4 +1,4 @@
-import { Telegraf } from "telegraf";
+import { Telegraf, Input } from "telegraf";
 import { NextResponse } from "next/server";
 
 const bot = new Telegraf(
@@ -20,13 +20,13 @@ export async function sendFileToTelegram(
     const result =
       await bot.telegram.sendDocument(
         userId,
-        {
-          source: fileBuffer,
-          filename: fileName,
-        },
+        Input.fromBuffer(
+          fileBuffer,
+          fileName
+        ),
         {
           caption:
-            "✅ Faylingiz tayyor",
+            "✅ PDF faylingiz tayyor"
         }
       );
 
@@ -54,42 +54,124 @@ const userState: Record<
 
 // START
 bot.start(async (ctx) => {
-  const userId =
-    ctx.from.id;
-
-  await ctx.reply(`
-🎓 Talaba AI — AI Student Assistant
+  await ctx.reply(
+    `
+🎓 *Talaba AI — AI Student Assistant*
 
 Assalomu alaykum 👋
+
 Talaba AI ga xush kelibsiz!
 
+📚 Talabalar uchun zamonaviy AI yordamchi.
+
+*Buyruqlar:*
+
+🚀 /talabaai — Mini App
 📸 /scan — Bilet Scan
 🆘 /help — Yordam
 ℹ️ /about — Platforma haqida
 
 Boshlash uchun:
-/scan ni bosing
-  `);
 
-  // USER ID SAVE
-  await ctx.reply(
-    `🆔 User ID: ${userId}`
+*/start*
+yoki
+*/talabaai*
+buyrug'ini bosing 👇
+`,
+    {
+      parse_mode:
+        "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text:
+                "🚀 Open Talaba AI",
+              web_app: {
+                url:
+                  "https://talaba-ai-production.up.railway.app",
+              },
+            },
+          ],
+        ],
+      },
+    }
   );
 });
+
+// TALABA AI
+bot.command(
+  "talabaai",
+  async (ctx) => {
+    await ctx.reply(
+      `
+🎓 *Talaba AI*
+
+AI Student Assistant 🚀
+
+Mini App ni ochish uchun
+pastdagi tugmani bosing 👇
+`,
+      {
+        parse_mode:
+          "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text:
+                  "🚀 Open Talaba AI",
+                web_app: {
+                  url:
+                    "https://talaba-ai-production.up.railway.app",
+                },
+              },
+            ],
+          ],
+        },
+      }
+    );
+  }
+);
 
 // HELP
 bot.command(
   "help",
   async (ctx) => {
-    await ctx.reply(`
-🆘 Talaba AI — Yordam
+    await ctx.reply(
+      `
+🆘 *Talaba AI — Yordam Markazi*
 
-Buyruqlar:
+*Buyruqlar:*
 
 🚀 /start — Botni ishga tushirish
+🎓 /talabaai — Mini App
 📸 /scan — Bilet Scan
 ℹ️ /about — Platforma haqida
-    `);
+
+*Imkoniyatlar:*
+
+📄 Word → PDF  
+📄 PDF → Word  
+🗜 PDF Compress  
+🧠 AI yordamchi  
+📸 Scan Tools
+
+*Bog‘lanish:*
+
+📷 Instagram:
+@iits_nkb
+
+✈️ Telegram:
+@Narkabilov_S_07
+
+💡 Taklif yoki muammo bo‘lsa yozishingiz mumkin.
+`,
+      {
+        parse_mode:
+          "Markdown",
+      }
+    );
   }
 );
 
@@ -97,12 +179,35 @@ Buyruqlar:
 bot.command(
   "about",
   async (ctx) => {
-    await ctx.reply(`
-🎓 Talaba AI haqida
+    await ctx.reply(
+      `
+🎓 *Talaba AI haqida*
 
 🤖 Talaba AI —
-talabalar uchun AI yordamchi.
-    `);
+talabalar uchun
+AI yordamchi platforma.
+
+*Imkoniyatlar:*
+
+📄 File Tools  
+📸 Bilet Scan  
+🧠 AI Assistant  
+📝 Export Tools
+
+⚡ *Versiya:* MVP v1.0
+
+🔥 Powered by:
+
+Gemini AI  
+Telegram Bot  
+Railway  
+Next.js
+`,
+      {
+        parse_mode:
+          "Markdown",
+      }
+    );
   }
 );
 
@@ -115,11 +220,13 @@ bot.command(
 
     await ctx.reply(
       `
-📸 Bilet Scan
+📸 *Bilet Scan*
 
-Usulni tanlang:
-      `,
+Usulni tanlang 👇
+`,
       {
+        parse_mode:
+          "Markdown",
         reply_markup: {
           inline_keyboard: [
             [
@@ -162,7 +269,7 @@ bot.on(
 
       await ctx.reply(`
 ✅ Rasm qabul qilindi
-      `);
+`);
 
       delete userState[
         userId
