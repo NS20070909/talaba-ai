@@ -1,20 +1,31 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
-const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY!
-);
+const genAI =
+  new GoogleGenerativeAI(
+    process.env
+      .GEMINI_API_KEY!
+  );
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request
+) {
   try {
-    const { image } = await req.json();
+    const {
+      image,
+    } =
+      await req.json();
 
     if (!image) {
       return NextResponse.json(
         {
-          result: "❌ Rasm topilmadi",
+          result:
+            "❌ Rasm topilmadi",
         },
-        { status: 400 }
+        {
+          status:
+            400,
+        }
       );
     }
 
@@ -25,30 +36,44 @@ SENING VAZIFANG:
 
 1. Rasm ichidagi BARCHA savollarni top.
 2. Hech bir savolni tashlab ketma.
-3. Jadval bo‘lsa uni to‘liq o‘qi.
+3. Jadval, sxema yoki diagramma bo‘lsa uni to‘liq o‘qi va tushuntir.
 4. Fan nomini top.
 5. Bilet raqamini top.
 6. Savollar sonini aniqlab, HAMMASIGA javob ber.
 7. Agar 5 ta savol bo‘lsa 5 tasiga ham javob yoz.
 8. OCR xato qilgan bo‘lsa ma'nosini tushunib to‘g‘rila.
-9. Imtihonda aytsa bo‘ladigan darajada tushuntir.
+9. Agar harf yoki so‘z buzilgan bo‘lsa, fan terminologiyasidan kelib chiqib mantiqan tikla.
+10. Imtihonda aytsa bo‘ladigan darajada tushuntir.
+11. Talaba eng yuqori ball olishi uchun faqat kerakli ma'lumotlarni yoz.
+12. Savol tushunarsiz bo‘lsa ham mantiqan tiklashga harakat qil va baribir javob ber.
 
 JAVOB QOIDALARI:
 
 - Juda uzun yozma.
-- Har savolga 2–3 gap.
+- Har savolga 2–4 ta mazmunli gap yoz.
 - Mazmunli yoz.
 - Keraksiz gap yozma.
+- Suv gaplar yozma.
 - Muhim joylarini punkt bilan ber.
+- Eng ko‘p tushadigan imtihon faktlarini yoz.
 - Kod bo‘lsa faqat C++ yoz.
-- Kod qisqa va ishlaydigan bo‘lsin.
-- Formula kerak bo‘lsa yoz.
+- Kod qisqa, minimal va ishlaydigan bo‘lsin.
+- Formula kerak bo‘lsa albatta yoz.
+- Ta'riflarni sodda, lekin professional yoz.
 - Markdown ishlatma.
-- ###, **, \`\`\` ishlatma.
+- ###, **, \`\`\`, __ ishlatma.
+- Matn oddiy va toza ko‘rinishda bo‘lsin.
+- FORMATNI BUZMA.
+- HAR BIR SAVOL UCHUN FORMATNI TAKRORLA.
 
 MUHIM:
 
-Agar rasm sifati past bo‘lsa ham maksimal aniqlik bilan savollarni tushunishga harakat qil.
+- Agar rasm sifati past, xira yoki qisman yopilgan bo‘lsa ham maksimal aniqlik bilan savollarni tushunishga harakat qil.
+- Savollarni taxmin qilish kerak bo‘lsa, fan kontekstidan foydalanib eng ehtimolli variantni tanla.
+- "O‘qiy olmadim" yoki "aniq ko‘rinmayapti" degan javob yozma.
+- Savol tashlab ketma.
+- Rasmni diqqat bilan bir necha marta tahlil qil.
+- Javoblar imtihonda aytishga qulay va eslab qolishga oson bo‘lsin.
 
 FORMAT:
 
@@ -59,7 +84,7 @@ FORMAT:
 1-savol
 
 📌 Ta'rif:
-(2-3 gap)
+(2-4 gap)
 
 🔥 Muhim joylari:
 • fakt
@@ -67,7 +92,7 @@ FORMAT:
 • fakt
 
 💡 Eslab qolish:
-(1 gap)
+(1 ta eng sodda eslab qolish usuli yoki qiyoslash)
 
 Agar dasturlash savoli bo‘lsa:
 
@@ -79,126 +104,242 @@ Agar dasturlash savoli bo‘lsa:
 
 HAMMA SAVOLLARGA JAVOB BER.
 SAVOL TASHLAB KETMA.
+FORMATNI BUZMA.
 RASMNI DIQQAT BILAN O‘QI.
 `;
 
-    let responseText = "";
+    let responseText =
+      "";
 
-    // MODEL 1 — ASOSIY
+    // MODEL 1
     try {
       console.log(
         "✅ Gemini 2.5 Flash ishladi"
       );
 
       const model =
-        genAI.getGenerativeModel({
-          model: "gemini-2.5-flash",
-        });
+        genAI.getGenerativeModel(
+          {
+            model:
+              "gemini-2.5-flash",
+          }
+        );
 
       const result =
-        await model.generateContent([
-          prompt,
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: image,
+        await model.generateContent(
+          [
+            prompt,
+            {
+              inlineData:
+                {
+                  mimeType:
+                    "image/jpeg",
+                  data:
+                    image,
+                },
             },
-          },
-        ]);
+          ]
+        );
 
       responseText =
         result.response.text();
     }
 
-    // MODEL 2 — BACKUP
+    // MODEL 2
     catch (error1) {
       console.log(
-        "❌ 2.5 Flash ishlamadi → Gemini 2 Flash"
+        "❌ 2.5 Flash ishlamadi → Gemini 3.1 Flash Lite"
       );
 
       try {
         const model =
-          genAI.getGenerativeModel({
-            model: "gemini-2.0-flash",
-          });
+          genAI.getGenerativeModel(
+            {
+              model:
+                "gemini-3.1-flash-lite",
+            }
+          );
 
         const result =
-          await model.generateContent([
-            prompt,
-            {
-              inlineData: {
-                mimeType: "image/jpeg",
-                data: image,
+          await model.generateContent(
+            [
+              prompt,
+              {
+                inlineData:
+                  {
+                    mimeType:
+                      "image/jpeg",
+                    data:
+                      image,
+                  },
               },
-            },
-          ]);
+            ]
+          );
 
         responseText =
           result.response.text();
       }
 
-      // MODEL 3 — KATTA LIMIT
-      catch (error2) {
+      // MODEL 3
+      catch (
+        error2
+      ) {
         console.log(
-          "❌ Gemini 2 Flash ishlamadi → Gemma 4"
+          "❌ 3.1 Flash Lite ishlamadi → Gemini 2 Flash"
         );
 
         try {
           const model =
-            genAI.getGenerativeModel({
-              model: "gemma-4-27b-it",
-            });
+            genAI.getGenerativeModel(
+              {
+                model:
+                  "gemini-2.0-flash",
+              }
+            );
 
           const result =
-            await model.generateContent([
-              prompt,
-              {
-                inlineData: {
-                  mimeType:
-                    "image/jpeg",
-                  data: image,
+            await model.generateContent(
+              [
+                prompt,
+                {
+                  inlineData:
+                    {
+                      mimeType:
+                        "image/jpeg",
+                      data:
+                        image,
+                    },
                 },
-              },
-            ]);
+              ]
+            );
 
           responseText =
             result.response.text();
         }
 
-        // MODEL 4 — OXIRGI BACKUP
-        catch (error3) {
+        // MODEL 4
+        catch (
+          error3
+        ) {
           console.log(
-            "❌ Gemma ishlamadi → Flash Lite"
+            "❌ Gemini 2 Flash ishlamadi → Gemini 3 Flash"
           );
 
-          const model =
-            genAI.getGenerativeModel({
-              model:
-                "gemini-2.0-flash-lite",
-            });
+          try {
+            const model =
+              genAI.getGenerativeModel(
+                {
+                  model:
+                    "gemini-3-flash",
+                }
+              );
 
-          const result =
-            await model.generateContent([
-              prompt,
-              {
-                inlineData: {
-                  mimeType:
-                    "image/jpeg",
-                  data: image,
-                },
-              },
-            ]);
+            const result =
+              await model.generateContent(
+                [
+                  prompt,
+                  {
+                    inlineData:
+                      {
+                        mimeType:
+                          "image/jpeg",
+                        data:
+                          image,
+                      },
+                  },
+                ]
+              );
 
-          responseText =
-            result.response.text();
+            responseText =
+              result.response.text();
+          }
+
+          // MODEL 5
+          catch (
+            error4
+          ) {
+            console.log(
+              "❌ Gemini 3 Flash ishlamadi → Gemini 2.5 Flash Lite"
+            );
+
+            try {
+              const model =
+                genAI.getGenerativeModel(
+                  {
+                    model:
+                      "gemini-2.5-flash-lite",
+                  }
+                );
+
+              const result =
+                await model.generateContent(
+                  [
+                    prompt,
+                    {
+                      inlineData:
+                        {
+                          mimeType:
+                            "image/jpeg",
+                          data:
+                            image,
+                        },
+                    },
+                  ]
+                );
+
+              responseText =
+                result.response.text();
+            }
+
+            // MODEL 6
+            catch (
+              error5
+            ) {
+              console.log(
+                "❌ 2.5 Flash Lite ishlamadi → Gemini 2 Flash Lite"
+              );
+
+              const model =
+                genAI.getGenerativeModel(
+                  {
+                    model:
+                      "gemini-2.0-flash-lite",
+                  }
+                );
+
+              const result =
+                await model.generateContent(
+                  [
+                    prompt,
+                    {
+                      inlineData:
+                        {
+                          mimeType:
+                            "image/jpeg",
+                          data:
+                            image,
+                        },
+                    },
+                  ]
+                );
+
+              responseText =
+                result.response.text();
+            }
+          }
         }
       }
     }
 
-    return NextResponse.json({
-      result: responseText,
-    });
-  } catch (error) {
+    return NextResponse.json(
+      {
+        result:
+          responseText,
+      }
+    );
+  } catch (
+    error
+  ) {
     console.log(
       "❌ API ERROR:",
       error
@@ -209,7 +350,10 @@ RASMNI DIQQAT BILAN O‘QI.
         result:
           "❌ AI vaqtincha ishlamayapti. Qayta urinib ko‘ring.",
       },
-      { status: 500 }
+      {
+        status:
+          500,
+      }
     );
   }
 }
