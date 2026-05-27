@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs", "libreoffice", "ghostscript"]
+aptPkgs = ["libreoffice", "ghostscript"]
 
 [start]
 cmd = "npm start"
