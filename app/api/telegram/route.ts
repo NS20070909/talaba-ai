@@ -12,16 +12,29 @@ export async function sendFileToTelegram(
   fileName: string
 ) {
   try {
-    await bot.telegram.sendDocument(
-      userId,
-      {
-        source: fileBuffer,
-        filename: fileName,
-      },
-      {
-        caption:
-          "✅ Faylingiz tayyor",
-      }
+    console.log(
+      "Sending file to user:",
+      userId
+    );
+
+    const result =
+      await bot.telegram.sendDocument(
+        userId,
+        {
+          source:
+            fileBuffer,
+          filename:
+            fileName,
+        },
+        {
+          caption:
+            "✅ Faylingiz tayyor",
+        }
+      );
+
+    console.log(
+      "Telegram success:",
+      result
     );
   } catch (error) {
     console.error(
@@ -36,6 +49,7 @@ const userState: Record<
   number,
   string
 > = {};
+
 // START
 bot.start(async (ctx) => {
   await ctx.reply(`
@@ -128,30 +142,29 @@ scan qilish
       `,
       {
         reply_markup: {
-          inline_keyboard:
+          inline_keyboard: [
             [
-              [
-                {
-                  text:
-                    "🖥 Open Mini App",
+              {
+                text:
+                  "🖥 Open Mini App",
 
-                  web_app: {
-                    url:
-                      "https://talaba-ai-production.up.railway.app?tab=scan",
-                  },
+                web_app: {
+                  url:
+                    "https://talaba-ai-production.up.railway.app?tab=scan",
                 },
-              ],
-
-              [
-                {
-                  text:
-                    "📱 Telegram Scan",
-
-                  callback_data:
-                    "telegram_scan",
-                },
-              ],
+              },
             ],
+
+            [
+              {
+                text:
+                  "📱 Telegram Scan",
+
+                callback_data:
+                  "telegram_scan",
+              },
+            ],
+          ],
         },
       }
     );
@@ -194,7 +207,6 @@ bot.on(
     const userId =
       ctx.from.id;
 
-    // scan mode emas
     if (
       userState[
         userId
@@ -217,7 +229,6 @@ bot.on(
           photos.length - 1
         ];
 
-      // TELEGRAM FILE
       const file =
         await ctx.telegram.getFile(
           photo.file_id
@@ -231,7 +242,6 @@ bot.on(
         fileUrl
       );
 
-      // TEMP RESPONSE
       await ctx.reply(`
 ✅ Rasm qabul qilindi
 
@@ -242,7 +252,6 @@ Gemini analyze
 va Word export
       `);
 
-      // RESET STATE
       delete userState[
         userId
       ];

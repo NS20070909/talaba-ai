@@ -17,6 +17,11 @@ export default function WordToPdfPage() {
   const [loading, setLoading] =
     useState(false);
 
+  const [
+    showTelegramButton,
+    setShowTelegramButton,
+  ] = useState(false);
+
   const onDrop =
     useCallback(
       (
@@ -39,6 +44,9 @@ export default function WordToPdfPage() {
         }
 
         setFile(selected);
+        setShowTelegramButton(
+          false
+        );
       },
       []
     );
@@ -81,6 +89,10 @@ export default function WordToPdfPage() {
         setFile(
           pastedFile
         );
+
+        setShowTelegramButton(
+          false
+        );
       }
     };
 
@@ -97,7 +109,7 @@ export default function WordToPdfPage() {
     };
   }, []);
 
-  // DOWNLOAD
+  // PDF GA AYLANTIRISH
   const handleDownload =
     async () => {
       if (!file) return;
@@ -159,6 +171,11 @@ export default function WordToPdfPage() {
 
         window.URL.revokeObjectURL(
           url
+        );
+
+        // TELEGRAM TUGMASI CHIQADI
+        setShowTelegramButton(
+          true
         );
       } catch (
         error
@@ -338,30 +355,32 @@ export default function WordToPdfPage() {
                   px-5 py-3
                 "
               >
-                📥 Qurilmaga yuklash
+                {loading
+                  ? "⏳ Aylantirilmoqda..."
+                  : "PDF ga aylantirish"}
               </button>
 
-              <button
-                onClick={
-                  handleTelegramSend
-                }
-                disabled={
-                  loading
-                }
-                className="
-                  mt-3
-                  w-full
-                  rounded-[18px]
-                  bg-cyan-500
-                  text-black
-                  font-semibold
-                  px-5 py-3
-                "
-              >
-                {loading
-                  ? "⏳ Yuborilmoqda..."
-                  : "📨 Telegram chatga yuborish"}
-              </button>
+              {showTelegramButton && (
+                <button
+                  onClick={
+                    handleTelegramSend
+                  }
+                  disabled={
+                    loading
+                  }
+                  className="
+                    mt-3
+                    w-full
+                    rounded-[18px]
+                    bg-cyan-500
+                    text-black
+                    font-semibold
+                    px-5 py-3
+                  "
+                >
+                  📨 Telegram chatga yuborish
+                </button>
+              )}
             </>
           )}
         </div>
