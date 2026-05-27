@@ -65,7 +65,20 @@ export default function WordToPdfPage() {
       setLoading(true);
 
       const formData = new FormData();
-      formData.append("file", file);
+formData.append("file", file);
+
+// Telegram user id
+const userId =
+  localStorage.getItem(
+    "telegram_user_id"
+  );
+
+if (userId) {
+  formData.append(
+    "telegram_user_id",
+    userId
+  );
+}
 
       const response = await fetch(
         "/api/convert-word-to-pdf",

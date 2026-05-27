@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import libre from "libreoffice-convert";
 import { promisify } from "util";
+import { sendFileToTelegram } from "@/app/api/telegram/route";
 
 const convertAsync = promisify(
   libre.convert
@@ -17,25 +18,32 @@ export async function POST(
       "file"
     ) as File | null;
 
+    const userId =
+      formData.get(
+        "telegram_user_id"
+      ) as string | null;
+
     if (!file) {
       return NextResponse.json(
         {
-          error: "Fayl topilmadi",
+          error:
+            "Fayl topilmadi",
         },
-        { status: 400 }
+        {
+          status: 400,
+        }
       );
     }
 
-    // LibreOffice path
-    process.env.LIBREOFFICE_PATH =
-      "C:\\Program Files\\LibreOffice\\program\\soffice.exe";
+    // Railway Linux path
+    process.env.SOFFICE_PATH =
+      "/usr/bin/soffice";
 
     const bytes =
       await file.arrayBuffer();
 
-    const buffer = Buffer.from(
-      bytes
-    );
+    const buffer =
+      Buffer.from(bytes);
 
     // DOCX → PDF
     const pdfBuffer =
@@ -45,8 +53,22 @@ export async function POST(
         undefined
       );
 
+    // TELEGRAMGA YUBORISH
+    if (userId) {
+      await sendFileToTelegram(
+        Number(userId),
+        pdfBuffer,
+        file.name.replace(
+          ".docx",
+          ".pdf"
+        )
+      );
+    }
+
     return new Response(
-      new Uint8Array(pdfBuffer),
+      new Uint8Array(
+        pdfBuffer
+      ),
       {
         headers: {
           "Content-Type":
@@ -68,7 +90,9 @@ export async function POST(
         error:
           "Word ni PDF ga aylantirishda xatolik",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

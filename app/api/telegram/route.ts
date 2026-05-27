@@ -5,12 +5,37 @@ const bot = new Telegraf(
   process.env.TELEGRAM_BOT_TOKEN!
 );
 
+// TELEGRAM FILE SEND
+export async function sendFileToTelegram(
+  userId: number,
+  fileBuffer: Buffer,
+  fileName: string
+) {
+  try {
+    await bot.telegram.sendDocument(
+      userId,
+      {
+        source: fileBuffer,
+        filename: fileName,
+      },
+      {
+        caption:
+          "✅ Faylingiz tayyor",
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Telegram file send error:",
+      error
+    );
+  }
+}
+
 // USER STATE
 const userState: Record<
   number,
   string
 > = {};
-
 // START
 bot.start(async (ctx) => {
   await ctx.reply(`
