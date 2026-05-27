@@ -21,10 +21,8 @@ export async function sendFileToTelegram(
       await bot.telegram.sendDocument(
         userId,
         {
-          source:
-            fileBuffer,
-          filename:
-            fileName,
+          source: fileBuffer,
+          filename: fileName,
         },
         {
           caption:
@@ -36,11 +34,15 @@ export async function sendFileToTelegram(
       "Telegram success:",
       result
     );
+
+    return true;
   } catch (error) {
     console.error(
       "Telegram file send error:",
       error
     );
+
+    throw error;
   }
 }
 
@@ -52,6 +54,9 @@ const userState: Record<
 
 // START
 bot.start(async (ctx) => {
+  const userId =
+    ctx.from.id;
+
   await ctx.reply(`
 🎓 Talaba AI — AI Student Assistant
 
@@ -65,6 +70,11 @@ Talaba AI ga xush kelibsiz!
 Boshlash uchun:
 /scan ni bosing
   `);
+
+  // USER ID SAVE
+  await ctx.reply(
+    `🆔 User ID: ${userId}`
+  );
 });
 
 // HELP
@@ -79,17 +89,6 @@ Buyruqlar:
 🚀 /start — Botni ishga tushirish
 📸 /scan — Bilet Scan
 ℹ️ /about — Platforma haqida
-
-Qanday ishlaydi?
-
-🖥 Kompyuter:
-Mini App orqali
-
-📱 Telefon:
-Telegram ichida rasm yuborib
-
-⚡ Muammo bo‘lsa:
-/start ni qayta bosing
     `);
   }
 );
@@ -103,42 +102,22 @@ bot.command(
 
 🤖 Talaba AI —
 talabalar uchun AI yordamchi.
-
-Imkoniyatlar:
-
-📸 Bilet Scan
-📄 File Tools
-📝 Word export
-🧠 Quiz (tez orada)
-🤖 AI Chat (tez orada)
-
-⚡ Versiya:
-MVP v1.0
-
-🔥 Powered by:
-Gemini AI
-Telegram Bot
-Railway
     `);
   }
 );
 
-// SCAN COMMAND
+// SCAN
 bot.command(
   "scan",
   async (ctx) => {
+    const userId =
+      ctx.from.id;
+
     await ctx.reply(
       `
 📸 Bilet Scan
 
 Usulni tanlang:
-
-🖥 Kompyuter —
-Mini App
-
-📱 Telefon —
-Telegram ichida
-scan qilish
       `,
       {
         reply_markup: {
@@ -147,56 +126,16 @@ scan qilish
               {
                 text:
                   "🖥 Open Mini App",
-
                 web_app: {
                   url:
-                    "https://talaba-ai-production.up.railway.app?tab=scan",
+                    `https://talaba-ai-production.up.railway.app?userId=${userId}`,
                 },
-              },
-            ],
-
-            [
-              {
-                text:
-                  "📱 Telegram Scan",
-
-                callback_data:
-                  "telegram_scan",
               },
             ],
           ],
         },
       }
     );
-  }
-);
-
-// BUTTON HANDLER
-bot.action(
-  "telegram_scan",
-  async (ctx) => {
-    const userId =
-      ctx.from.id;
-
-    userState[
-      userId
-    ] =
-      "waiting_for_scan";
-
-    await ctx.answerCbQuery();
-
-    await ctx.reply(`
-📸 Telegram Scan boshlandi
-
-Iltimos,
-bilet yoki savol
-rasmini yuboring.
-
-AI:
-✅ Savolni aniqlaydi
-✅ Javob tayyorlaydi
-✅ Word fayl yaratadi
-    `);
   }
 );
 
@@ -221,35 +160,8 @@ bot.on(
         "🧠 AI tahlil qilmoqda..."
       );
 
-      const photos =
-        ctx.message.photo;
-
-      const photo =
-        photos[
-          photos.length - 1
-        ];
-
-      const file =
-        await ctx.telegram.getFile(
-          photo.file_id
-        );
-
-      const fileUrl =
-        `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-
-      console.log(
-        "IMAGE URL:",
-        fileUrl
-      );
-
       await ctx.reply(`
 ✅ Rasm qabul qilindi
-
-📸 AI savollarni aniqladi
-
-⏳ Keyingi bosqich:
-Gemini analyze
-va Word export
       `);
 
       delete userState[

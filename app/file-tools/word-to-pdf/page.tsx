@@ -65,7 +65,7 @@ export default function WordToPdfPage() {
     },
   });
 
-  // Ctrl + V
+  // CTRL + V
   useEffect(() => {
     const handlePaste = (
       event: ClipboardEvent
@@ -107,6 +107,29 @@ export default function WordToPdfPage() {
         handlePaste
       );
     };
+  }, []);
+
+  // TELEGRAM USER ID SAVE
+  useEffect(() => {
+    const params =
+      new URLSearchParams(
+        window.location.search
+      );
+
+    const userId =
+      params.get("userId");
+
+    if (userId) {
+      localStorage.setItem(
+        "telegram_user_id",
+        userId
+      );
+
+      console.log(
+        "Telegram User ID:",
+        userId
+      );
+    }
   }, []);
 
   // PDF GA AYLANTIRISH
@@ -221,13 +244,18 @@ export default function WordToPdfPage() {
           );
 
         if (
-          userId
+          !userId
         ) {
-          formData.append(
-            "telegram_user_id",
-            userId
+          alert(
+            "Telegram user id topilmadi. /scan orqali qayta kiring."
           );
+          return;
         }
+
+        formData.append(
+          "telegram_user_id",
+          userId
+        );
 
         const response =
           await fetch(
