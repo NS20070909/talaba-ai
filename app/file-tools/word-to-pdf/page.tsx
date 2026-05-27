@@ -1,27 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { useDropzone } from "react-dropzone";
 
 export default function WordToPdfPage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [file, setFile] =
+    useState<File | null>(
+      null
+    );
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const selected = acceptedFiles[0];
+  const [loading, setLoading] =
+    useState(false);
 
-    if (!selected) return;
+  const onDrop =
+    useCallback(
+      (
+        acceptedFiles: File[]
+      ) => {
+        const selected =
+          acceptedFiles[0];
 
-    if (!selected.name.endsWith(".docx")) {
-      alert("Faqat .docx fayl yuklang");
-      return;
-    }
+        if (!selected) return;
 
-    setFile(selected);
-  }, []);
+        if (
+          !selected.name.endsWith(
+            ".docx"
+          )
+        ) {
+          alert(
+            "Faqat .docx fayl yuklang"
+          );
+          return;
+        }
 
-  const { getRootProps, getInputProps, open } = useDropzone({
+        setFile(selected);
+      },
+      []
+    );
+
+  const {
+    getRootProps,
+    getInputProps,
+    open,
+  } = useDropzone({
     onDrop,
     noClick: true,
     multiple: false,
@@ -31,24 +57,37 @@ export default function WordToPdfPage() {
     },
   });
 
-  // Ctrl + V support
+  // Ctrl + V
   useEffect(() => {
-    const handlePaste = (event: ClipboardEvent) => {
-      const items = event.clipboardData?.files;
+    const handlePaste = (
+      event: ClipboardEvent
+    ) => {
+      const items =
+        event.clipboardData
+          ?.files;
 
-      if (!items?.length) return;
+      if (!items?.length)
+        return;
 
-      const pastedFile = items[0];
+      const pastedFile =
+        items[0];
 
       if (
         pastedFile &&
-        pastedFile.name.endsWith(".docx")
+        pastedFile.name.endsWith(
+          ".docx"
+        )
       ) {
-        setFile(pastedFile);
+        setFile(
+          pastedFile
+        );
       }
     };
 
-    window.addEventListener("paste", handlePaste);
+    window.addEventListener(
+      "paste",
+      handlePaste
+    );
 
     return () => {
       window.removeEventListener(
@@ -58,70 +97,164 @@ export default function WordToPdfPage() {
     };
   }, []);
 
-  const handleConvert = async () => {
-    if (!file) return;
+  // DOWNLOAD
+  const handleDownload =
+    async () => {
+      if (!file) return;
 
-    try {
-      setLoading(true);
+      try {
+        setLoading(true);
 
-      const formData = new FormData();
-formData.append("file", file);
+        const formData =
+          new FormData();
 
-// Telegram user id
-const userId =
-  localStorage.getItem(
-    "telegram_user_id"
-  );
+        formData.append(
+          "file",
+          file
+        );
 
-if (userId) {
-  formData.append(
-    "telegram_user_id",
-    userId
-  );
-}
+        const response =
+          await fetch(
+            "/api/convert-word-to-pdf",
+            {
+              method:
+                "POST",
+              body:
+                formData,
+            }
+          );
 
-      const response = await fetch(
-        "/api/convert-word-to-pdf",
-        {
-          method: "POST",
-          body: formData,
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            "Conversion failed"
+          );
         }
-      );
 
-      if (!response.ok) {
-        throw new Error("Conversion failed");
+        const blob =
+          await response.blob();
+
+        const url =
+          window.URL.createObjectURL(
+            blob
+          );
+
+        const a =
+          document.createElement(
+            "a"
+          );
+
+        a.href = url;
+
+        a.download =
+          "talaba-ai.pdf";
+
+        document.body.appendChild(
+          a
+        );
+
+        a.click();
+        a.remove();
+
+        window.URL.revokeObjectURL(
+          url
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          error
+        );
+
+        alert(
+          "Xatolik yuz berdi"
+        );
+      } finally {
+        setLoading(
+          false
+        );
       }
+    };
 
-      const blob = await response.blob();
+  // TELEGRAMGA YUBORISH
+  const handleTelegramSend =
+    async () => {
+      if (!file) return;
 
-      const url =
-        window.URL.createObjectURL(blob);
+      try {
+        setLoading(true);
 
-      const a =
-        document.createElement("a");
+        const formData =
+          new FormData();
 
-      a.href = url;
-      a.download = file.name.replace(
-        ".docx",
-        ".pdf"
-      );
+        formData.append(
+          "file",
+          file
+        );
 
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+        formData.append(
+          "send_to_telegram",
+          "true"
+        );
 
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error(error);
-      alert("Xatolik yuz berdi");
-    } finally {
-      setLoading(false);
-    }
-  };
+        const userId =
+          localStorage.getItem(
+            "telegram_user_id"
+          );
+
+        if (
+          userId
+        ) {
+          formData.append(
+            "telegram_user_id",
+            userId
+          );
+        }
+
+        const response =
+          await fetch(
+            "/api/convert-word-to-pdf",
+            {
+              method:
+                "POST",
+              body:
+                formData,
+            }
+          );
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            "Telegram send failed"
+          );
+        }
+
+        alert(
+          "✅ Fayl Telegram chatga yuborildi"
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          error
+        );
+
+        alert(
+          "❌ Telegramga yuborishda xatolik"
+        );
+      } finally {
+        setLoading(
+          false
+        );
+      }
+    };
 
   return (
     <main className="min-h-screen bg-[#071120] text-white">
       <div className="max-w-md mx-auto px-4 py-4">
+
         <Link
           href="/file-tools"
           className="text-slate-400 mb-4 inline-block"
@@ -144,16 +277,17 @@ if (userId) {
           {...getRootProps()}
           className="
             rounded-[28px]
-            border-2 border-dashed
+            border-2
+            border-dashed
             border-cyan-500/20
             bg-[#1A2636]
             p-8
             text-center
-            transition-all
-            hover:border-cyan-400/40
           "
         >
-          <input {...getInputProps()} />
+          <input
+            {...getInputProps()}
+          />
 
           <div className="text-5xl mb-4">
             📄
@@ -186,23 +320,49 @@ if (userId) {
           </button>
 
           {file && (
-            <button
-              onClick={handleConvert}
-              disabled={loading}
-              className="
-                mt-3
-                w-full
-                rounded-[18px]
-                bg-emerald-500
-                text-black
-                font-semibold
-                px-5 py-3
-              "
-            >
-              {loading
-                ? "⏳ Aylantirilmoqda..."
-                : "PDF ga aylantirish"}
-            </button>
+            <>
+              <button
+                onClick={
+                  handleDownload
+                }
+                disabled={
+                  loading
+                }
+                className="
+                  mt-3
+                  w-full
+                  rounded-[18px]
+                  bg-emerald-500
+                  text-black
+                  font-semibold
+                  px-5 py-3
+                "
+              >
+                📥 Qurilmaga yuklash
+              </button>
+
+              <button
+                onClick={
+                  handleTelegramSend
+                }
+                disabled={
+                  loading
+                }
+                className="
+                  mt-3
+                  w-full
+                  rounded-[18px]
+                  bg-cyan-500
+                  text-black
+                  font-semibold
+                  px-5 py-3
+                "
+              >
+                {loading
+                  ? "⏳ Yuborilmoqda..."
+                  : "📨 Telegram chatga yuborish"}
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -23,6 +23,11 @@ export async function POST(
         "telegram_user_id"
       ) as string | null;
 
+    const sendToTelegram =
+      formData.get(
+        "send_to_telegram"
+      ) === "true";
+
     if (!file) {
       return NextResponse.json(
         {
@@ -54,14 +59,22 @@ export async function POST(
       );
 
     // TELEGRAMGA YUBORISH
-    if (userId) {
+    if (
+      sendToTelegram &&
+      userId
+    ) {
       await sendFileToTelegram(
         Number(userId),
         pdfBuffer,
         "talaba-ai.pdf"
       );
+
+      return NextResponse.json({
+        success: true,
+      });
     }
 
+    // BROWSER DOWNLOAD
     return new Response(
       new Uint8Array(
         pdfBuffer
@@ -71,7 +84,6 @@ export async function POST(
           "Content-Type":
             "application/pdf",
 
-          // TELEFON UCHUN ODDIY FILENAME
           "Content-Disposition":
             'attachment; filename="talaba-ai.pdf"',
         },
