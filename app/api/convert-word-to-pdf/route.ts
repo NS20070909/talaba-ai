@@ -58,10 +58,7 @@ export async function POST(
       await sendFileToTelegram(
         Number(userId),
         pdfBuffer,
-        file.name.replace(
-          ".docx",
-          ".pdf"
-        )
+        "talaba-ai.pdf"
       );
     }
 
@@ -74,16 +71,17 @@ export async function POST(
           "Content-Type":
             "application/pdf",
 
+          // TELEFON UCHUN ODDIY FILENAME
           "Content-Disposition":
-            `attachment; filename="${file.name.replace(
-              ".docx",
-              ".pdf"
-            )}"`,
+            'attachment; filename="talaba-ai.pdf"',
         },
       }
     );
   } catch (error) {
-    console.error(error);
+    console.error(
+      "Word to PDF error:",
+      error
+    );
 
     return NextResponse.json(
       {
