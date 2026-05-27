@@ -1,21 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { useDropzone } from "react-dropzone";
 
 export default function PptxToPdfPage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [file, setFile] =
+    useState<File | null>(null);
+
+  const [loading, setLoading] =
+    useState(false);
+
+  // YANGI TUGMA
+  const [
+    showTelegramButton,
+    setShowTelegramButton,
+  ] = useState(false);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      const selected = acceptedFiles[0];
+      const selected =
+        acceptedFiles[0];
 
       if (!selected) return;
 
       if (
-        !selected.name.endsWith(".pptx")
+        !selected.name.endsWith(
+          ".pptx"
+        )
       ) {
         alert(
           "Faqat .pptx fayl yuklang"
@@ -24,6 +40,11 @@ export default function PptxToPdfPage() {
       }
 
       setFile(selected);
+
+      // reset
+      setShowTelegramButton(
+        false
+      );
     },
     []
   );
@@ -48,11 +69,14 @@ export default function PptxToPdfPage() {
       event: ClipboardEvent
     ) => {
       const items =
-        event.clipboardData?.files;
+        event.clipboardData
+          ?.files;
 
-      if (!items?.length) return;
+      if (!items?.length)
+        return;
 
-      const pastedFile = items[0];
+      const pastedFile =
+        items[0];
 
       if (
         pastedFile &&
@@ -61,6 +85,10 @@ export default function PptxToPdfPage() {
         )
       ) {
         setFile(pastedFile);
+
+        setShowTelegramButton(
+          false
+        );
       }
     };
 
@@ -77,6 +105,7 @@ export default function PptxToPdfPage() {
     };
   }, []);
 
+  // ODDIY CONVERT
   const handleConvert =
     async () => {
       if (!file) return;
@@ -107,6 +136,7 @@ export default function PptxToPdfPage() {
           );
         }
 
+        // Browser download
         const blob =
           await response.blob();
 
@@ -138,10 +168,78 @@ export default function PptxToPdfPage() {
         window.URL.revokeObjectURL(
           url
         );
+
+        // YANGI TUGMA
+        setShowTelegramButton(
+          true
+        );
       } catch (error) {
         console.error(error);
+
         alert(
           "Xatolik yuz berdi"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  // TELEGRAMGA YUBORISH
+  const handleTelegramSend =
+    async () => {
+      if (!file) return;
+
+      try {
+        setLoading(true);
+
+        const formData =
+          new FormData();
+
+        formData.append(
+          "file",
+          file
+        );
+
+        const userId =
+          localStorage.getItem(
+            "telegram_user_id"
+          );
+
+        if (userId) {
+          formData.append(
+            "telegram_user_id",
+            userId
+          );
+        }
+
+        formData.append(
+          "send_to_telegram",
+          "true"
+        );
+
+        const response =
+          await fetch(
+            "/api/convert-pptx-to-pdf",
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            "Telegramga yuborishda xatolik"
+          );
+        }
+
+        alert(
+          "✅ PDF Telegram chatga yuborildi"
+        );
+      } catch (error) {
+        console.error(error);
+
+        alert(
+          "❌ Telegramga yuborilmadi"
         );
       } finally {
         setLoading(false);
@@ -217,25 +315,52 @@ export default function PptxToPdfPage() {
           </button>
 
           {file && (
-            <button
-              onClick={
-                handleConvert
-              }
-              disabled={loading}
-              className="
-                mt-3
-                w-full
-                rounded-[18px]
-                bg-emerald-500
-                text-black
-                font-semibold
-                px-5 py-3
-              "
-            >
-              {loading
-                ? "⏳ Aylantirilmoqda..."
-                : "PDF ga aylantirish"}
-            </button>
+            <>
+              <button
+                onClick={
+                  handleConvert
+                }
+                disabled={
+                  loading
+                }
+                className="
+                  mt-3
+                  w-full
+                  rounded-[18px]
+                  bg-emerald-500
+                  text-black
+                  font-semibold
+                  px-5 py-3
+                "
+              >
+                {loading
+                  ? "⏳ Aylantirilmoqda..."
+                  : "PDF ga aylantirish"}
+              </button>
+
+              {showTelegramButton && (
+                <button
+                  onClick={
+                    handleTelegramSend
+                  }
+                  disabled={
+                    loading
+                  }
+                  className="
+                    mt-3
+                    w-full
+                    rounded-[18px]
+                    bg-cyan-500
+                    text-black
+                    font-semibold
+                    px-5 py-3
+                  "
+                >
+                  📨 Telegram chatga
+                  yuborish
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -1,5 +1,4 @@
-"use client";
-
+// IMPORTLAR O'ZGARMAYDI
 import { useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 
@@ -180,7 +179,7 @@ export default function ScanPage() {
       }
     };
 
-  // EXPORT WORD
+  // DOWNLOAD
   const exportWord =
     async () => {
       try {
@@ -266,6 +265,67 @@ export default function ScanPage() {
 
         alert(
           "Word yuklashda xatolik"
+        );
+      }
+    };
+
+  // TELEGRAMGA YUBORISH
+  const sendToTelegram =
+    async () => {
+      try {
+        const userId =
+          localStorage.getItem(
+            "telegram_user_id"
+          );
+
+        const response =
+          await fetch(
+            "/api/export-word",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify(
+                  {
+                    text:
+                      result,
+
+                    telegram_user_id:
+                      userId,
+
+                    send_to_telegram:
+                      true,
+                  }
+                ),
+            }
+          );
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            "Telegram error"
+          );
+        }
+
+        alert(
+          "✅ Telegramga yuborildi"
+        );
+      } catch (
+        error
+      ) {
+        console.log(
+          error
+        );
+
+        alert(
+          "❌ Telegramga yuborilmadi"
         );
       }
     };
@@ -380,22 +440,44 @@ export default function ScanPage() {
               p-5
             "
           >
-            <button
-              onClick={
-                exportWord
-              }
-              className="
-                mb-5
-                w-full
-                rounded-[24px]
-                bg-blue-600
-                py-4
-                text-lg
-                font-bold
-              "
-            >
-              📝 Word yuklab olish
-            </button>
+            <p className="text-center text-sm text-slate-400 mb-3">
+              Faylni yuklash
+            </p>
+
+            <div className="flex gap-2 mb-5">
+              <button
+                onClick={
+                  exportWord
+                }
+                className="
+                  flex-1
+                  rounded-[18px]
+                  bg-blue-600
+                  py-2.5
+                  text-sm
+                  font-bold
+                "
+              >
+                ⬇️ Download
+              </button>
+
+              <button
+                onClick={
+                  sendToTelegram
+                }
+                className="
+                  flex-1
+                  rounded-[18px]
+                  bg-cyan-500
+                  text-black
+                  py-2.5
+                  text-sm
+                  font-bold
+                "
+              >
+                📨 Telegram
+              </button>
+            </div>
 
             <h2 className="font-bold text-2xl mb-4">
               📚 Shpargalka

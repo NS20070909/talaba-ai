@@ -28,6 +28,12 @@ export default function SplitPdfPage() {
   const [loading, setLoading] =
     useState(false);
 
+  // YANGI TUGMA
+  const [
+    showTelegramButton,
+    setShowTelegramButton,
+  ] = useState(false);
+
   const onDrop = useCallback(
     (
       acceptedFiles: File[]
@@ -35,9 +41,7 @@ export default function SplitPdfPage() {
       const selected =
         acceptedFiles[0];
 
-      if (
-        !selected
-      )
+      if (!selected)
         return;
 
       if (
@@ -55,6 +59,11 @@ export default function SplitPdfPage() {
 
       setFile(
         selected
+      );
+
+      // reset
+      setShowTelegramButton(
+        false
       );
     },
     []
@@ -74,11 +83,10 @@ export default function SplitPdfPage() {
     },
   });
 
+  // PDF BO‘LISH
   const handleSplit =
     async () => {
-      if (
-        !file
-      ) {
+      if (!file) {
         alert(
           "PDF tanlang"
         );
@@ -141,6 +149,7 @@ export default function SplitPdfPage() {
           );
         }
 
+        // Browser download
         const blob =
           await response.blob();
 
@@ -170,6 +179,11 @@ export default function SplitPdfPage() {
           url
         );
 
+        // YANGI TUGMA
+        setShowTelegramButton(
+          true
+        );
+
         alert(
           "✅ PDF bo‘lindi"
         );
@@ -193,10 +207,93 @@ export default function SplitPdfPage() {
       }
     };
 
+  // TELEGRAMGA YUBORISH
+  const handleTelegramSend =
+    async () => {
+      if (!file) return;
+
+      try {
+        setLoading(
+          true
+        );
+
+        const formData =
+          new FormData();
+
+        formData.append(
+          "file",
+          file
+        );
+
+        formData.append(
+          "startPage",
+          startPage
+        );
+
+        formData.append(
+          "endPage",
+          endPage
+        );
+
+        const userId =
+          localStorage.getItem(
+            "telegram_user_id"
+          );
+
+        if (userId) {
+          formData.append(
+            "telegram_user_id",
+            userId
+          );
+        }
+
+        formData.append(
+          "send_to_telegram",
+          "true"
+        );
+
+        const response =
+          await fetch(
+            "/api/split-pdf",
+            {
+              method:
+                "POST",
+              body:
+                formData,
+            }
+          );
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            "Telegramga yuborishda xatolik"
+          );
+        }
+
+        alert(
+          "✅ PDF Telegram chatga yuborildi"
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          error
+        );
+
+        alert(
+          "❌ Telegramga yuborilmadi"
+        );
+      } finally {
+        setLoading(
+          false
+        );
+      }
+    };
+
   return (
     <main className="min-h-screen bg-[#071120] text-white">
       <div className="max-w-md mx-auto px-4 py-4">
-
         <Link
           href="/file-tools"
           className="text-slate-400 mb-4 inline-block"
@@ -248,9 +345,7 @@ export default function SplitPdfPage() {
           </p>
 
           <button
-            onClick={
-              open
-            }
+            onClick={open}
             className="
               mt-5
               rounded-[18px]
@@ -279,8 +374,7 @@ export default function SplitPdfPage() {
                     e
                   ) =>
                     setStartPage(
-                      e
-                        .target
+                      e.target
                         .value
                     )
                   }
@@ -309,8 +403,7 @@ export default function SplitPdfPage() {
                     e
                   ) =>
                     setEndPage(
-                      e
-                        .target
+                      e.target
                         .value
                     )
                   }
@@ -345,6 +438,28 @@ export default function SplitPdfPage() {
                   ? "⏳ Bo‘linmoqda..."
                   : "PDF ni bo‘lish"}
               </button>
+
+              {showTelegramButton && (
+                <button
+                  onClick={
+                    handleTelegramSend
+                  }
+                  disabled={
+                    loading
+                  }
+                  className="
+                    w-full
+                    rounded-[18px]
+                    bg-cyan-500
+                    text-black
+                    font-semibold
+                    px-5 py-3
+                  "
+                >
+                  📨 Telegram chatga
+                  yuborish
+                </button>
+              )}
             </div>
           )}
         </div>

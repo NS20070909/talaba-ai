@@ -6,13 +6,17 @@ import {
   HeadingLevel,
   TextRun,
 } from "docx";
+import { sendFileToTelegram } from "@/app/api/telegram/route";
 
 export async function POST(
   req: Request
 ) {
   try {
-    const { text } =
-      await req.json();
+    const {
+      text,
+      telegram_user_id,
+      send_to_telegram,
+    } = await req.json();
 
     if (!text) {
       return NextResponse.json(
@@ -108,10 +112,10 @@ export async function POST(
               // TITLE
               new Paragraph({
                 text:
-  fan !==
-  "Topilmadi"
-    ? `${fan} — Talaba AI`
-    : "Talaba AI",
+                  fan !==
+                  "Topilmadi"
+                    ? `${fan} — Talaba AI`
+                    : "Talaba AI",
 
                 heading:
                   HeadingLevel.HEADING_1,
@@ -172,6 +176,28 @@ export async function POST(
         doc
       );
 
+    const fileName =
+      "TalabaAI-Shpargalka.docx";
+
+    // TELEGRAMGA YUBORISH
+    if (
+      send_to_telegram &&
+      telegram_user_id
+    ) {
+      await sendFileToTelegram(
+        Number(
+          telegram_user_id
+        ),
+        Buffer.from(buffer),
+        fileName
+      );
+
+      return NextResponse.json({
+        success: true,
+      });
+    }
+
+    // DOWNLOAD
     return new NextResponse(
       new Uint8Array(
         buffer
@@ -179,17 +205,10 @@ export async function POST(
       {
         headers: {
           "Content-Type":
-"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 
-"Content-Disposition":
-`attachment; filename="${(
-  fan !== "Topilmadi"
-    ? `Talaba AI - ${fan}`
-    : "Talaba AI"
-).replace(
-  /[\\/:*?"<>|]/g,
-  ""
-)}.docx"`,
+          "Content-Disposition":
+            `attachment; filename="${fileName}"`,
         },
       }
     );

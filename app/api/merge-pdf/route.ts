@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   PDFDocument,
 } from "pdf-lib";
+import { sendFileToTelegram } from "@/app/api/telegram/route";
 
 export async function POST(
   request: Request
@@ -14,6 +15,17 @@ export async function POST(
       formData.getAll(
         "files"
       ) as File[];
+
+    // YANGI
+    const userId =
+      formData.get(
+        "telegram_user_id"
+      ) as string | null;
+
+    const sendToTelegram =
+      formData.get(
+        "send_to_telegram"
+      ) === "true";
 
     if (
       !files ||
@@ -60,6 +72,28 @@ export async function POST(
     const mergedBytes =
       await mergedPdf.save();
 
+    const fileName =
+      "merged.pdf";
+
+    // TELEGRAMGA YUBORISH
+    if (
+      sendToTelegram &&
+      userId
+    ) {
+      await sendFileToTelegram(
+        Number(userId),
+        Buffer.from(
+          mergedBytes
+        ),
+        fileName
+      );
+
+      return NextResponse.json({
+        success: true,
+      });
+    }
+
+    // BROWSER DOWNLOAD
     return new Response(
       new Uint8Array(
         mergedBytes
@@ -70,7 +104,7 @@ export async function POST(
             "application/pdf",
 
           "Content-Disposition":
-            'attachment; filename="merged.pdf"',
+            `attachment; filename="${fileName}"`,
         },
       }
     );

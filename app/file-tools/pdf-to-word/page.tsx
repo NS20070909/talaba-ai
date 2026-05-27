@@ -15,6 +15,12 @@ export default function PdfToWordPage() {
   const [loading, setLoading] =
     useState(false);
 
+  // YANGI TUGMA
+  const [
+    showTelegramButton,
+    setShowTelegramButton,
+  ] = useState(false);
+
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       const selected =
@@ -34,6 +40,11 @@ export default function PdfToWordPage() {
       }
 
       setFile(selected);
+
+      // yangi fayl tanlansa reset
+      setShowTelegramButton(
+        false
+      );
     },
     []
   );
@@ -75,6 +86,10 @@ export default function PdfToWordPage() {
           .endsWith(".pdf")
       ) {
         setFile(pastedFile);
+
+        setShowTelegramButton(
+          false
+        );
       }
     };
 
@@ -91,6 +106,7 @@ export default function PdfToWordPage() {
     };
   }, []);
 
+  // ODDIY CONVERT
   const handleConvert =
     async () => {
       if (!file) return;
@@ -115,7 +131,6 @@ export default function PdfToWordPage() {
             }
           );
 
-        // Error handling
         if (!response.ok) {
           const data =
             await response.json();
@@ -126,7 +141,7 @@ export default function PdfToWordPage() {
           );
         }
 
-        // Download file
+        // Browser download
         const blob =
           await response.blob();
 
@@ -159,6 +174,11 @@ export default function PdfToWordPage() {
           url
         );
 
+        // YANGI TUGMA CHIQADI
+        setShowTelegramButton(
+          true
+        );
+
         alert(
           "✅ PDF Word formatga aylantirildi"
         );
@@ -169,6 +189,68 @@ export default function PdfToWordPage() {
           error instanceof Error
             ? error.message
             : "Xatolik yuz berdi"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  // TELEGRAMGA YUBORISH
+  const handleTelegramSend =
+    async () => {
+      if (!file) return;
+
+      try {
+        setLoading(true);
+
+        const formData =
+          new FormData();
+
+        formData.append(
+          "file",
+          file
+        );
+
+        const userId =
+          localStorage.getItem(
+            "telegram_user_id"
+          );
+
+        if (userId) {
+          formData.append(
+            "telegram_user_id",
+            userId
+          );
+        }
+
+        formData.append(
+          "send_to_telegram",
+          "true"
+        );
+
+        const response =
+          await fetch(
+            "/api/convert-pdf-to-word",
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            "Telegramga yuborishda xatolik"
+          );
+        }
+
+        alert(
+          "✅ Word fayl Telegram chatga yuborildi"
+        );
+      } catch (error) {
+        console.error(error);
+
+        alert(
+          "❌ Telegramga yuborilmadi"
         );
       } finally {
         setLoading(false);
@@ -247,26 +329,52 @@ export default function PdfToWordPage() {
           </button>
 
           {file && (
-            <button
-              onClick={
-                handleConvert
-              }
-              disabled={loading}
-              className="
-                mt-3
-                w-full
-                rounded-[18px]
-                bg-emerald-500
-                text-black
-                font-semibold
-                px-5 py-3
-                disabled:opacity-50
-              "
-            >
-              {loading
-                ? "🤖 Gemini ishlayapti..."
-                : "Word ga aylantirish"}
-            </button>
+            <>
+              <button
+                onClick={
+                  handleConvert
+                }
+                disabled={loading}
+                className="
+                  mt-3
+                  w-full
+                  rounded-[18px]
+                  bg-emerald-500
+                  text-black
+                  font-semibold
+                  px-5 py-3
+                  disabled:opacity-50
+                "
+              >
+                {loading
+                  ? "🤖 Gemini ishlayapti..."
+                  : "Word ga aylantirish"}
+              </button>
+
+              {showTelegramButton && (
+                <button
+                  onClick={
+                    handleTelegramSend
+                  }
+                  disabled={
+                    loading
+                  }
+                  className="
+                    mt-3
+                    w-full
+                    rounded-[18px]
+                    bg-cyan-500
+                    text-black
+                    font-semibold
+                    px-5 py-3
+                    disabled:opacity-50
+                  "
+                >
+                  📨 Telegram chatga
+                  yuborish
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

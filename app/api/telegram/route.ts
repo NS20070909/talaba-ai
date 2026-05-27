@@ -155,7 +155,7 @@ Imkoniyatlar:
 Bog‘lanish:
 
 📷 Instagram:
-iits_nkb
+@iits_nkb
 
 ✈️ Telegram:
 @Narkabilov_S_07

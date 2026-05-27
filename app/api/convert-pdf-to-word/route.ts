@@ -1,19 +1,26 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { Document, Packer, Paragraph } from "docx";
+import {
+  Document,
+  Packer,
+  Paragraph,
+} from "docx";
 import fs from "fs";
 import os from "os";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { sendFileToTelegram } from "@/app/api/telegram/route";
 
-const execAsync = promisify(exec);
+const execAsync =
+  promisify(exec);
 
-const ai = new GoogleGenAI({
-  apiKey:
-    process.env
-      .GEMINI_DOCUMENT_API_KEY!,
-});
+const ai =
+  new GoogleGenAI({
+    apiKey:
+      process.env
+        .GEMINI_DOCUMENT_API_KEY!,
+  });
 
 export async function POST(
   request: Request
@@ -25,6 +32,17 @@ export async function POST(
     const file = formData.get(
       "file"
     ) as File | null;
+
+    // YANGI
+    const userId =
+      formData.get(
+        "telegram_user_id"
+      ) as string | null;
+
+    const sendToTelegram =
+      formData.get(
+        "send_to_telegram"
+      ) === "true";
 
     if (!file) {
       return NextResponse.json(
@@ -98,7 +116,7 @@ export async function POST(
                 parts: [
                   {
                     text:
-                      "Bu PDF sahifasidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma."
+                      "Bu PDF sahifasidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma.",
                   },
                   {
                     inlineData:
@@ -115,12 +133,13 @@ export async function POST(
         );
 
       finalText +=
-        result.text + "\n\n";
+        result.text +
+        "\n\n";
     }
 
     // DOCX yaratish
-    const doc = new Document(
-      {
+    const doc =
+      new Document({
         sections: [
           {
             properties:
@@ -136,15 +155,14 @@ export async function POST(
                 ),
           },
         ],
-      }
-    );
+      });
 
     const buffer =
       await Packer.toBuffer(
         doc
       );
 
-    // cleanup
+    // CLEANUP
     fs.rmSync(imgDir, {
       recursive: true,
       force: true,
@@ -152,6 +170,31 @@ export async function POST(
 
     fs.unlinkSync(pdfPath);
 
+    const fileName =
+      file.name.replace(
+        ".pdf",
+        ".docx"
+      );
+
+    // TELEGRAMGA YUBORISH
+    if (
+      sendToTelegram &&
+      userId
+    ) {
+      await sendFileToTelegram(
+        Number(userId),
+        Buffer.from(buffer),
+        fileName
+      );
+
+      return NextResponse.json(
+        {
+          success: true,
+        }
+      );
+    }
+
+    // BROWSER DOWNLOAD
     return new Response(
       new Uint8Array(
         buffer
@@ -160,11 +203,9 @@ export async function POST(
         headers: {
           "Content-Type":
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
           "Content-Disposition":
-            `attachment; filename="${file.name.replace(
-              ".pdf",
-              ".docx"
-            )}"`,
+            `attachment; filename="${fileName}"`,
         },
       }
     );
@@ -179,7 +220,9 @@ export async function POST(
         error:
           "PDF → Word xatolik",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   PDFDocument,
 } from "pdf-lib";
+import { sendFileToTelegram } from "@/app/api/telegram/route";
 
 export async function POST(
   request: Request
@@ -28,6 +29,17 @@ export async function POST(
           "endPage"
         )
       );
+
+    // YANGI
+    const userId =
+      formData.get(
+        "telegram_user_id"
+      ) as string | null;
+
+    const sendToTelegram =
+      formData.get(
+        "send_to_telegram"
+      ) === "true";
 
     if (!file) {
       return NextResponse.json(
@@ -95,10 +107,7 @@ export async function POST(
             startPage +
             1,
         },
-        (
-          _,
-          i
-        ) =>
+        (_, i) =>
           startPage -
           1 +
           i
@@ -121,6 +130,28 @@ export async function POST(
     const pdfBytes =
       await newPdf.save();
 
+    const fileName =
+      `split-${file.name}`;
+
+    // TELEGRAMGA YUBORISH
+    if (
+      sendToTelegram &&
+      userId
+    ) {
+      await sendFileToTelegram(
+        Number(userId),
+        Buffer.from(
+          pdfBytes
+        ),
+        fileName
+      );
+
+      return NextResponse.json({
+        success: true,
+      });
+    }
+
+    // BROWSER DOWNLOAD
     return new Response(
       new Uint8Array(
         pdfBytes
@@ -131,7 +162,7 @@ export async function POST(
             "application/pdf",
 
           "Content-Disposition":
-            `attachment; filename="split-${file.name}"`,
+            `attachment; filename="${fileName}"`,
         },
       }
     );

@@ -17,6 +17,12 @@ export default function MergePdfPage() {
   const [loading, setLoading] =
     useState(false);
 
+  // YANGI TUGMA
+  const [
+    showTelegramButton,
+    setShowTelegramButton,
+  ] = useState(false);
+
   // Drag & Drop
   const onDrop = useCallback(
     (
@@ -37,6 +43,10 @@ export default function MergePdfPage() {
           ...prev,
           ...pdfFiles,
         ]
+      );
+
+      setShowTelegramButton(
+        false
       );
     },
     []
@@ -88,6 +98,10 @@ export default function MergePdfPage() {
             ...pdfFiles,
           ]
         );
+
+        setShowTelegramButton(
+          false
+        );
       }
     };
 
@@ -104,7 +118,7 @@ export default function MergePdfPage() {
     };
   }, []);
 
-  // Merge
+  // MERGE
   const handleMerge =
     async () => {
       if (
@@ -154,6 +168,7 @@ export default function MergePdfPage() {
           );
         }
 
+        // Browser download
         const blob =
           await response.blob();
 
@@ -168,6 +183,7 @@ export default function MergePdfPage() {
           );
 
         a.href = url;
+
         a.download =
           "merged.pdf";
 
@@ -180,6 +196,11 @@ export default function MergePdfPage() {
 
         window.URL.revokeObjectURL(
           url
+        );
+
+        // YANGI TUGMA
+        setShowTelegramButton(
+          true
         );
 
         alert(
@@ -197,6 +218,80 @@ export default function MergePdfPage() {
             Error
             ? error.message
             : "Xatolik yuz berdi"
+        );
+      } finally {
+        setLoading(
+          false
+        );
+      }
+    };
+
+  // TELEGRAMGA YUBORISH
+  const handleTelegramSend =
+    async () => {
+      try {
+        setLoading(true);
+
+        const formData =
+          new FormData();
+
+        files.forEach(
+          (file) => {
+            formData.append(
+              "files",
+              file
+            );
+          }
+        );
+
+        const userId =
+          localStorage.getItem(
+            "telegram_user_id"
+          );
+
+        if (userId) {
+          formData.append(
+            "telegram_user_id",
+            userId
+          );
+        }
+
+        formData.append(
+          "send_to_telegram",
+          "true"
+        );
+
+        const response =
+          await fetch(
+            "/api/merge-pdf",
+            {
+              method:
+                "POST",
+              body:
+                formData,
+            }
+          );
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            "Telegramga yuborishda xatolik"
+          );
+        }
+
+        alert(
+          "✅ PDF Telegram chatga yuborildi"
+        );
+      } catch (
+        error
+      ) {
+        console.error(
+          error
+        );
+
+        alert(
+          "❌ Telegramga yuborilmadi"
         );
       } finally {
         setLoading(
@@ -370,27 +465,52 @@ export default function MergePdfPage() {
 
           {files.length >
             1 && (
-            <button
-              onClick={
-                handleMerge
-              }
-              disabled={
-                loading
-              }
-              className="
-                mt-5
-                w-full
-                rounded-[18px]
-                bg-emerald-500
-                text-black
-                font-semibold
-                px-5 py-3
-              "
-            >
-              {loading
-                ? "⏳ Birlashtirilmoqda..."
-                : "PDF larni birlashtirish"}
-            </button>
+            <>
+              <button
+                onClick={
+                  handleMerge
+                }
+                disabled={
+                  loading
+                }
+                className="
+                  mt-5
+                  w-full
+                  rounded-[18px]
+                  bg-emerald-500
+                  text-black
+                  font-semibold
+                  px-5 py-3
+                "
+              >
+                {loading
+                  ? "⏳ Birlashtirilmoqda..."
+                  : "PDF larni birlashtirish"}
+              </button>
+
+              {showTelegramButton && (
+                <button
+                  onClick={
+                    handleTelegramSend
+                  }
+                  disabled={
+                    loading
+                  }
+                  className="
+                    mt-3
+                    w-full
+                    rounded-[18px]
+                    bg-cyan-500
+                    text-black
+                    font-semibold
+                    px-5 py-3
+                  "
+                >
+                  📨 Telegram chatga
+                  yuborish
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
