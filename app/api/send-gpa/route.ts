@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import PDFDocument from "pdfkit";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
 
 export async function POST(
@@ -24,141 +23,56 @@ export async function POST(
       );
     }
 
-    const doc =
-      new PDFDocument();
+    let report =
+      "🎓 TALABA AI GPA HISOBOT\n\n";
 
-    const buffers: Uint8Array[] =
-      [];
+    report +=
+      `📊 GPA: ${Number(
+        gpa
+      ).toFixed(
+        2
+      )} / 5\n\n`;
 
-    doc.on(
-      "data",
-      (chunk) => {
-        buffers.push(
-          chunk
-        );
-      }
-    );
-
-    const pdfPromise =
-      new Promise<Buffer>(
-        (
-          resolve
-        ) => {
-          doc.on(
-            "end",
-            () => {
-              resolve(
-                Buffer.concat(
-                  buffers
-                )
-              );
-            }
-          );
-        }
-      );
-
-    // TITLE
-    doc
-      .fontSize(24)
-      .text(
-        "Talaba AI",
-        {
-          align:
-            "center",
-        }
-      );
-
-    doc
-      .fontSize(18)
-      .text(
-        "GPA Hisobot",
-        {
-          align:
-            "center",
-        }
-      );
-
-    doc.moveDown();
-
-    // GPA
-    doc
-      .fontSize(14)
-      .text(
-        `GPA Natijasi: ${Number(
-          gpa
-        ).toFixed(
-          2
-        )} / 5`
-      );
-
-    doc.text(
-      `Sana: ${new Date().toLocaleDateString(
-        "uz-UZ"
-      )}`
-    );
-
-    doc.moveDown();
-
-    // SUBJECTS
-    doc
-      .fontSize(16)
-      .text(
-        "Fanlar ro'yxati"
-      );
-
-    doc.moveDown(
-      0.5
-    );
+    report +=
+      "📚 Fanlar:\n\n";
 
     subjects.forEach(
       (
         subject: any,
         index: number
       ) => {
-        doc
-          .fontSize(13)
-          .text(
-            `${
-              index + 1
-            }. ${
-              subject.name ||
-              "Fan"
-            }`
-          );
+        report += `${
+          index + 1
+        }. ${
+          subject.name ||
+          "Fan"
+        }\n`;
 
-        doc.text(
-          `Kredit: ${
-            subject.credit
-          }`
-        );
+        report += `Kredit: ${
+          subject.credit
+        }\n`;
 
-        doc.text(
-          `Ball: ${
-            subject.score
-          }`
-        );
+        report += `Ball: ${
+          subject.score
+        }\n`;
 
-        doc.text(
-          `Baho: ${
-            subject.grade ||
-            "-"
-          }`
-        );
-
-        doc.moveDown();
+        report += `Baho: ${
+          subject.grade ||
+          "-"
+        }\n\n`;
       }
     );
 
-    doc.end();
+    const fileBuffer =
+      Buffer.from(
+        report,
+        "utf-8"
+      );
 
-    const pdfBuffer =
-      await pdfPromise;
-
-    // TELEGRAMGA AVTO YUBORISH
     await sendFileToTelegram(
       Number(userId),
-      pdfBuffer,
-      "GPA-Hisobot.pdf"
+      fileBuffer,
+      "GPA-Hisobot.txt"
     );
 
     return NextResponse.json(
@@ -175,7 +89,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "PDF yuborishda xatolik",
+          "Hisobot yuborishda xatolik",
       },
       {
         status: 500,
