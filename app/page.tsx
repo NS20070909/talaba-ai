@@ -20,6 +20,14 @@ const features = [
       "from-emerald-500/20 to-green-500/10",
     link: "/file-tools",
   },
+   {
+  icon: "🛠",
+  title: "Talaba Yordamchi",
+  desc: "GPA, PPT va hujjat vositalari",
+  color:
+    "from-cyan-500/20 to-blue-500/10",
+  link: "/talaba-tools"
+},
   {
     icon: "🧠",
     title: "Quiz",
@@ -36,14 +44,7 @@ const features = [
       "from-orange-500/20 to-amber-500/10",
     link: "#",
   },
-  {
-  icon: "🛠",
-  title: "Talaba Yordamchi",
-  desc: "GPA, PPT va hujjat vositalari",
-  color:
-    "from-cyan-500/20 to-blue-500/10",
-  link: "#",
-},
+ 
   {
     icon: "📝",
     title: "5 Daqiqada Tayyor",
