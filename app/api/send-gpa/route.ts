@@ -25,18 +25,14 @@ export async function POST(
     }
 
     const doc =
-      new PDFDocument({
-        margin: 50,
-      });
+      new PDFDocument();
 
-    const buffers: Buffer[] =
+    const buffers: Uint8Array[] =
       [];
 
     doc.on(
       "data",
-      (
-        chunk: Buffer
-      ) => {
+      (chunk) => {
         buffers.push(
           chunk
         );
@@ -61,7 +57,7 @@ export async function POST(
         }
       );
 
-    // HEADER
+    // TITLE
     doc
       .fontSize(24)
       .text(
@@ -84,10 +80,13 @@ export async function POST(
 
     doc.moveDown();
 
+    // GPA
     doc
       .fontSize(14)
       .text(
-        `GPA Natijasi: ${gpa.toFixed(
+        `GPA Natijasi: ${Number(
+          gpa
+        ).toFixed(
           2
         )} / 5`
       );
@@ -100,7 +99,7 @@ export async function POST(
 
     doc.moveDown();
 
-    // TABLE HEADER
+    // SUBJECTS
     doc
       .fontSize(16)
       .text(
@@ -117,9 +116,11 @@ export async function POST(
         index: number
       ) => {
         doc
-          .fontSize(12)
+          .fontSize(13)
           .text(
-            `${index + 1}. ${
+            `${
+              index + 1
+            }. ${
               subject.name ||
               "Fan"
             }`
@@ -137,9 +138,14 @@ export async function POST(
           }`
         );
 
-        doc.moveDown(
-          0.5
+        doc.text(
+          `Baho: ${
+            subject.grade ||
+            "-"
+          }`
         );
+
+        doc.moveDown();
       }
     );
 
@@ -148,7 +154,7 @@ export async function POST(
     const pdfBuffer =
       await pdfPromise;
 
-    // TELEGRAMGA YUBORISH
+    // TELEGRAMGA AVTO YUBORISH
     await sendFileToTelegram(
       Number(userId),
       pdfBuffer,
@@ -162,7 +168,7 @@ export async function POST(
     );
   } catch (error) {
     console.error(
-      "GPA PDF error:",
+      "SEND GPA ERROR:",
       error
     );
 
