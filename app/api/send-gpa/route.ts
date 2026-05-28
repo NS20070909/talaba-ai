@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import PDFDocument from "pdfkit";
-import { Telegraf, Input } from "telegraf";
-
-const bot = new Telegraf(
-  process.env.TELEGRAM_BOT_TOKEN!
-);
+import { sendFileToTelegram } from "@/app/api/telegram/route";
 
 export async function POST(
   req: Request
@@ -16,42 +12,74 @@ export async function POST(
       gpa,
     } = await req.json();
 
+    if (!userId) {
+      return NextResponse.json(
+        {
+          error:
+            "Telegram user topilmadi",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
     const doc =
-      new PDFDocument();
+      new PDFDocument({
+        margin: 50,
+      });
 
     const buffers: Buffer[] =
       [];
 
     doc.on(
       "data",
-      buffers.push.bind(
-        buffers
-      )
+      (
+        chunk: Buffer
+      ) => {
+        buffers.push(
+          chunk
+        );
+      }
     );
 
-    doc.on("end", async () => {
-      const pdfBuffer =
-        Buffer.concat(
-          buffers
-        );
-
-      await bot.telegram.sendDocument(
-        userId,
-        Input.fromBuffer(
-          pdfBuffer,
-          "GPA-Hisobot.pdf"
-        ),
-        {
-          caption:
-            "📄 GPA hisobot tayyor",
+    const pdfPromise =
+      new Promise<Buffer>(
+        (
+          resolve
+        ) => {
+          doc.on(
+            "end",
+            () => {
+              resolve(
+                Buffer.concat(
+                  buffers
+                )
+              );
+            }
+          );
         }
       );
-    });
+
+    // HEADER
+    doc
+      .fontSize(24)
+      .text(
+        "Talaba AI",
+        {
+          align:
+            "center",
+        }
+      );
 
     doc
-      .fontSize(22)
+      .fontSize(18)
       .text(
-        "Talaba AI - GPA Hisobot"
+        "GPA Hisobot",
+        {
+          align:
+            "center",
+        }
       );
 
     doc.moveDown();
@@ -59,35 +87,73 @@ export async function POST(
     doc
       .fontSize(14)
       .text(
-        `GPA: ${gpa.toFixed(
+        `GPA Natijasi: ${gpa.toFixed(
           2
         )} / 5`
       );
 
+    doc.text(
+      `Sana: ${new Date().toLocaleDateString(
+        "uz-UZ"
+      )}`
+    );
+
     doc.moveDown();
 
+    // TABLE HEADER
     doc
       .fontSize(16)
-      .text("Fanlar:");
+      .text(
+        "Fanlar ro'yxati"
+      );
+
+    doc.moveDown(
+      0.5
+    );
 
     subjects.forEach(
       (
         subject: any,
         index: number
       ) => {
+        doc
+          .fontSize(12)
+          .text(
+            `${index + 1}. ${
+              subject.name ||
+              "Fan"
+            }`
+          );
+
         doc.text(
-          `${index + 1}. ${
-            subject.name
-          } | Kredit: ${
+          `Kredit: ${
             subject.credit
-          } | Ball: ${
+          }`
+        );
+
+        doc.text(
+          `Ball: ${
             subject.score
           }`
+        );
+
+        doc.moveDown(
+          0.5
         );
       }
     );
 
     doc.end();
+
+    const pdfBuffer =
+      await pdfPromise;
+
+    // TELEGRAMGA YUBORISH
+    await sendFileToTelegram(
+      Number(userId),
+      pdfBuffer,
+      "GPA-Hisobot.pdf"
+    );
 
     return NextResponse.json(
       {
@@ -95,12 +161,15 @@ export async function POST(
       }
     );
   } catch (error) {
-    console.log(error);
+    console.error(
+      "GPA PDF error:",
+      error
+    );
 
     return NextResponse.json(
       {
         error:
-          "PDF send error",
+          "PDF yuborishda xatolik",
       },
       {
         status: 500,
