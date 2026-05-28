@@ -23,7 +23,7 @@ const features = [
   {
     icon: "🧠",
     title: "Quiz",
-    desc: "AI test yaratadi",
+    desc: "PDF yoki test fayldan quiz",
     color:
       "from-violet-500/20 to-fuchsia-500/10",
     link: "#",
@@ -31,15 +31,23 @@ const features = [
   {
     icon: "🤖",
     title: "AI Chat",
-    desc: "Fanlardan yordamchi chat",
+    desc: "Fanlardan AI yordamchi",
     color:
       "from-orange-500/20 to-amber-500/10",
     link: "#",
   },
   {
+  icon: "🛠",
+  title: "Talaba Yordamchi",
+  desc: "GPA, PPT va hujjat vositalari",
+  color:
+    "from-cyan-500/20 to-blue-500/10",
+  link: "#",
+},
+  {
     icon: "📝",
-    title: "Smart Notes",
-    desc: "Qisqa konspektlar",
+    title: "5 Daqiqada Tayyor",
+desc: "Qisqa konspekt va tayyorlash",
     color:
       "from-pink-500/20 to-rose-500/10",
     link: "#",
@@ -95,16 +103,16 @@ export default function Home() {
       <div className="max-w-md mx-auto px-4 py-4">
 
         {/* Header */}
-        <div className="rounded-[30px] border border-cyan-500/10 bg-gradient-to-b from-[#1a2635] to-[#16202d] p-4 mb-4 shadow-[0_0_30px_rgba(0,180,255,0.06)]">
+        <div className="rounded-[26px] border border-cyan-500/10 bg-gradient-to-b from-[#1a2635] to-[#16202d] p-3 mb-3 shadow-[0_0_30px_rgba(0,180,255,0.06)]">
 
           <div className="flex items-center gap-3">
             <div
               className="
-                h-16 w-16 rounded-[22px]
+                h-14 w-14 rounded-[18px]
                 bg-[#121c29]
                 border border-cyan-400
                 flex items-center justify-center
-                text-3xl
+                text-2xl
                 shadow-[0_0_20px_rgba(0,170,255,0.20)]
                 shrink-0
               "
@@ -113,7 +121,7 @@ export default function Home() {
             </div>
 
             <div>
-              <h1 className="text-[34px] font-bold leading-none">
+              <h1 className="text-[28px] font-bold leading-none">
                 Talaba AI
               </h1>
 
@@ -127,22 +135,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Search */}
-          <div className="mt-4">
-            <input
-              placeholder="Fan, savol yoki mavzu qidiring..."
-              className="
-                w-full
-                rounded-[20px]
-                bg-[#243140]
-                border border-white/5
-                px-4 py-3
-                text-[15px]
-                outline-none
-                placeholder:text-slate-500
-              "
-            />
-          </div>
         </div>
 
         {/* Feature Cards */}
