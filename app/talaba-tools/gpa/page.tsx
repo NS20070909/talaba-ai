@@ -14,13 +14,21 @@ export default function GPAPage() {
   const sendToTelegram =
   async () => {
     try {
+      const tg =
+        (
+          window as any
+        ).Telegram
+          ?.WebApp;
+
       const userId =
-        new URLSearchParams(
-          window.location
-            .search
-        ).get(
-          "userId"
-        );
+        tg
+          ?.initDataUnsafe
+          ?.user?.id;
+
+      console.log(
+        "TG USER:",
+        userId
+      );
 
       if (!userId) {
         alert(
@@ -29,35 +37,53 @@ export default function GPAPage() {
         return;
       }
 
-      await fetch(
-        "/api/send-gpa",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body:
-            JSON.stringify(
-              {
-                userId:
-                  Number(
-                    userId
-                  ),
-                subjects,
-                gpa: result,
-              }
-            ),
-        }
+      const response =
+        await fetch(
+          "/api/send-gpa",
+          {
+            method:
+              "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body:
+              JSON.stringify(
+                {
+                  userId,
+                  subjects,
+                  gpa:
+                    result,
+                }
+              ),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      console.log(
+        data
       );
 
-      alert(
-        "Telegramga yuborildi ✅"
-      );
+      if (
+        response.ok
+      ) {
+        alert(
+          "Telegramga yuborildi ✅"
+        );
+      } else {
+        alert(
+          data.error ||
+            "Xatolik ❌"
+        );
+      }
     } catch (
       error
     ) {
-      console.log(error);
+      console.error(
+        error
+      );
 
       alert(
         "Xatolik ❌"
