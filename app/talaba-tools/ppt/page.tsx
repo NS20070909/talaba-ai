@@ -123,7 +123,7 @@ async () => {
 
     const response =
       await fetch(
-        "/api/generate-ppt",
+        "/api/send-ppt-telegram",
         {
           method: "POST",
           headers: {
@@ -131,16 +131,14 @@ async () => {
               "application/json",
           },
           body:
-            JSON.stringify({
-              topic,
-              slides,
-              language,
-              style,
-              send_to_telegram:
-                true,
-              telegram_user_id:
-                userId,
-            }),
+  JSON.stringify({
+    fileUrl:
+      downloadUrl,
+    telegram_user_id:
+      userId,
+    send_to_telegram:
+      true,
+  }),
         }
       );
 
