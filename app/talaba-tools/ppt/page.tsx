@@ -99,78 +99,86 @@ async () => {
   }
 };
 const handleTelegramSend =
-async () => {
-  try {
-    setLoading(true);
+  async () => {
+    try {
+      setLoading(true);
 
-    const tg =
-      (window as any)
-        ?.Telegram
-        ?.WebApp;
+      const tg =
+        (window as any)
+          ?.Telegram
+          ?.WebApp;
 
-    tg?.ready();
+      tg?.ready();
 
-    const userId =
-      tg?.initDataUnsafe
-        ?.user?.id;
+      const userId =
+        tg?.initDataUnsafe
+          ?.user?.id;
 
-    if (!userId) {
-      alert(
-        "Telegram ichidan oching"
-      );
-      return;
-    }
+      if (!userId) {
+        alert(
+          "Telegram ichidan oching"
+        );
+        return;
+      }
 
-    const response =
-  await fetch(
-    "/api/generate-ppt",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          "application/json",
-      },
+      if (!downloadUrl) {
+        alert(
+          "Avval PPT yarating"
+        );
+        return;
+      }
 
-      body:
-        JSON.stringify({
-          topic,
-          slides,
-          language,
-          style,
-          send_to_telegram:
-            true,
-          telegram_user_id:
-            userId,
-        }),
-    }
-  );
+      const response =
+        await fetch(
+          "/api/send-ppt-telegram",
+          {
+            method:
+              "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
 
-    const data =
-      await response.json();
+            body:
+              JSON.stringify({
+                fileUrl:
+                  downloadUrl,
+                telegram_user_id:
+                  userId,
+              }),
+          }
+        );
 
-    if (
-      data.success
-    ) {
-      alert(
-        "✅ PPT Telegram chatga yuborildi"
-      );
-    }
-  } catch (
-    error
-  ) {
-    console.error(
+      const data =
+        await response.json();
+
+      if (
+        data.success
+      ) {
+        alert(
+          "✅ PPT Telegram chatga yuborildi"
+        );
+      } else {
+        alert(
+          "❌ Telegramga yuborishda xatolik"
+        );
+      }
+    } catch (
       error
-    );
+    ) {
+      console.error(
+        error
+      );
 
-    alert(
-      "❌ Telegramga yuborishda xatolik"
-    );
-  } finally {
-    setLoading(
-      false
-    );
-  }
-};
+      alert(
+        "❌ Telegramga yuborishda xatolik"
+      );
+    } finally {
+      setLoading(
+        false
+      );
+    }
+  };
   return (
     <main className="min-h-screen bg-[#071120] text-white">
       <div className="max-w-md mx-auto px-4 py-5">
