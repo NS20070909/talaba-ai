@@ -147,7 +147,33 @@ async function tryOpenRouter(
         );
 
       const data =
-        await response.json();
+  await response.json();
+
+console.log(
+  "OR STATUS:",
+  response.status
+);
+
+console.log(
+  "OR RESPONSE:",
+  JSON.stringify(
+    data,
+    null,
+    2
+  )
+);
+
+if (
+  !response.ok
+) {
+  throw new Error(
+    data?.error
+      ?.message ||
+      "OpenRouter failed"
+  );
+}
+
+
 
       const text =
         data?.choices?.[0]
@@ -162,12 +188,14 @@ async function tryOpenRouter(
         return text;
       }
     } catch (
+  error: any
+) {
+  console.error(
+    `Failed OR: ${model}`,
+    error?.message ||
       error
-    ) {
-      console.log(
-        `Failed ${model}`
-      );
-    }
+  );
+}
   }
 
   return null;
