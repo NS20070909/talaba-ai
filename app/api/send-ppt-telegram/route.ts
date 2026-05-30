@@ -44,26 +44,46 @@ console.log(
   fullFileUrl
 );
 
-    const telegramResponse =
-      await fetch(
-        `https://api.telegram.org/bot${botToken}/sendDocument`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body:
-            JSON.stringify({
-              chat_id:
-                telegram_user_id,
-              document:
-                fullFileUrl,
-              caption:
-                "✅ PPT tayyor",
-            }),
-        }
-      );
+   const formData =
+  new FormData();
+
+formData.append(
+  "chat_id",
+  telegram_user_id.toString()
+);
+
+const fileResponse =
+  await fetch(
+    fullFileUrl
+  );
+
+const fileBlob =
+  await fileResponse.blob();
+
+formData.append(
+  "document",
+  fileBlob,
+  fileUrl
+    .split("/")
+    .pop() ||
+    "presentation.pptx"
+);
+
+formData.append(
+  "caption",
+  "✅ PPT tayyor"
+);
+
+const telegramResponse =
+  await fetch(
+    `https://api.telegram.org/bot${botToken}/sendDocument`,
+    {
+      method:
+        "POST",
+      body:
+        formData,
+    }
+  );
 
     const data =
       await telegramResponse.json();
