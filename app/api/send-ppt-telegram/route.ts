@@ -57,6 +57,14 @@ const fileResponse =
     fullFileUrl
   );
 
+if (
+  !fileResponse.ok
+) {
+  throw new Error(
+    `File fetch failed: ${fileResponse.status}`
+  );
+}
+
 const fileBlob =
   await fileResponse.blob();
 
