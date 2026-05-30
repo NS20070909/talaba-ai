@@ -12,14 +12,14 @@ const tools = [
     active: true,
   },
   {
-    icon: "📊",
-    title: "Slayd Tayyorlash",
-    desc: "AI orqali PPT va prezentatsiya",
-    color:
-      "from-violet-500/20 to-fuchsia-500/10",
-    link: "#",
-    active: false,
-  },
+  icon: "📊",
+  title: "Slayd Tayyorlash",
+  desc: "AI orqali PPT va prezentatsiya",
+  color:
+    "from-violet-500/20 to-fuchsia-500/10",
+  link: "/talaba-tools/ppt",
+  active: true,
+},
   {
     icon: "📄",
     title: "Referat Formatlash",

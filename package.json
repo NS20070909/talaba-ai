@@ -11,6 +11,7 @@
   "dependencies": {
     "@google/genai": "^2.6.0",
     "@google/generative-ai": "^0.24.1",
+    "axios": "^1.16.1",
     "cloudconvert": "^3.0.0",
     "docx": "^9.7.1",
     "file-saver": "^2.0.5",
@@ -23,6 +24,7 @@
     "pdf2json": "^4.0.3",
     "pdfjs-dist": "^5.7.284",
     "pdfkit": "^0.18.0",
+    "pptxgenjs": "^4.0.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-dropzone": "^15.0.0",
