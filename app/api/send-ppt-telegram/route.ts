@@ -34,6 +34,15 @@ export async function POST(
 
     const fullFileUrl =
       `${process.env.APP_URL}${fileUrl}`;
+      console.log(
+  "FILE URL:",
+  fileUrl
+);
+
+console.log(
+  "FULL URL:",
+  fullFileUrl
+);
 
     const telegramResponse =
       await fetch(
