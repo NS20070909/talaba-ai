@@ -78,7 +78,7 @@ Short premium presentation content with bullets.
 
 4. TITLES:
 
-- Maximum 3–7 words
+- Maximum 10-12 words
 - Powerful
 - Professional
 - Clean
