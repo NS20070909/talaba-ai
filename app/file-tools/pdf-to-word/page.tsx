@@ -122,6 +122,16 @@ export default function PdfToWordPage() {
           file
         );
 
+        const userId =
+          localStorage.getItem("telegram_user_id");
+
+        if (userId) {
+          formData.append(
+            "telegram_user_id",
+            userId
+          );
+        }
+
         const response =
           await fetch(
             "/api/convert-pdf-to-word",
@@ -134,6 +144,15 @@ export default function PdfToWordPage() {
         if (!response.ok) {
           const data =
             await response.json();
+
+          if (
+            response.status === 403 &&
+            data.error === "LIMIT_REACHED"
+          ) {
+            throw new Error(
+              "❌ Sizning kunlik PDF limiti tugagan."
+            );
+          }
 
           throw new Error(
             data.error ||
@@ -238,6 +257,18 @@ export default function PdfToWordPage() {
           );
 
         if (!response.ok) {
+          const data =
+            await response.json();
+
+          if (
+            response.status === 403 &&
+            data.error === "LIMIT_REACHED"
+          ) {
+            throw new Error(
+              "❌ Sizning kunlik PDF limiti tugagan."
+            );
+          }
+
           throw new Error(
             "Telegramga yuborishda xatolik"
           );
@@ -250,7 +281,9 @@ export default function PdfToWordPage() {
         console.error(error);
 
         alert(
-          "❌ Telegramga yuborilmadi"
+          error instanceof Error
+            ? error.message
+            : "❌ Telegramga yuborilmadi"
         );
       } finally {
         setLoading(false);

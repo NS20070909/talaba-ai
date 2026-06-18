@@ -94,6 +94,59 @@ Slide 6 = content
 Last slide = summary
 
 6. SMART DESIGN:
+STATISTICS RULE:
+
+When topic contains:
+
+- statistics
+- market
+- growth
+- data
+- trend
+- AI
+- cyber security
+- business
+You MUST include at least 1 slide with:
+This slide MUST include a stat content block.
+
+Example:
+
+{
+  "type": "stat",
+  "value": "83%",
+  "label": "Enterprise Adoption"
+}
+
+"layoutType": "statistics-highlight"
+
+Inside contentBlocks add:
+
+{
+"type": "stat",
+"value": "78%",
+"label": "Key Metric"
+}
+
+Example:
+
+{
+"layoutType": "statistics-highlight",
+"title": "AI Growth Statistics",
+"contentBlocks": [
+{
+"type": "paragraph",
+"content": "Artificial intelligence adoption is growing rapidly."
+},
+{
+"type": "stat",
+"value": "83%",
+"label": "Enterprise Adoption"
+}
+],
+"imageQuery": "cinematic artificial intelligence statistics futuristic dashboard",
+"designIdea": "premium statistic layout"
+}
+
 
 Science:
 → diagrams

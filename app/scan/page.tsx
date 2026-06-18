@@ -134,6 +134,9 @@ export default function ScanPage() {
           return;
         }
 
+        const telegram_user_id =
+          localStorage.getItem("telegram_user_id");
+
         const res =
           await fetch(
             "/api/analyze",
@@ -151,6 +154,7 @@ export default function ScanPage() {
                   {
                     image:
                       base64Image,
+                    telegram_user_id,
                   }
                 ),
             }
@@ -159,10 +163,15 @@ export default function ScanPage() {
         const data =
           await res.json();
 
-        setResult(
-          data.result ||
-            "❌ Javob topilmadi"
-        );
+        if (res.status === 403 && data.error === "LIMIT_REACHED") {
+          setResult("❌ Sizning kunlik Scan limiti tugagan.");
+        } else if (data.message) {
+          setResult(data.message);
+        } else if (data.result) {
+          setResult(data.result);
+        } else {
+          setResult("❌ Javob topilmadi");
+        }
       } catch (
         error
       ) {

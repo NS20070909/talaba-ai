@@ -1,7 +1,12 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 import { NextResponse } from "next/server";
 import PptxGenJS from "pptxgenjs";
 import { generateOutline } from "@/app/talaba-tools/ppt/actions";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
+import { canUsePPT, incrementPPT } from "@/lib/limit-checker";
 import fs from "fs";
 import path from "path";
 import axios from "axios";
@@ -94,6 +99,23 @@ export async function POST(
     const sendToTelegram =
       body.send_to_telegram;
 
+    const telegramId = Number(telegramUserId);
+    if (telegramId && !isNaN(telegramId)) {
+      const limitCheck = await canUsePPT(telegramId);
+      if (!limitCheck.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "LIMIT_REACHED",
+            message: "Sizning kunlik PPT limiti tugagan.",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+    }
+
     const result =
   await generateOutline({
     topic:
@@ -120,6 +142,78 @@ const outline =
   result.outline;
     const pptx =
       new PptxGenJS();
+      // SINGLE THEME FOR WHOLE PRESENTATION
+const presentationTheme =
+  themes[
+    Math.floor(
+      Math.random() *
+        themes.length
+    )
+  ];
+
+// PRELOAD ALL IMAGES IN PARALLEL
+const imageUrls =
+  await Promise.all(
+    outline.map(
+      async (
+        item: any
+      ) => {
+        const isIslamicTopic =
+          body.topic
+            ?.toLowerCase()
+            ?.includes(
+              "islom"
+            ) ||
+          body.topic
+            ?.toLowerCase()
+            ?.includes(
+              "islam"
+            ) ||
+          body.topic
+            ?.toLowerCase()
+            ?.includes(
+              "muhammad"
+            ) ||
+          body.topic
+            ?.toLowerCase()
+            ?.includes(
+              "payg'ambar"
+            ) ||
+          body.topic
+            ?.toLowerCase()
+            ?.includes(
+              "xalifalik"
+            );
+
+        const imageQuery =
+          isIslamicTopic
+            ? `
+${item.imageQuery || body.topic},
+ultra realistic cinematic islamic architecture,
+golden lighting,
+premium presentation background,
+4k,
+respectful islamic art,
+NO prophet face,
+NO visible face,
+spiritual lighting,
+historical islamic atmosphere
+`
+            : `
+${item.imageQuery || body.topic},
+ultra realistic cinematic,
+premium presentation background,
+dramatic lighting,
+4k,
+professional presentation style
+`;
+
+        return await getPexelsImage(
+          imageQuery
+        );
+      }
+    )
+  );
 
     pptx.layout =
       "LAYOUT_WIDE";
@@ -135,17 +229,17 @@ const outline =
 
     pptx.title =
       body.topic;
-          for (const item of outline) {
+          for (
+  const [
+    index,
+    item,
+  ] of outline.entries()
+) {
       const slide =
         pptx.addSlide();
 
-      const theme =
-        themes[
-          Math.floor(
-            Math.random() *
-              themes.length
-          )
-        ];
+     const theme =
+  presentationTheme;
         const slideContent =
   item.contentBlocks
     ?.map(
@@ -299,10 +393,9 @@ professional presentation style
 `;
 
 const imageUrl =
-  await getPexelsImage(
-    imageQuery
-  );
-
+  imageUrls[
+    index
+  ];
       if (
   imageUrl
 ) {
@@ -346,100 +439,65 @@ const imageUrl =
 }
 
       // TOP ACCENT
-      slide.addShape(
-        pptx.ShapeType
-          .rect,
-        {
-          x: 0,
-          y: 0,
-          w: 13.33,
-          h: 0.08,
-          fill: {
-            color:
-              theme.accent,
-          },
-          line: {
-            color:
-              theme.accent,
-          },
-        }
-      );
+slide.addShape(
+  pptx.ShapeType.rect,
+  {
+    x: 0,
+    y: 0,
+    w: 13.33,
+    h: 0.08,
+    fill: {
+      color:
+        theme.accent,
+    },
+    line: {
+      color:
+        theme.accent,
+    },
+  }
+);
 
-      // COVER
-      if (
-        item.layoutType ===
-        "hero-cover"
-      ) {
-        if (
-          imageUrl
-        ) {
-          slide.addImage({
-            path:
-              imageUrl,
-            x: 0,
-            y: 0,
-            w: 13.33,
-            h: 7.5,
-          });
+// HERO COVER
+if (
+  item.layoutType ===
+  "hero-cover"
+) {
+  slide.addText(
+    item.title ||
+      "",
+    {
+      x: 0.9,
+      y: 2.2,
+      w: 8,
+      h: 1.2,
+      fontFace:
+        "Aptos",
+      fontSize: 28,
+      bold: true,
+      color:
+        "FFFFFF",
+      fit:
+        "shrink",
+    }
+  );
 
-          slide.addShape(
-            pptx.ShapeType
-              .rect,
-            {
-              x: 0,
-              y: 0,
-              w: 13.33,
-              h: 7.5,
-              fill: {
-                color:
-                  "000000",
-                transparency: 65,
-              },
-              line: {
-                color:
-                  "000000",
-                transparency: 100,
-              },
-            }
-          );
-        }
-
-        slide.addText(
-          item.title ||
-            "",
-          {
-            x: 0.9,
-            y: 2.2,
-            w: 8,
-            h: 1.2,
-            fontFace:
-              "Aptos",
-            fontSize: 28,
-            bold: true,
-            color:
-              "FFFFFF",
-            fit:
-              "shrink",
-          }
-        );
-
-        slide.addText(
-          slideContent,
-          {
-            x: 0.9,
-            y: 3.5,
-            w: 6.5,
-            h: 1.5,
-            fontFace:
-              "Aptos",
-            fontSize: 16,
-            color:
-              "E2E8F0",
-            fit:
-              "shrink",
-          }
-        );
-      }
+  slide.addText(
+    slideContent,
+    {
+      x: 0.9,
+      y: 3.5,
+      w: 6.5,
+      h: 1.5,
+      fontFace:
+        "Aptos",
+      fontSize: 16,
+      color:
+        "E2E8F0",
+      fit:
+        "shrink",
+    }
+  );
+}
 
     // IMAGE LEFT
 else if (
@@ -675,13 +733,19 @@ else if (
      // CONTENT
 else if (
   item.layoutType ===
-"premium-content" ||
-item.layoutType ===
-"split-insight" ||
-item.layoutType ===
-"feature-grid" ||
-item.layoutType ===
-"vertical-timeline"
+"premium-content"||
+
+  item.layoutType ===
+    "split-insight" ||
+
+  item.layoutType ===
+    "feature-grid" ||
+
+  item.layoutType ===
+    "vertical-timeline" ||
+
+  item.layoutType ===
+    "statistics-highlight"
 ) {
         slide.addText(
           item.title ||
@@ -784,9 +848,100 @@ fontSize: 10,
     }
   );
 }
+
+// STATISTICS HIGHLIGHT
+if (
+  item.layoutType ===
+  "statistics-highlight" &&
+  item.layoutType !==
+    "vertical-timeline"
+) {
+  const statBlock =
+    item.contentBlocks?.find(
+      (
+        block: any
+      ) =>
+        block.type ===
+        "stat"
+    );
+
+  const statValue =
+    statBlock?.value ||
+    "78%";
+
+  const statLabel =
+    statBlock?.label ||
+    "Key Metric";
+
+  // CARD
+  slide.addShape(
+    pptx.ShapeType
+      .roundRect,
+    {
+      x: 8.2,
+y: 1.8,
+w: 2.6,
+h: 1.5,
+      rectRadius:
+        0.12,
+      fill: {
+        color:
+          theme.accent,
+        transparency:
+          85,
+      },
+      line: {
+        color:
+          theme.accent,
+      },
+    }
+  );
+
+  // BIG NUMBER
+  slide.addText(
+    statValue,
+    {
+      x: 8.35,
+y: 2.05,
+w: 2.2,
+h: 0.7,
+      fontFace:
+        "Aptos",
+      fontSize: 35,
+      bold: true,
+      color:
+        theme.accent,
+      align:
+        "center",
+      fit:
+        "shrink",
+    }
+  );
+
+  // LABEL
+  slide.addText(
+    statLabel,
+    {
+      x: 8.25,
+y: 2.75,
+w: 2.4,
+      fontFace:
+        "Aptos",
+      fontSize: 15,
+      bold: true,
+      color:
+        theme.text,
+      align:
+        "center",
+    }
+  );
+}
+
 // AUTO CHART
 if (
-  item.chart
+  item.chart &&
+  item.layoutType !==
+    "vertical-timeline"
 ) {
   slide.addChart(
     item.chart?.type ||
@@ -812,10 +967,10 @@ if (
     ],
 
     {
-      x: 8.35,
-y: 2.25,
-w: 2.4,
-h: 1.4,
+     x: 8.2,
+y: 3.6,
+w: 2.8,
+h: 1.3,
 
       showLegend:
         false,
@@ -910,7 +1065,7 @@ if (
 slide.addShape(
   pptx.ShapeType.line,
   {
-    x: 10.1,
+    x: 9.5,
     y: 3.3,
     w: 0,
     h: 0.8,
@@ -931,8 +1086,8 @@ slide.addShape(
       {
         x,
         y: 2.9,
-        w: 0.18,
-        h: 0.18,
+       w: 0.12,
+h: 0.12,
         fill: {
           color:
             theme.accent,
@@ -949,10 +1104,10 @@ if (imageUrl) {
   slide.addImage({
     path:
       imageUrl,
-    x: 8.9,
-    y: 2,
-    w: 2.5,
-    h: 2.1,
+    x: 10.15,
+y: 1.45,
+w: 1.1,
+h: 0.9,
   });
 }
    }
@@ -1300,11 +1455,7 @@ else {
 
       // SLIDE NUMBER
       slide.addText(
-        `${
-          outline.indexOf(
-  item
-) + 1
-        }`,
+  `${index + 1}`,
         {
           x: 12,
           y: 6.8,
@@ -1337,6 +1488,10 @@ else {
       fileName:
         filePath,
     });
+
+    if (telegramId && !isNaN(telegramId)) {
+      await incrementPPT(telegramId);
+    }
 
     // TELEGRAM
     if (

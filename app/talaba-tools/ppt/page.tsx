@@ -41,6 +41,7 @@ async () => {
   );
 
   try {
+    const telegram_user_id = localStorage.getItem("telegram_user_id");
     const response =
       await fetch(
         "/api/generate-ppt",
@@ -57,6 +58,7 @@ async () => {
               slides,
               language,
               style,
+              telegram_user_id,
             }),
         }
       );

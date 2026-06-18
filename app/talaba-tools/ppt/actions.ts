@@ -37,6 +37,11 @@ const GEMINI_MODELS = [
 
   // emergency
   "gemini-1.5-flash-8b",
+  // PRIMARY (eng tez + sifatli)
+  "gemini-2.5-flash-preview-05-20",
+
+  // FAST FALLBACK
+  "gemini-2.0-flash",
 ];
 
 const OPENROUTER_MODELS = [
@@ -78,7 +83,7 @@ async function tryGemini(
                 "Timeout"
               )
             ),
-          10000
+          30000
         )
     ),
   ]);

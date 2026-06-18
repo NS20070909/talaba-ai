@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
+import { canUseScan, incrementScan } from "@/lib/limit-checker";
 
 const genAI =
   new GoogleGenerativeAI(
@@ -13,6 +14,7 @@ export async function POST(
   try {
     const {
       image,
+      telegram_user_id,
     } =
       await req.json();
 
@@ -27,6 +29,23 @@ export async function POST(
             400,
         }
       );
+    }
+
+    const telegramId = Number(telegram_user_id);
+    if (telegramId && !isNaN(telegramId)) {
+      const limitCheck = await canUseScan(telegramId);
+      if (!limitCheck.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "LIMIT_REACHED",
+            message: "Sizning kunlik Scan limiti tugagan.",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
     }
 
     const prompt = `
@@ -329,6 +348,10 @@ RASMNI DIQQAT BILAN O‘QI.
           }
         }
       }
+    }
+
+    if (telegramId && !isNaN(telegramId)) {
+      await incrementScan(telegramId);
     }
 
     return NextResponse.json(

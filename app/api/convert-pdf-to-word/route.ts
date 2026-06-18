@@ -11,6 +11,7 @@ import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
+import { canUsePDF, incrementPDF } from "@/lib/limit-checker";
 
 const execAsync =
   promisify(exec);
@@ -115,6 +116,21 @@ export async function POST(
       formData.get(
         "telegram_user_id"
       ) as string | null;
+
+    const telegramId = Number(userId);
+    if (telegramId && !isNaN(telegramId)) {
+      const limitCheck = await canUsePDF(telegramId);
+      if (!limitCheck.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "LIMIT_REACHED",
+            message: "Sizning kunlik PDF limiti tugagan.",
+          },
+          { status: 403 }
+        );
+      }
+    }
 
     const sendToTelegram =
       formData.get(
@@ -271,6 +287,10 @@ export async function POST(
         fileName
       );
 
+      if (telegramId && !isNaN(telegramId)) {
+        await incrementPDF(telegramId);
+      }
+
       return NextResponse.json(
         {
           success:
@@ -280,6 +300,10 @@ export async function POST(
     }
 
     // DOWNLOAD
+    if (telegramId && !isNaN(telegramId)) {
+      await incrementPDF(telegramId);
+    }
+
     return new Response(
       new Uint8Array(
         buffer
