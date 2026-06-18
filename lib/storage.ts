@@ -122,10 +122,10 @@ export async function getUsageStats(telegramId: number): Promise<UsageStats> {
     return mapUsageStats(data);
   }
 
-  // Explicitly check that user exists before creating usage stats
+  // Ensure user exists before creating usage stats (auto-create if missing)
   const user = await getUser(telegramId);
   if (!user) {
-    throw new Error(`User with telegramId ${telegramId} does not exist in users table.`);
+    await createUser(telegramId, "Telegram User", undefined, "FREE");
   }
 
   const { data: insertedData, error: insertError } = await supabase
