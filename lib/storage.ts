@@ -1,10 +1,46 @@
 import { User, UsageStats, PlanType } from "./user";
+import { supabase } from "./supabase";
 
-const usersMap = new Map<number, User>();
-const usageStatsMap = new Map<number, UsageStats>();
+function mapUser(row: any): User {
+  return {
+    telegramId: Number(row.telegram_id),
+    firstName: row.first_name,
+    username: row.username || undefined,
+    plan: row.plan as PlanType,
+    premiumUntil: row.premium_until ? new Date(row.premium_until) : null,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
+}
+
+function mapUsageStats(row: any): UsageStats {
+  return {
+    telegramId: Number(row.telegram_id),
+    pptUsedToday: row.ppt_used_today,
+    pdfUsedToday: row.pdf_used_today,
+    scanUsedToday: row.scan_used_today,
+    lastResetDate: new Date(row.last_reset_date),
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
+}
 
 export async function getUser(telegramId: number): Promise<User | null> {
-  return usersMap.get(telegramId) || null;
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("telegram_id", telegramId)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      return null;
+    }
+    console.error("Error in getUser:", error);
+    throw error;
+  }
+
+  return data ? mapUser(data) : null;
 }
 
 export async function createUser(
@@ -13,80 +49,160 @@ export async function createUser(
   username?: string,
   plan: PlanType = "FREE"
 ): Promise<User> {
-  const user: User = {
-    telegramId,
-    firstName,
-    username,
-    plan,
-    premiumUntil: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-  usersMap.set(telegramId, user);
-  return user;
+  const { data, error } = await supabase
+    .from("users")
+    .insert({
+      telegram_id: telegramId,
+      first_name: firstName,
+      username: username || null,
+      plan: plan,
+      premium_until: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("Error in createUser:", error);
+    throw error;
+  }
+
+  return mapUser(data);
 }
 
 export async function updateUser(
   telegramId: number,
   updates: Partial<Omit<User, "telegramId" | "createdAt" | "updatedAt">>
 ): Promise<User | null> {
-  const user = usersMap.get(telegramId);
-  if (!user) return null;
-  
-  const updatedUser: User = {
-    ...user,
-    ...updates,
-    updatedAt: new Date(),
-  };
-  usersMap.set(telegramId, updatedUser);
-  return updatedUser;
+  const dbUpdates: any = {};
+  if (updates.firstName !== undefined) dbUpdates.first_name = updates.firstName;
+  if (updates.username !== undefined) dbUpdates.username = updates.username || null;
+  if (updates.plan !== undefined) dbUpdates.plan = updates.plan;
+  if (updates.premiumUntil !== undefined) {
+    dbUpdates.premium_until = updates.premiumUntil ? updates.premiumUntil.toISOString() : null;
+  }
+  dbUpdates.updated_at = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("users")
+    .update(dbUpdates)
+    .eq("telegram_id", telegramId)
+    .select("*")
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      return null;
+    }
+    console.error("Error in updateUser:", error);
+    throw error;
+  }
+
+  return data ? mapUser(data) : null;
 }
 
 export async function getUsageStats(telegramId: number): Promise<UsageStats> {
-  let stats = usageStatsMap.get(telegramId);
-  if (!stats) {
-    stats = {
-      telegramId,
-      pptUsedToday: 0,
-      pdfUsedToday: 0,
-      scanUsedToday: 0,
-      lastResetDate: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    usageStatsMap.set(telegramId, stats);
+  const { data, error } = await supabase
+    .from("usage_stats")
+    .select("*")
+    .eq("telegram_id", telegramId)
+    .single();
+
+  if (error && error.code !== "PGRST116") {
+    console.error("Error in getUsageStats select:", error);
+    throw error;
   }
-  return stats;
+
+  if (data) {
+    return mapUsageStats(data);
+  }
+
+  // Explicitly check that user exists before creating usage stats
+  const user = await getUser(telegramId);
+  if (!user) {
+    throw new Error(`User with telegramId ${telegramId} does not exist in users table.`);
+  }
+
+  const { data: insertedData, error: insertError } = await supabase
+    .from("usage_stats")
+    .insert({
+      telegram_id: telegramId,
+      ppt_used_today: 0,
+      pdf_used_today: 0,
+      scan_used_today: 0,
+      last_reset_date: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select("*")
+    .single();
+
+  if (insertError) {
+    if (insertError.code === "23505") {
+      const { data: refetchedData } = await supabase
+        .from("usage_stats")
+        .select("*")
+        .eq("telegram_id", telegramId)
+        .single();
+      if (refetchedData) {
+        return mapUsageStats(refetchedData);
+      }
+    }
+    console.error("Error in getUsageStats insert:", insertError);
+    throw insertError;
+  }
+
+  return mapUsageStats(insertedData);
 }
 
 export async function updateUsageStats(
   telegramId: number,
   updates: Partial<Omit<UsageStats, "telegramId" | "lastResetDate" | "createdAt" | "updatedAt">>
 ): Promise<UsageStats> {
-  const stats = await getUsageStats(telegramId);
-  
-  const updatedStats: UsageStats = {
-    ...stats,
-    ...updates,
-    updatedAt: new Date(),
-  };
-  usageStatsMap.set(telegramId, updatedStats);
-  return updatedStats;
+  await getUsageStats(telegramId);
+
+  const dbUpdates: any = {};
+  if (updates.pptUsedToday !== undefined) dbUpdates.ppt_used_today = updates.pptUsedToday;
+  if (updates.pdfUsedToday !== undefined) dbUpdates.pdf_used_today = updates.pdfUsedToday;
+  if (updates.scanUsedToday !== undefined) dbUpdates.scan_used_today = updates.scanUsedToday;
+  dbUpdates.updated_at = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from("usage_stats")
+    .update(dbUpdates)
+    .eq("telegram_id", telegramId)
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("Error in updateUsageStats:", error);
+    throw error;
+  }
+
+  return mapUsageStats(data);
 }
 
 export async function resetUsageStats(telegramId: number): Promise<UsageStats> {
-  const stats = usageStatsMap.get(telegramId);
-  const createdAt = stats ? stats.createdAt : new Date();
-  
-  const resetStats: UsageStats = {
-    telegramId,
-    pptUsedToday: 0,
-    pdfUsedToday: 0,
-    scanUsedToday: 0,
-    lastResetDate: new Date(),
-    createdAt,
-    updatedAt: new Date(),
-  };
-  usageStatsMap.set(telegramId, resetStats);
-  return resetStats;
+  await getUsageStats(telegramId);
+
+  const { data, error } = await supabase
+    .from("usage_stats")
+    .update({
+      ppt_used_today: 0,
+      pdf_used_today: 0,
+      scan_used_today: 0,
+      last_reset_date: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("telegram_id", telegramId)
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("Error in resetUsageStats:", error);
+    throw error;
+  }
+
+  return mapUsageStats(data);
 }

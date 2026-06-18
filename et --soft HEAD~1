@@ -1,0 +1,32 @@
+[33mcommit 8a891a39897091e442c93f8521250f3ca6eccc73[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: SuxCoder <narkabilovsuxrob0@gmail.com>
+Date:   Thu Jun 18 20:57:15 2026 +0500
+
+    Add PPT, Scan and PDF usage limits
+
+ app/api/analyze/route.ts                  |  23 [32m++[m
+ app/api/convert-pdf-to-word/route.ts      |  24 [32m++[m
+ app/api/generate-ppt/route.ts             | 411 [32m++++++++++++++++++++[m[31m----------[m
+ app/file-tools/pdf-to-word/page.tsx       |  35 [32m++[m[31m-[m
+ app/scan/page.tsx                         |  17 [32m+[m[31m-[m
+ app/talaba-tools/ppt/actions.ts           |   7 [32m+[m[31m-[m
+ app/talaba-tools/ppt/page.tsx             |   2 [32m+[m
+ app/talaba-tools/ppt/prompt.ts            |  53 [32m++++[m
+ lib/limit-checker.ts                      |  98 [32m+++++++[m
+ lib/limits.ts                             |  36 [32m+++[m
+ lib/storage.ts                            |  92 [32m+++++++[m
+ lib/user.ts                               |  33 [32m+++[m
+ public/AI_Statistics.pptx                 | Bin [31m0[m -> [32m1130760[m bytes
+ public/Sun_iy_Intellekt_Statistikasi.pptx | Bin [31m0[m -> [32m2678554[m bytes
+ public/ai.pptx                            | Bin [31m1140684[m -> [32m2245497[m bytes
+ public/ai_tarixi.pptx                     | Bin [31m0[m -> [32m3864341[m bytes
+ public/din.pptx                           | Bin [31m0[m -> [32m853563[m bytes
+ public/din_islom.pptx                     | Bin [31m0[m -> [32m563015[m bytes
+ public/fakfhd.pptx                        | Bin [31m0[m -> [32m913441[m bytes
+ public/falsafa.pptx                       | Bin [31m0[m -> [32m660996[m bytes
+ public/hisob.pptx                         | Bin [31m0[m -> [32m217548[m bytes
+ public/islom.pptx                         | Bin [31m0[m -> [32m495727[m bytes
+ public/islom_.pptx                        | Bin [31m0[m -> [32m571446[m bytes
+ public/islom_dini.pptx                    | Bin [31m0[m -> [32m500195[m bytes
+ public/tarix.pptx                         | Bin [31m0[m -> [32m3004836[m bytes
+ 25 files changed, 697 insertions(+), 134 deletions(-)
