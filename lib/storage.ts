@@ -1,5 +1,5 @@
 import { User, UsageStats, PlanType } from "./user";
-import { supabase } from "./supabase";
+import { getSupabase } from "./supabase";
 
 function mapUser(row: any): User {
   return {
@@ -26,6 +26,7 @@ function mapUsageStats(row: any): UsageStats {
 }
 
 export async function getUser(telegramId: number): Promise<User | null> {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("users")
     .select("*")
@@ -49,6 +50,7 @@ export async function createUser(
   username?: string,
   plan: PlanType = "FREE"
 ): Promise<User> {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("users")
     .insert({
@@ -84,6 +86,7 @@ export async function updateUser(
   }
   dbUpdates.updated_at = new Date().toISOString();
 
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("users")
     .update(dbUpdates)
@@ -103,6 +106,7 @@ export async function updateUser(
 }
 
 export async function getUsageStats(telegramId: number): Promise<UsageStats> {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("usage_stats")
     .select("*")
@@ -168,6 +172,7 @@ export async function updateUsageStats(
   if (updates.scanUsedToday !== undefined) dbUpdates.scan_used_today = updates.scanUsedToday;
   dbUpdates.updated_at = new Date().toISOString();
 
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("usage_stats")
     .update(dbUpdates)
@@ -186,6 +191,7 @@ export async function updateUsageStats(
 export async function resetUsageStats(telegramId: number): Promise<UsageStats> {
   await getUsageStats(telegramId);
 
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("usage_stats")
     .update({
