@@ -294,8 +294,7 @@ export default function PdfToWordPage() {
     };
 
   const handleUpgradeClick = () => {
-    setShowUpgradeToast(true);
-    setTimeout(() => setShowUpgradeToast(false), 3000);
+    window.location.href = "/premium";
   };
 
   return (
