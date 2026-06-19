@@ -1,9 +1,16 @@
 export type PlanType =
   | "FREE"
+  // Legacy plan names (kept for backward compatibility)
   | "STARTER"
   | "STUDENT"
   | "PRO"
-  | "PREMIUM";
+  | "PREMIUM"
+  // New duration-based plan names
+  | "DAY"
+  | "WEEK"
+  | "MONTH"
+  | "QUARTER"
+  | "YEAR";
 
 export interface User {
   telegramId: number;

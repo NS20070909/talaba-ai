@@ -1,5 +1,6 @@
 import { Telegraf, Input } from "telegraf";
 import { NextResponse } from "next/server";
+import { isOwner, isAdmin, getSystemStats, getUserInfo, getAdmins, addAdmin, removeAdmin } from "@/lib/admin";
 
 const bot = new Telegraf(
   process.env.TELEGRAM_BOT_TOKEN!
@@ -62,6 +63,7 @@ bot.start(async (ctx) => {
     `📚 <b>Buyruqlar:</b>\n` +
     `• 🚀 /talabaai — Mini App\n` +
     `• 📸 /scan — Bilet Scan\n` +
+    `• 💎 /premium — Premium tariflar\n` +
     `• 🆘 /help — Yordam\n` +
     `• ℹ️ /about — Platforma haqida\n\n` +
     `Boshlash uchun quyidagi tugmalardan birini bosing 👇`,
@@ -193,6 +195,57 @@ bot.command(
   }
 );
 
+// PREMIUM
+bot.command(
+  "premium",
+  async (ctx) => {
+    await ctx.replyWithHTML(
+      `👑 <b>Talaba AI Premium Tariflari</b>\n\n` +
+      `Ehtiyojingizga mos tarifni tanlang va barcha imkoniyatlardan to'liq foydalaning:\n\n` +
+      `🟢 <b>Starter</b> — 2 900 so'm\n` +
+      `📅 1 kun\n` +
+      `📸 Scan: 5\n` +
+      `📊 PPT: 3\n` +
+      `📄 PDF: 5\n\n` +
+      `🔵 <b>Weekly</b> — 11 900 so'm\n` +
+      `📅 7 kun\n` +
+      `📸 Scan: 50\n` +
+      `📊 PPT: 20\n` +
+      `📄 PDF: 50\n\n` +
+      `🟣 <b>Premium ⭐</b> — 29 900 so'm\n` +
+      `📅 30 kun\n` +
+      `📸 Scan: 300\n` +
+      `📊 PPT: 120\n` +
+      `📄 PDF: 300\n\n` +
+      `🟠 <b>Pro 🔥</b> — 69 900 so'm\n` +
+      `📅 90 kun\n` +
+      `📸 Scan: 1200\n` +
+      `📊 PPT: 500\n` +
+      `📄 PDF: 1200\n\n` +
+      `👑 <b>Elite</b> — 199 900 so'm\n` +
+      `📅 365 kun\n` +
+      `📸 Scan: 6000\n` +
+      `📊 PPT: 2500\n` +
+      `📄 PDF: 6000\n\n` +
+      `👇 Tariflarni faollashtirish va sotib olish uchun pastdagi tugmani bosing:`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🚀 Tariflarni ochish",
+                web_app: {
+                  url: "https://talaba-ai-production.up.railway.app/premium",
+                },
+              },
+            ],
+          ],
+        },
+      }
+    );
+  }
+);
+
 // SCAN
 bot.command(
   "scan",
@@ -268,6 +321,374 @@ bot.on(
     }
   }
 );
+
+// OWNER ONLY /admin COMMAND
+bot.command("admin", async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  // Visible ONLY to OWNER. Admins should NOT see the owner panel.
+  if (!isOwner(userId)) return;
+
+  await renderMainPanel(ctx);
+});
+
+// MAIN OWNER PANEL RENDERER
+async function renderMainPanel(ctx: any) {
+  try {
+    const stats = await getSystemStats();
+    const text = 
+      `🛡 <b>Talaba AI Owner Panel</b>\n\n` +
+      `👥 <b>Users:</b> ${stats.totalUsers}\n` +
+      `💎 <b>Premium:</b> ${stats.premiumUsers}\n` +
+      `🆓 <b>Free:</b> ${stats.freeUsers}\n\n` +
+      `📸 <b>Scan Today:</b> ${stats.scanToday}\n` +
+      `📊 <b>PPT Today:</b> ${stats.pptToday}\n` +
+      `📄 <b>PDF Today:</b> ${stats.pdfToday}`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "🔍 User Search", callback_data: "admin:search" },
+          { text: "📢 Broadcast", callback_data: "admin:broadcast" }
+        ],
+        [
+          { text: "👑 Admins", callback_data: "admin:admins" },
+          { text: "💎 Premium", callback_data: "admin:premium" }
+        ],
+        [
+          { text: "🚫 Ban System", callback_data: "admin:ban" },
+          { text: "📊 Statistics", callback_data: "admin:stats" }
+        ]
+      ]
+    };
+
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    } else {
+      await ctx.replyWithHTML(text, { reply_markup: keyboard });
+    }
+  } catch (error) {
+    console.error("renderMainPanel error:", error);
+  }
+}
+
+// SUBMENU RENDERERS
+async function renderAdminsMenu(ctx: any) {
+  const text = `👑 <b>Admin Management</b>\n\nManage bot administrators.`;
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "➕ Add Admin", callback_data: "admin:admins:add" },
+        { text: "➖ Remove Admin", callback_data: "admin:admins:remove" }
+      ],
+      [{ text: "📋 Admin List", callback_data: "admin:admins:list" }],
+      [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+    ]
+  };
+  await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+}
+
+async function renderPremiumMenu(ctx: any) {
+  const text = `💎 <b>Premium Management</b>\n\nManage user premium plans.`;
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "➕ Give Premium", callback_data: "admin:premium:give" },
+        { text: "➖ Remove Premium", callback_data: "admin:premium:remove" }
+      ],
+      [{ text: "📋 Premium Users", callback_data: "admin:premium:list" }],
+      [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+    ]
+  };
+  await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+}
+
+async function renderBanMenu(ctx: any) {
+  const text = `🚫 <b>Ban System</b>\n\nRestrict users from using the bot.`;
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "🚫 Ban User", callback_data: "admin:ban:ban" },
+        { text: "🔓 Unban User", callback_data: "admin:ban:unban" }
+      ],
+      [{ text: "📋 Banned Users", callback_data: "admin:ban:list" }],
+      [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+    ]
+  };
+  await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+}
+
+async function renderBroadcastMenu(ctx: any) {
+  const text = `📢 <b>Broadcast Center</b>\n\nSend messages to all users.`;
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: "💬 Start Broadcast", callback_data: "admin:broadcast:start" }],
+      [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+    ]
+  };
+  await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+}
+
+async function renderSearchMenu(ctx: any) {
+  const text = `🔍 <b>User Search</b>\n\nLook up user profiles by Telegram ID.`;
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: "🔍 Search by ID", callback_data: "admin:search:start" }],
+      [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+    ]
+  };
+  await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+}
+
+async function renderStatsMenu(ctx: any) {
+  try {
+    const stats = await getSystemStats();
+    const text = 
+      `📊 <b>Detailed Statistics</b>\n\n` +
+      `👥 <b>Total Users:</b> ${stats.totalUsers}\n` +
+      `💎 <b>Premium Users:</b> ${stats.premiumUsers}\n` +
+      `🆓 <b>Free Users:</b> ${stats.freeUsers}\n\n` +
+      `📸 <b>Scan Today:</b> ${stats.scanToday}\n` +
+      `📊 <b>PPT Today:</b> ${stats.pptToday}\n` +
+      `📄 <b>PDF Today:</b> ${stats.pdfToday}\n\n` +
+      `👑 <b>Admin Count:</b> ${stats.adminCount}`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+      ]
+    };
+    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+  } catch (error) {
+    console.error("renderStatsMenu error:", error);
+  }
+}
+
+// CALLBACK ACTIONS
+bot.action("admin:main", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await renderMainPanel(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:search", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await renderSearchMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:broadcast", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await renderBroadcastMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:admins", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await renderAdminsMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:premium", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await renderPremiumMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:ban", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await renderBanMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:stats", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await renderStatsMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+// INPUT REQUESTS ACTIONS
+bot.action("admin:search:start", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  userState[ctx.from!.id] = "owner:waiting_for_search";
+  await ctx.reply("🔍 Iltimos, qidiriladigan foydalanuvchining Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:broadcast:start", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  userState[ctx.from!.id] = "owner:waiting_for_broadcast";
+  await ctx.reply("📢 Iltimos, barcha foydalanuvchilarga yuboriladigan xabarni kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:admins:add", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  userState[ctx.from!.id] = "owner:waiting_for_add_admin";
+  await ctx.reply("➕ Iltimos, admin qilib qo'shiladigan foydalanuvchining Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:admins:remove", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  userState[ctx.from!.id] = "owner:waiting_for_remove_admin";
+  await ctx.reply("➖ Iltimos, admindan o'chiriladigan foydalanuvchining Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:premium:give", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  userState[ctx.from!.id] = "owner:waiting_for_give_premium";
+  await ctx.reply("💎 Iltimos, premium beriladigan foydalanuvchi ID si va planini kiriting (Masalan: 12345678 MONTH):");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:premium:remove", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  userState[ctx.from!.id] = "owner:waiting_for_remove_premium";
+  await ctx.reply("💎 Iltimos, premium tarif o'chiriladigan foydalanuvchining Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:ban:ban", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  userState[ctx.from!.id] = "owner:waiting_for_ban";
+  await ctx.reply("🚫 Iltimos, bloklanadigan foydalanuvchining Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:ban:unban", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  userState[ctx.from!.id] = "owner:waiting_for_unban";
+  await ctx.reply("🔓 Iltimos, blokdan chiqariladigan foydalanuvchining Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+// LIST HANDLERS
+bot.action("admin:admins:list", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+
+  try {
+    const list = await getAdmins();
+    const ownerId = 6630030492;
+    
+    let message = `👑 <b>Adminlar</b>\n\n`;
+    message += `1. <code>${ownerId}</code> (OWNER)\n`;
+    
+    let idx = 2;
+    for (const adminId of list) {
+      if (adminId !== ownerId) {
+        message += `${idx}. <code>${adminId}</code>\n`;
+        idx++;
+      }
+    }
+    
+    message += `\nTotal:\n${idx - 1}`;
+    
+    await ctx.replyWithHTML(message);
+  } catch (error) {
+    console.error("Error listing admins:", error);
+    await ctx.reply("❌ Adminlarni yuklashda xatolik yuz berdi.");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:premium:list", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await ctx.reply("💎 <b>Premium foydalanuvchilar:</b>\n\n(Hozircha faqat mock ro'yxat/integratsiya kutilmoqda)", { parse_mode: "HTML" });
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:ban:list", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await ctx.reply("🚫 <b>Bloklangan foydalanuvchilar:</b>\n\n(Hozircha faqat mock ro'yxat/integratsiya kutilmoqda)", { parse_mode: "HTML" });
+  await ctx.answerCbQuery();
+});
+
+// INPUT STATE RECEIVER
+bot.on("message", async (ctx, next) => {
+  const userId = ctx.from?.id;
+  if (!userId || !isOwner(userId)) {
+    return next();
+  }
+
+  const state = userState[userId];
+  if (!state || !state.startsWith("owner:")) {
+    return next();
+  }
+
+  const text = (ctx.message as any).text || "";
+  if (text.startsWith("/")) {
+    delete userState[userId];
+    return next();
+  }
+
+  // Clear state
+  delete userState[userId];
+
+  try {
+    if (state === "owner:waiting_for_search") {
+      await ctx.reply(`🔍 Qidiruv boshlandi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
+    } else if (state === "owner:waiting_for_broadcast") {
+      await ctx.reply(`📢 Broadcast boshlandi. Xabar:\n${text}\n(Integratsiya kutilmoqda)`);
+    } else if (state === "owner:waiting_for_add_admin") {
+      const targetId = Number(text.trim());
+      if (isNaN(targetId)) {
+        await ctx.reply("❌ Noto'g'ri Telegram ID. Raqam kiriting.");
+        return;
+      }
+      
+      const alreadyAdmin = await isAdmin(targetId);
+      if (alreadyAdmin) {
+        await ctx.replyWithHTML(`❌ Bu foydalanuvchi allaqachon admin`);
+        return;
+      }
+      
+      await addAdmin(targetId);
+      await ctx.replyWithHTML(`✅ Admin qo'shildi\n\nTelegram ID:\n<code>${targetId}</code>`);
+    } else if (state === "owner:waiting_for_remove_admin") {
+      const targetId = Number(text.trim());
+      if (isNaN(targetId)) {
+        await ctx.reply("❌ Noto'g'ri Telegram ID. Raqam kiriting.");
+        return;
+      }
+      
+      const ownerId = 6630030492;
+      if (targetId === ownerId) {
+        await ctx.reply("❌ Owner o'chirilishi mumkin emas!");
+        return;
+      }
+      
+      const alreadyAdmin = await isAdmin(targetId);
+      // Wait, isOwner is true for OWNER_ID but OWNER_ID is not in database, so we check if targetId matches list or isOwner
+      if (targetId === ownerId) {
+        await ctx.reply("❌ Owner o'chirilishi mumkin emas!");
+        return;
+      }
+
+      // Check if it's admin (we query the db because OWNER is not in db table, only admins)
+      const list = await getAdmins();
+      if (!list.includes(targetId)) {
+        await ctx.replyWithHTML(`❌ Bu foydalanuvchi admin emas`);
+        return;
+      }
+      
+      await removeAdmin(targetId);
+      await ctx.replyWithHTML(`✅ Admin o'chirildi\n\nTelegram ID:\n<code>${targetId}</code>`);
+    } else if (state === "owner:waiting_for_give_premium") {
+      await ctx.reply(`💎 Premium berish so'rovi: ${text}\n(Integratsiya kutilmoqda)`);
+    } else if (state === "owner:waiting_for_remove_premium") {
+      await ctx.reply(`💎 Premium o'chirish so'rovi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
+    } else if (state === "owner:waiting_for_ban") {
+      await ctx.reply(`🚫 Bloklash so'rovi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
+    } else if (state === "owner:waiting_for_unban") {
+      await ctx.reply(`🔓 Blokdan chiqarish so'rovi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
+    }
+  } catch (err) {
+    console.error("Owner message state receiver error:", err);
+  }
+});
 
 // WEBHOOK
 export async function POST(

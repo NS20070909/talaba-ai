@@ -1,6 +1,7 @@
 import { getUser, getUsageStats, updateUsageStats, resetUsageStats } from "./storage";
 import { PLAN_LIMITS } from "./limits";
 import { UsageStats, PlanType } from "./user";
+import { isBanned, checkAndExpirePremium } from "./admin";
 
 // Helper to get stats, resetting them if it's a new day
 export async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
@@ -17,9 +18,30 @@ export async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
 export interface CheckResult {
   allowed: boolean;
   remaining: number;
+  banned?: boolean;
 }
 
+// ── Shared guard: runs ban check + premium expiry before every limit check ──
+
+async function guardCheck(telegramId: number): Promise<{ blocked: boolean; result?: CheckResult }> {
+  // 1. Ban check
+  const banned = await isBanned(telegramId);
+  if (banned) {
+    return { blocked: true, result: { allowed: false, remaining: 0, banned: true } };
+  }
+
+  // 2. Auto-expire premium if past premium_until date
+  await checkAndExpirePremium(telegramId);
+
+  return { blocked: false };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function canUsePPT(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
   const user = await getUser(telegramId);
   const plan: PlanType = user ? user.plan : "FREE";
   
@@ -39,6 +61,9 @@ export async function canUsePPT(telegramId: number): Promise<CheckResult> {
 }
 
 export async function canUsePDF(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
   const user = await getUser(telegramId);
   const plan: PlanType = user ? user.plan : "FREE";
   
@@ -58,6 +83,9 @@ export async function canUsePDF(telegramId: number): Promise<CheckResult> {
 }
 
 export async function canUseScan(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
   const user = await getUser(telegramId);
   const plan: PlanType = user ? user.plan : "FREE";
   
