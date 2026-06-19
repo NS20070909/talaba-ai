@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import UsageStatsWidget from "@/components/UsageStatsWidget";
 
 const features = [
   {
@@ -137,6 +138,8 @@ export default function Home() {
           </div>
 
         </div>
+
+        <UsageStatsWidget />
 
         {/* Feature Cards */}
         <div className="space-y-3">

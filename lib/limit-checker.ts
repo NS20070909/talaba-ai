@@ -3,7 +3,7 @@ import { PLAN_LIMITS } from "./limits";
 import { UsageStats, PlanType } from "./user";
 
 // Helper to get stats, resetting them if it's a new day
-async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
+export async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
   let stats = await getUsageStats(telegramId);
   const now = new Date();
   const lastReset = new Date(stats.lastResetDate);
