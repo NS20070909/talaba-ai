@@ -1,6 +1,6 @@
 import { Telegraf, Input } from "telegraf";
 import { NextResponse } from "next/server";
-import { isOwner, isAdmin, getSystemStats, getUserInfo, getAdmins, addAdmin, removeAdmin } from "@/lib/admin";
+import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan } from "@/lib/admin";
 
 const bot = new Telegraf(
   process.env.TELEGRAM_BOT_TOKEN!
@@ -596,7 +596,29 @@ bot.action("admin:admins:list", async (ctx) => {
 
 bot.action("admin:premium:list", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  await ctx.reply("💎 <b>Premium foydalanuvchilar:</b>\n\n(Hozircha faqat mock ro'yxat/integratsiya kutilmoqda)", { parse_mode: "HTML" });
+
+  try {
+    const premiumUsers = await getPremiumUsers();
+
+    if (premiumUsers.length === 0) {
+      await ctx.reply("💎 Hozircha premium foydalanuvchilar yo'q.");
+    } else {
+      let message = `💎 <b>Premium Foydalanuvchilar</b>\n\n`;
+      premiumUsers.forEach((u, i) => {
+        const display = u.username ? `@${u.username}` : u.firstName;
+        const until = u.premiumUntil
+          ? u.premiumUntil.toLocaleDateString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit" })
+          : "—";
+        message += `${i + 1}. <b>${display}</b>\n   Plan: <code>${u.plan}</code>\n   Muddati: ${until}\n\n`;
+      });
+      message += `\n👥 <b>Jami:</b> ${premiumUsers.length}`;
+      await ctx.replyWithHTML(message);
+    }
+  } catch (error) {
+    console.error("premium:list error:", error);
+    await ctx.reply("❌ Premium ro'yxatini yuklashda xatolik.");
+  }
+
   await ctx.answerCbQuery();
 });
 
@@ -629,9 +651,65 @@ bot.on("message", async (ctx, next) => {
 
   try {
     if (state === "owner:waiting_for_search") {
-      await ctx.reply(`🔍 Qidiruv boshlandi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
+      const targetId = Number(text.trim());
+      if (isNaN(targetId) || targetId <= 0) {
+        await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
+      } else {
+        const info = await getUserInfo(targetId);
+        if (!info) {
+          await ctx.replyWithHTML(`❌ Foydalanuvchi topilmadi.\n\n<code>${targetId}</code> ID li foydalanuvchi bazada mavjud emas.`);
+        } else {
+          const premiumStatus = info.premiumActive ? "✅ Active" : "❌ Inactive";
+          const premiumUntil = info.premiumUntil
+            ? info.premiumUntil.toLocaleDateString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit" })
+            : "—";
+          const username = info.username ? `@${info.username}` : "—";
+          const createdAt = info.createdAt.toLocaleDateString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit" });
+
+          const message =
+            `🔍 <b>Foydalanuvchi profili</b>\n\n` +
+            `🆔 <b>ID:</b> <code>${info.telegramId}</code>\n` +
+            `👤 <b>Ism:</b> ${info.firstName}\n` +
+            `📛 <b>Username:</b> ${username}\n\n` +
+            `💎 <b>Plan:</b> ${info.plan}\n` +
+            `⭐ <b>Premium:</b> ${premiumStatus}\n` +
+            `📅 <b>Premium muddati:</b> ${premiumUntil}\n\n` +
+            `📊 <b>Bugungi foydalanish:</b>\n` +
+            `  📸 Scan: ${info.scanUsed}\n` +
+            `  📊 PPT: ${info.pptUsed}\n` +
+            `  📄 PDF: ${info.pdfUsed}\n\n` +
+            `🗓 <b>Ro'yxatdan o'tgan:</b> ${createdAt}`;
+
+          await ctx.replyWithHTML(message);
+        }
+      }
     } else if (state === "owner:waiting_for_broadcast") {
-      await ctx.reply(`📢 Broadcast boshlandi. Xabar:\n${text}\n(Integratsiya kutilmoqda)`);
+      if (!text || text.trim().length === 0) {
+        await ctx.reply("❌ Xabar bo'sh bo'lishi mumkin emas.");
+      } else {
+        const broadcastMsg = text.trim();
+        await ctx.reply("📢 Broadcast boshlanmoqda...");
+
+        const userIds = await getAllUserIds();
+        let delivered = 0;
+        let failed = 0;
+
+        for (const uid of userIds) {
+          try {
+            await bot.telegram.sendMessage(uid, broadcastMsg);
+            delivered++;
+          } catch {
+            failed++;
+          }
+        }
+
+        await ctx.replyWithHTML(
+          `📢 <b>Broadcast yakunlandi</b>\n\n` +
+          `✅ <b>Yetkazildi:</b> ${delivered}\n` +
+          `❌ <b>Yuborilmadi:</b> ${failed}\n` +
+          `👥 <b>Jami:</b> ${userIds.length}`
+        );
+      }
     } else if (state === "owner:waiting_for_add_admin") {
       const targetId = Number(text.trim());
       if (isNaN(targetId)) {
@@ -677,9 +755,40 @@ bot.on("message", async (ctx, next) => {
       await removeAdmin(targetId);
       await ctx.replyWithHTML(`✅ Admin o'chirildi\n\nTelegram ID:\n<code>${targetId}</code>`);
     } else if (state === "owner:waiting_for_give_premium") {
-      await ctx.reply(`💎 Premium berish so'rovi: ${text}\n(Integratsiya kutilmoqda)`);
+      // Expected input: "TELEGRAM_ID PLAN" e.g. "6630030492 MONTH"
+      const parts = text.trim().split(/\s+/);
+      if (parts.length !== 2) {
+        await ctx.reply("❌ Noto'g'ri format. Misol: <code>6630030492 MONTH</code>\nPlanlar: DAY | WEEK | MONTH | QUARTER | YEAR", { parse_mode: "HTML" });
+      } else {
+        const targetId = Number(parts[0]);
+        const plan = parts[1].toUpperCase();
+        if (isNaN(targetId) || targetId <= 0) {
+          await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
+        } else if (!isValidPaidPlan(plan)) {
+          await ctx.reply(`❌ Noto'g'ri plan: <code>${plan}</code>\nRuxsat etilgan planlar: DAY | WEEK | MONTH | QUARTER | YEAR`, { parse_mode: "HTML" });
+        } else {
+          const premiumUntil = await givePremium(targetId, plan as any);
+          const untilStr = premiumUntil.toLocaleDateString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit" });
+          await ctx.replyWithHTML(
+            `✅ <b>Premium berildi</b>\n\n` +
+            `👤 <b>User:</b> <code>${targetId}</code>\n` +
+            `💎 <b>Plan:</b> ${plan}\n` +
+            `📅 <b>Premium Until:</b> ${untilStr}`
+          );
+        }
+      }
     } else if (state === "owner:waiting_for_remove_premium") {
-      await ctx.reply(`💎 Premium o'chirish so'rovi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
+      const targetId = Number(text.trim());
+      if (isNaN(targetId) || targetId <= 0) {
+        await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
+      } else {
+        await removePremium(targetId);
+        await ctx.replyWithHTML(
+          `✅ <b>Premium olib tashlandi</b>\n\n` +
+          `👤 <b>User:</b> <code>${targetId}</code>\n` +
+          `💎 <b>Plan:</b> FREE`
+        );
+      }
     } else if (state === "owner:waiting_for_ban") {
       await ctx.reply(`🚫 Bloklash so'rovi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
     } else if (state === "owner:waiting_for_unban") {

@@ -3,6 +3,7 @@ import { getUser } from "@/lib/storage";
 import { getOrResetUsage } from "@/lib/limit-checker";
 import { PLAN_LIMITS } from "@/lib/limits";
 import { PlanType } from "@/lib/user";
+import { checkAndExpirePremium } from "@/lib/admin";
 
 export async function GET(req: Request) {
   try {
@@ -26,12 +27,20 @@ export async function GET(req: Request) {
 
     // 1. Get user to check plan type
     const user = await getUser(telegramId);
-    const plan: PlanType = user ? user.plan : "FREE";
 
-    // 2. Get current daily usage stats (handling day-based resets)
+    // 2. Auto-expire premium if past deadline
+    if (user && user.plan !== "FREE") {
+      await checkAndExpirePremium(telegramId);
+    }
+
+    // 3. Re-fetch user after potential expiry
+    const freshUser = user && user.plan !== "FREE" ? await getUser(telegramId) : user;
+    const plan: PlanType = freshUser ? freshUser.plan : "FREE";
+
+    // 4. Get current daily usage stats (handling day-based resets)
     const stats = await getOrResetUsage(telegramId);
 
-    // 3. Get plan limits
+    // 5. Get plan limits
     const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
 
     return NextResponse.json({

@@ -296,6 +296,40 @@ export async function getSystemStats(): Promise<SystemStats> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PREMIUM USERS LIST
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PremiumUserRow {
+  telegramId: number;
+  firstName: string;
+  username?: string;
+  plan: PlanType;
+  premiumUntil: Date | null;
+}
+
+export async function getPremiumUsers(): Promise<PremiumUserRow[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("users")
+    .select("telegram_id, first_name, username, plan, premium_until")
+    .neq("plan", "FREE")
+    .order("premium_until", { ascending: false });
+
+  if (error) {
+    console.error("getPremiumUsers error:", error);
+    return [];
+  }
+
+  return (data ?? []).map((row: any) => ({
+    telegramId: Number(row.telegram_id),
+    firstName: row.first_name,
+    username: row.username || undefined,
+    plan: row.plan as PlanType,
+    premiumUntil: row.premium_until ? new Date(row.premium_until) : null,
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BROADCAST
 // ─────────────────────────────────────────────────────────────────────────────
 
