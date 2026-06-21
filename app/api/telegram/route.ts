@@ -1,6 +1,9 @@
+
+
+
 import { Input } from "telegraf";
 import { NextResponse } from "next/server";
-import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan, banUser, unbanUser } from "@/lib/admin";
+import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan, banUser, unbanUser, getBannedUsers } from "@/lib/admin";
 import { getUser, createUser } from "@/lib/storage";
 import { bot } from "@/lib/bot";
 
@@ -11,11 +14,6 @@ export async function sendFileToTelegram(
   fileName: string
 ) {
   try {
-    console.log(
-      "Sending file to user:",
-      userId
-    );
-
     const result =
       await bot.telegram.sendDocument(
         userId,
@@ -646,7 +644,27 @@ bot.action("admin:premium:list", async (ctx) => {
 
 bot.action("admin:ban:list", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  await ctx.reply("🚫 <b>Bloklangan foydalanuvchilar:</b>\n\n(Hozircha faqat mock ro'yxat/integratsiya kutilmoqda)", { parse_mode: "HTML" });
+
+  try {
+    const list = await getBannedUsers();
+
+    if (list.length === 0) {
+      await ctx.reply("🚫 Hozircha bloklangan foydalanuvchilar yo'q.");
+    } else {
+      let message = `🚫 <b>Banned Users</b>\n\n`;
+      list.forEach((u, i) => {
+        const usernameDisplay = u.username ? `@${u.username}` : "yo'q";
+        const banDate = `${String(u.createdAt.getDate()).padStart(2, '0')}/${String(u.createdAt.getMonth() + 1).padStart(2, '0')}/${u.createdAt.getFullYear()}`;
+        message += `${i + 1}.\n\n👤 ${u.firstName}\n📛 ${usernameDisplay}\n🆔 <code>${u.telegramId}</code>\n📅 ${banDate}\n\n`;
+      });
+      message += `━━━━━━━━━━\n\n📊 Total Banned Users: ${list.length}`;
+      await ctx.replyWithHTML(message);
+    }
+  } catch (error) {
+    console.error("ban:list error:", error);
+    await ctx.reply("❌ Bloklangan foydalanuvchilar ro'yxatini yuklashda xatolik.");
+  }
+
   await ctx.answerCbQuery();
 });
 

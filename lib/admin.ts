@@ -345,3 +345,33 @@ export async function getAllUserIds(): Promise<number[]> {
   }
   return (data ?? []).map((row: { telegram_id: number }) => Number(row.telegram_id));
 }
+
+export interface BannedUserRow {
+  telegramId: number;
+  firstName: string;
+  username?: string;
+  createdAt: Date;
+}
+
+export async function getBannedUsers(): Promise<BannedUserRow[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("banned_users")
+    .select("telegram_id, created_at, users (first_name, username)")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("getBannedUsers error:", error);
+    return [];
+  }
+
+  return (data ?? []).map((row: any) => {
+    const user = Array.isArray(row.users) ? row.users[0] : row.users;
+    return {
+      telegramId: Number(row.telegram_id),
+      firstName: user?.first_name || "Unknown",
+      username: user?.username || undefined,
+      createdAt: new Date(row.created_at),
+    };
+  });
+}
