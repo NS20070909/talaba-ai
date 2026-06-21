@@ -1,4 +1,3 @@
-// IMPORTLAR O'ZGARMAYDI
 "use client";
 import { useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
