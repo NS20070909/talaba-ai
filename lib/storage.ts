@@ -1,5 +1,6 @@
 import { User, UsageStats, PlanType } from "./user";
 import { getSupabase } from "./supabase";
+import { bot } from "./bot";
 
 function mapUser(row: any): User {
   return {
@@ -70,7 +71,39 @@ export async function createUser(
     throw error;
   }
 
-  return mapUser(data);
+  const user = mapUser(data);
+
+  // Notify Owner
+  try {
+    const { count: totalUsers } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true });
+
+    const usernameDisplay = username ? `@${username}` : "yo'q";
+    const currentTime = new Date().toLocaleString("uz-UZ", {
+      timeZone: "Asia/Tashkent",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    const ownerMsg = `🆕 Yangi foydalanuvchi\n\n` +
+      `👤 Ism: ${firstName}\n` +
+      `📛 Username: ${usernameDisplay}\n` +
+      `🆔 ID: ${telegramId}\n\n` +
+      `📅 Vaqt: ${currentTime}\n\n` +
+      `👥 Jami userlar: ${totalUsers || 0}`;
+
+    await bot.telegram.sendMessage(6630030492, ownerMsg);
+  } catch (err) {
+    // catch errors silently
+    console.error("Owner notification failed:", err);
+  }
+
+  return user;
 }
 
 export async function updateUser(

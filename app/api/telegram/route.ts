@@ -1,11 +1,8 @@
-import { Telegraf, Input } from "telegraf";
+import { Input } from "telegraf";
 import { NextResponse } from "next/server";
 import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan, banUser, unbanUser } from "@/lib/admin";
-import { getUser } from "@/lib/storage";
-
-const bot = new Telegraf(
-  process.env.TELEGRAM_BOT_TOKEN!
-);
+import { getUser, createUser } from "@/lib/storage";
+import { bot } from "@/lib/bot";
 
 // TELEGRAM FILE SEND
 export async function sendFileToTelegram(
@@ -57,6 +54,21 @@ const userState: Record<
 // START
 bot.start(async (ctx) => {
   const userId = ctx.from?.id;
+  if (userId) {
+    try {
+      const existingUser = await getUser(userId);
+      if (!existingUser) {
+        await createUser(
+          userId,
+          ctx.from.first_name || "Telegram User",
+          ctx.from.username || undefined,
+          "FREE"
+        );
+      }
+    } catch (err) {
+      console.error("Error creating user on start:", err);
+    }
+  }
   await ctx.replyWithHTML(
     `🎓 <b>Talaba AI</b>\n\n` +
     `Assalomu alaykum, <b>${ctx.from?.first_name || "Talaba"}</b>! 👋\n\n` +
@@ -604,15 +616,24 @@ bot.action("admin:premium:list", async (ctx) => {
     if (premiumUsers.length === 0) {
       await ctx.reply("💎 Hozircha premium foydalanuvchilar yo'q.");
     } else {
-      let message = `💎 <b>Premium Foydalanuvchilar</b>\n\n`;
+      let message = `💎 <b>Premium Users</b>\n\n`;
+      const planDisplayMap: Record<string, string> = {
+        YEAR: "👑 YEAR",
+        QUARTER: "🔥 QUARTER",
+        MONTH: "💎 MONTH",
+        WEEK: "⚡ WEEK",
+        DAY: "🟢 DAY",
+      };
+
       premiumUsers.forEach((u, i) => {
-        const display = u.username ? `@${u.username}` : u.firstName;
+        const usernameDisplay = u.username ? `@${u.username}` : "yo'q";
         const until = u.premiumUntil
-          ? u.premiumUntil.toLocaleDateString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit" })
+          ? `${String(u.premiumUntil.getDate()).padStart(2, '0')}/${String(u.premiumUntil.getMonth() + 1).padStart(2, '0')}/${u.premiumUntil.getFullYear()}`
           : "—";
-        message += `${i + 1}. <b>${display}</b>\n   Plan: <code>${u.plan}</code>\n   Muddati: ${until}\n\n`;
+        const planDisplay = planDisplayMap[u.plan] || `👑 ${u.plan}`;
+        message += `${i + 1}.\n\n👤 ${u.firstName}\n📛 ${usernameDisplay}\n🆔 <code>${u.telegramId}</code>\n${planDisplay}\n📅 ${until}\n\n`;
       });
-      message += `\n👥 <b>Jami:</b> ${premiumUsers.length}`;
+      message += `━━━━━━━━━━\n\n📊 Total Premium Users: ${premiumUsers.length}`;
       await ctx.replyWithHTML(message);
     }
   } catch (error) {
@@ -629,7 +650,6 @@ bot.action("admin:ban:list", async (ctx) => {
   await ctx.answerCbQuery();
 });
 
-// INPUT STATE RECEIVER
 bot.on("message", async (ctx, next) => {
   const userId = ctx.from?.id;
   if (!userId || !isOwner(userId)) {
