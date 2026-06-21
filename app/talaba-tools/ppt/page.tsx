@@ -24,12 +24,9 @@ useState<any[]>([]);
   showTelegramButton,
   setShowTelegramButton,
 ] = useState(false);
-const [
-downloadUrl,
-setDownloadUrl,
-] = useState("");
+  const [downloadUrl, setDownloadUrl] = useState("");
   const [limitReached, setLimitReached] = useState(false);
-  const [showUpgradeToast, setShowUpgradeToast] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleGenerate =
 async () => {
@@ -38,10 +35,9 @@ async () => {
 
   setLoading(true);
   setOutline([]);
-  setShowTelegramButton(
-    false
-  );
+  setShowTelegramButton(false);
   setLimitReached(false);
+  setErrorMsg("");
 
   try {
     const telegram_user_id = localStorage.getItem("telegram_user_id");
@@ -91,6 +87,8 @@ async () => {
       );
     } else if (data.error === "LIMIT_REACHED") {
       setLimitReached(true);
+    } else if (data.code === "BANNED" || data.message) {
+      setErrorMsg(data.message);
     }
   } catch (
     error
@@ -437,6 +435,13 @@ const handleTelegramSend =
           </div>
         )}
 
+        {/* Error Message */}
+        {errorMsg && (
+          <div className="mt-5 rounded-[24px] border border-red-500/30 bg-red-500/10 p-5 text-center text-red-400 font-bold">
+            {errorMsg}
+          </div>
+        )}
+
         {/* Download + Telegram */}
 {showTelegramButton && (
   <div className="mt-4 flex gap-3">
@@ -549,30 +554,6 @@ const handleTelegramSend =
 
       </div>
     </main>
-
-    {/* Upgrade Toast */}
-    {showUpgradeToast && (
-      <div
-        className="animate-fade-in-up"
-        style={{
-          position: 'fixed',
-          bottom: '24px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 9999,
-          background: '#1a2535',
-          border: '1px solid rgba(6,182,212,0.3)',
-          borderRadius: '18px',
-          padding: '12px 22px',
-          fontSize: '14px',
-          color: '#fff',
-          whiteSpace: 'nowrap',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-        }}
-      >
-        🚀 Premium tizimi tez orada ishga tushadi
-      </div>
-    )}
     </>
   );
 }

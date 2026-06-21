@@ -107,34 +107,54 @@ export default function Home() {
         {/* Header */}
         <div className="rounded-[26px] border border-cyan-500/10 bg-gradient-to-b from-[#1a2635] to-[#16202d] p-3 mb-3 shadow-[0_0_30px_rgba(0,180,255,0.06)]">
 
-          <div className="flex items-center gap-3">
-            <div
-              className="
-                h-14 w-14 rounded-[18px]
-                bg-[#121c29]
-                border border-cyan-400
-                flex items-center justify-center
-                text-2xl
-                shadow-[0_0_20px_rgba(0,170,255,0.20)]
-                shrink-0
-              "
-            >
-              🎓
-            </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="
+                  h-14 w-14 rounded-[18px]
+                  bg-[#121c29]
+                  border border-cyan-400
+                  flex items-center justify-center
+                  text-2xl
+                  shadow-[0_0_20px_rgba(0,170,255,0.20)]
+                  shrink-0
+                "
+              >
+                🎓
+              </div>
 
-            <div>
-              <h1 className="text-[28px] font-bold leading-none">
-                Talaba AI
-              </h1>
+              <div>
+                <h1 className="text-[28px] font-bold leading-none">
+                  Talaba AI
+                </h1>
 
-              <div className="flex items-center gap-2 mt-1">
-                <div className="h-2.5 w-2.5 rounded-full bg-green-400" />
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="h-2.5 w-2.5 rounded-full bg-green-400" />
 
-                <p className="text-slate-400 text-sm">
-                  AI Student Assistant
-                </p>
+                  <p className="text-slate-400 text-sm whitespace-nowrap">
+                    AI Student Assistant
+                  </p>
+                </div>
               </div>
             </div>
+
+            <Link
+              href="/premium"
+              className="
+                flex items-center gap-1
+                px-2.5 py-1.5
+                rounded-xl
+                bg-gradient-to-r from-cyan-500/10 to-blue-500/10
+                border border-cyan-500/20
+                text-[11px] font-bold tracking-wide
+                text-cyan-300 uppercase
+                transition-all
+                active:scale-95
+                shadow-[0_0_15px_rgba(6,182,212,0.15)]
+              "
+            >
+              💎 Tariflar
+            </Link>
           </div>
 
         </div>

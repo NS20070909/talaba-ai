@@ -22,7 +22,6 @@ export default function PdfToWordPage() {
   ] = useState(false);
 
   const [limitReached, setLimitReached] = useState(false);
-  const [showUpgradeToast, setShowUpgradeToast] = useState(false);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -466,30 +465,6 @@ export default function PdfToWordPage() {
         )}
       </div>
     </main>
-
-    {/* Upgrade Toast */}
-    {showUpgradeToast && (
-      <div
-        className="animate-fade-in-up"
-        style={{
-          position: 'fixed',
-          bottom: '24px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 9999,
-          background: '#1a2535',
-          border: '1px solid rgba(6,182,212,0.3)',
-          borderRadius: '18px',
-          padding: '12px 22px',
-          fontSize: '14px',
-          color: '#fff',
-          whiteSpace: 'nowrap',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-        }}
-      >
-        🚀 Premium tizimi tez orada ishga tushadi
-      </div>
-    )}
     </>
   );
 }
