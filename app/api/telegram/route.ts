@@ -1,6 +1,7 @@
 import { Telegraf, Input } from "telegraf";
 import { NextResponse } from "next/server";
-import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan } from "@/lib/admin";
+import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan, banUser, unbanUser } from "@/lib/admin";
+import { getUser } from "@/lib/storage";
 
 const bot = new Telegraf(
   process.env.TELEGRAM_BOT_TOKEN!
@@ -712,11 +713,17 @@ bot.on("message", async (ctx, next) => {
       }
     } else if (state === "owner:waiting_for_add_admin") {
       const targetId = Number(text.trim());
-      if (isNaN(targetId)) {
+      if (isNaN(targetId) || targetId <= 0) {
         await ctx.reply("❌ Noto'g'ri Telegram ID. Raqam kiriting.");
         return;
       }
-      
+
+      const targetUser = await getUser(targetId);
+      if (!targetUser) {
+        await ctx.replyWithHTML(`❌ <b>User not found</b>\n\nTelegram ID: <code>${targetId}</code>`);
+        return;
+      }
+
       const alreadyAdmin = await isAdmin(targetId);
       if (alreadyAdmin) {
         await ctx.replyWithHTML(`❌ Bu foydalanuvchi allaqachon admin`);
@@ -727,25 +734,24 @@ bot.on("message", async (ctx, next) => {
       await ctx.replyWithHTML(`✅ Admin qo'shildi\n\nTelegram ID:\n<code>${targetId}</code>`);
     } else if (state === "owner:waiting_for_remove_admin") {
       const targetId = Number(text.trim());
-      if (isNaN(targetId)) {
+      if (isNaN(targetId) || targetId <= 0) {
         await ctx.reply("❌ Noto'g'ri Telegram ID. Raqam kiriting.");
         return;
       }
-      
+
       const ownerId = 6630030492;
       if (targetId === ownerId) {
         await ctx.reply("❌ Owner o'chirilishi mumkin emas!");
         return;
       }
-      
-      const alreadyAdmin = await isAdmin(targetId);
-      // Wait, isOwner is true for OWNER_ID but OWNER_ID is not in database, so we check if targetId matches list or isOwner
-      if (targetId === ownerId) {
-        await ctx.reply("❌ Owner o'chirilishi mumkin emas!");
+
+      const targetUser = await getUser(targetId);
+      if (!targetUser) {
+        await ctx.replyWithHTML(`❌ <b>User not found</b>\n\nTelegram ID: <code>${targetId}</code>`);
         return;
       }
 
-      // Check if it's admin (we query the db because OWNER is not in db table, only admins)
+      // Check if it's admin (OWNER is not in the admins table)
       const list = await getAdmins();
       if (!list.includes(targetId)) {
         await ctx.replyWithHTML(`❌ Bu foydalanuvchi admin emas`);
@@ -767,14 +773,19 @@ bot.on("message", async (ctx, next) => {
         } else if (!isValidPaidPlan(plan)) {
           await ctx.reply(`❌ Noto'g'ri plan: <code>${plan}</code>\nRuxsat etilgan planlar: DAY | WEEK | MONTH | QUARTER | YEAR`, { parse_mode: "HTML" });
         } else {
-          const premiumUntil = await givePremium(targetId, plan as any);
-          const untilStr = premiumUntil.toLocaleDateString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit" });
-          await ctx.replyWithHTML(
-            `✅ <b>Premium berildi</b>\n\n` +
-            `👤 <b>User:</b> <code>${targetId}</code>\n` +
-            `💎 <b>Plan:</b> ${plan}\n` +
-            `📅 <b>Premium Until:</b> ${untilStr}`
-          );
+          const targetUser = await getUser(targetId);
+          if (!targetUser) {
+            await ctx.replyWithHTML(`❌ <b>User not found</b>\n\nTelegram ID: <code>${targetId}</code>`);
+          } else {
+            const premiumUntil = await givePremium(targetId, plan as any);
+            const untilStr = premiumUntil.toLocaleDateString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit" });
+            await ctx.replyWithHTML(
+              `✅ <b>Premium berildi</b>\n\n` +
+              `👤 <b>User:</b> <code>${targetId}</code>\n` +
+              `💎 <b>Plan:</b> ${plan}\n` +
+              `📅 <b>Premium Until:</b> ${untilStr}`
+            );
+          }
         }
       }
     } else if (state === "owner:waiting_for_remove_premium") {
@@ -782,17 +793,50 @@ bot.on("message", async (ctx, next) => {
       if (isNaN(targetId) || targetId <= 0) {
         await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
       } else {
-        await removePremium(targetId);
-        await ctx.replyWithHTML(
-          `✅ <b>Premium olib tashlandi</b>\n\n` +
-          `👤 <b>User:</b> <code>${targetId}</code>\n` +
-          `💎 <b>Plan:</b> FREE`
-        );
+        const targetUser = await getUser(targetId);
+        if (!targetUser) {
+          await ctx.replyWithHTML(`❌ <b>User not found</b>\n\nTelegram ID: <code>${targetId}</code>`);
+        } else {
+          await removePremium(targetId);
+          await ctx.replyWithHTML(
+            `✅ <b>Premium olib tashlandi</b>\n\n` +
+            `👤 <b>User:</b> <code>${targetId}</code>\n` +
+            `💎 <b>Plan:</b> FREE`
+          );
+        }
       }
     } else if (state === "owner:waiting_for_ban") {
-      await ctx.reply(`🚫 Bloklash so'rovi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
+      const targetId = Number(text.trim());
+      if (isNaN(targetId) || targetId <= 0) {
+        await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
+      } else {
+        const targetUser = await getUser(targetId);
+        if (!targetUser) {
+          await ctx.replyWithHTML(`❌ <b>User not found</b>\n\nTelegram ID: <code>${targetId}</code>`);
+        } else {
+          await banUser(targetId);
+          await ctx.replyWithHTML(
+            `✅ <b>Foydalanuvchi bloklandi</b>\n\n` +
+            `👤 <b>User:</b> <code>${targetId}</code>`
+          );
+        }
+      }
     } else if (state === "owner:waiting_for_unban") {
-      await ctx.reply(`🔓 Blokdan chiqarish so'rovi. Target ID: ${text}\n(Integratsiya kutilmoqda)`);
+      const targetId = Number(text.trim());
+      if (isNaN(targetId) || targetId <= 0) {
+        await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
+      } else {
+        const targetUser = await getUser(targetId);
+        if (!targetUser) {
+          await ctx.replyWithHTML(`❌ <b>User not found</b>\n\nTelegram ID: <code>${targetId}</code>`);
+        } else {
+          await unbanUser(targetId);
+          await ctx.replyWithHTML(
+            `✅ <b>Foydalanuvchi blokdan chiqarildi</b>\n\n` +
+            `👤 <b>User:</b> <code>${targetId}</code>`
+          );
+        }
+      }
     }
   } catch (err) {
     console.error("Owner message state receiver error:", err);
