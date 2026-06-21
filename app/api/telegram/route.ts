@@ -5,6 +5,7 @@ import { Input } from "telegraf";
 import { NextResponse } from "next/server";
 import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan, banUser, unbanUser, getBannedUsers } from "@/lib/admin";
 import { getUser, createUser } from "@/lib/storage";
+import { getPaymentsStats, getRecentPayments } from "@/lib/payment";
 import { bot } from "@/lib/bot";
 
 // TELEGRAM FILE SEND
@@ -370,6 +371,9 @@ async function renderMainPanel(ctx: any) {
         [
           { text: "🚫 Ban System", callback_data: "admin:ban" },
           { text: "📊 Statistics", callback_data: "admin:stats" }
+        ],
+        [
+          { text: "💰 Payments", callback_data: "admin:payments" }
         ]
       ]
     };
@@ -476,6 +480,42 @@ async function renderStatsMenu(ctx: any) {
   }
 }
 
+async function renderPaymentsMenu(ctx: any) {
+  try {
+    const stats = await getPaymentsStats();
+    const recent = await getRecentPayments(20);
+
+    let text = `💰 <b>Payments Dashboard</b>\n\n`;
+    text += `📈 <b>Statistika:</b>\n`;
+    text += `⏳ Pending: ${stats.pending}\n`;
+    text += `✅ Paid: ${stats.paid}\n`;
+    text += `❌ Failed: ${stats.failed}\n\n`;
+    
+    text += `📋 <b>Oxirgi 20 ta to'lov:</b>\n`;
+    if (recent.length === 0) {
+      text += `<i>Hozircha to'lovlar yo'q.</i>\n`;
+    } else {
+      recent.forEach((p, index) => {
+        const date = new Date(p.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+        text += `${index + 1}. <b>${p.plan}</b> - ${p.amount} UZS\n`;
+        text += `   User: <code>${p.telegram_id}</code> | Status: <i>${p.status}</i>\n`;
+        text += `   Sana: ${date}\n\n`;
+      });
+    }
+
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+      ]
+    };
+
+    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+  } catch (error) {
+    console.error("renderPaymentsMenu error:", error);
+    await ctx.reply("❌ Xatolik yuz berdi");
+  }
+}
+
 // CALLBACK ACTIONS
 bot.action("admin:main", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
@@ -516,6 +556,12 @@ bot.action("admin:ban", async (ctx) => {
 bot.action("admin:stats", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
   await renderStatsMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:payments", async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  await renderPaymentsMenu(ctx);
   await ctx.answerCbQuery();
 });
 

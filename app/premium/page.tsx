@@ -141,9 +141,40 @@ export default function PremiumPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanPeriod>("MONTH");
   const [showUpgradeToast, setShowUpgradeToast] = useState(false);
 
-  const handlePurchase = () => {
-    setShowUpgradeToast(true);
-    setTimeout(() => setShowUpgradeToast(false), 3000);
+  const handlePurchase = async () => {
+    const telegramIdStr = localStorage.getItem("telegram_user_id");
+    if (!telegramIdStr) {
+      alert("Foydalanuvchi identifikatori topilmadi. Iltimos, Telegram orqali qayta kiring.");
+      return;
+    }
+    const telegramId = parseInt(telegramIdStr, 10);
+
+    const activePlan = PRICING_PLANS.find((plan) => plan.id === selectedPlan);
+    if (!activePlan) return;
+
+    try {
+      const res = await fetch("/api/payments/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          telegram_id: telegramId,
+          amount: activePlan.rawPrice,
+          plan: activePlan.id,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("To'lov so'rovi xatosi");
+      }
+
+      setShowUpgradeToast(true);
+      setTimeout(() => setShowUpgradeToast(false), 3000);
+    } catch (error) {
+      console.error(error);
+      alert("Xatolik yuz berdi. Qayta urinib ko'ring.");
+    }
   };
 
   const activePlanDetails = PRICING_PLANS.find((plan) => plan.id === selectedPlan);
@@ -332,7 +363,7 @@ export default function PremiumPage() {
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
           }}
         >
-          🚀 Premium tizimi tez orada ishga tushadi
+          To'lov so'rovi yaratildi
         </div>
       )}
     </>
