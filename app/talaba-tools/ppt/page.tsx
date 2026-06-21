@@ -24,12 +24,10 @@ useState<any[]>([]);
   showTelegramButton,
   setShowTelegramButton,
 ] = useState(false);
-const [
-downloadUrl,
-setDownloadUrl,
-] = useState("");
+  const [downloadUrl, setDownloadUrl] = useState("");
   const [limitReached, setLimitReached] = useState(false);
   const [showUpgradeToast, setShowUpgradeToast] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleGenerate =
 async () => {
@@ -38,10 +36,9 @@ async () => {
 
   setLoading(true);
   setOutline([]);
-  setShowTelegramButton(
-    false
-  );
+  setShowTelegramButton(false);
   setLimitReached(false);
+  setErrorMsg("");
 
   try {
     const telegram_user_id = localStorage.getItem("telegram_user_id");
@@ -91,6 +88,8 @@ async () => {
       );
     } else if (data.error === "LIMIT_REACHED") {
       setLimitReached(true);
+    } else if (data.code === "BANNED" || data.message) {
+      setErrorMsg(data.message);
     }
   } catch (
     error
@@ -434,6 +433,13 @@ const handleTelegramSend =
             >
               ⭐ Upgrade Plan
             </button>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {errorMsg && (
+          <div className="mt-5 rounded-[24px] border border-red-500/30 bg-red-500/10 p-5 text-center text-red-400 font-bold">
+            {errorMsg}
           </div>
         )}
 

@@ -355,20 +355,47 @@ export interface BannedUserRow {
 
 export async function getBannedUsers(): Promise<BannedUserRow[]> {
   const supabase = getSupabase();
-  const { data, error } = await supabase
+  
+  // 1. Fetch banned users
+  const { data: bannedData, error: bannedError } = await supabase
     .from("banned_users")
-    .select("telegram_id, created_at, users (first_name, username)")
+    .select("telegram_id, created_at")
     .order("created_at", { ascending: false });
 
-  if (error) {
-    console.error("getBannedUsers error:", error);
+  if (bannedError) {
+    console.error("getBannedUsers error:", bannedError);
     return [];
   }
 
-  return (data ?? []).map((row: any) => {
-    const user = Array.isArray(row.users) ? row.users[0] : row.users;
+  if (!bannedData || bannedData.length === 0) {
+    return [];
+  }
+
+  // 2. Fetch corresponding users separately
+  const telegramIds = bannedData.map((row: any) => row.telegram_id);
+  const { data: usersData, error: usersError } = await supabase
+    .from("users")
+    .select("telegram_id, first_name, username")
+    .in("telegram_id", telegramIds);
+
+  if (usersError) {
+    console.error("getBannedUsers users fetch error:", usersError);
+  }
+
+  const usersMap = new Map();
+  if (usersData) {
+    for (const user of usersData) {
+      usersMap.set(Number(user.telegram_id), user);
+    }
+  }
+
+  // 3. Merge data
+  return bannedData.map((row: any) => {
+    const telegramId = Number(row.telegram_id);
+    const user = usersMap.get(telegramId);
+    
     return {
-      telegramId: Number(row.telegram_id),
+      telegramId,
       firstName: user?.first_name || "Unknown",
       username: user?.username || undefined,
       createdAt: new Date(row.created_at),
