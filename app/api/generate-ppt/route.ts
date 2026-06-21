@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import PptxGenJS from "pptxgenjs";
 import { generateOutline } from "@/app/talaba-tools/ppt/actions";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
-import { canUsePPT, incrementPPT } from "@/lib/limit-checker";
+import { guardCheck, canUsePPT, incrementPPT } from "@/lib/limit-checker";
 import fs from "fs";
 import path from "path";
 import axios from "axios";
@@ -100,20 +100,34 @@ export async function POST(
       body.send_to_telegram;
 
     const telegramId = Number(telegramUserId);
-    if (telegramId && !isNaN(telegramId)) {
-      const limitCheck = await canUsePPT(telegramId);
-      if (!limitCheck.allowed) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "LIMIT_REACHED",
-            message: "Sizning kunlik PPT limiti tugagan.",
-          },
-          {
-            status: 403,
-          }
-        );
-      }
+    if (!telegramId || isNaN(telegramId)) {
+      return NextResponse.json({ error: "telegram_user_id is required" }, { status: 400 });
+    }
+
+    const guard = await guardCheck(telegramId);
+    if (guard.blocked && guard.result?.banned) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "BANNED",
+          message: "🚫 Siz bloklangansiz",
+        },
+        { status: 403 }
+      );
+    }
+
+    const limitCheck = await canUsePPT(telegramId);
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "LIMIT_REACHED",
+          message: "Sizning kunlik PPT limiti tugagan.",
+        },
+        {
+          status: 403,
+        }
+      );
     }
 
     const result =

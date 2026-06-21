@@ -11,7 +11,7 @@ import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
-import { canUsePDF, incrementPDF } from "@/lib/limit-checker";
+import { guardCheck, canUsePDF, incrementPDF } from "@/lib/limit-checker";
 
 const execAsync =
   promisify(exec);
@@ -118,18 +118,32 @@ export async function POST(
       ) as string | null;
 
     const telegramId = Number(userId);
-    if (telegramId && !isNaN(telegramId)) {
-      const limitCheck = await canUsePDF(telegramId);
-      if (!limitCheck.allowed) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "LIMIT_REACHED",
-            message: "Sizning kunlik PDF limiti tugagan.",
-          },
-          { status: 403 }
-        );
-      }
+    if (!telegramId || isNaN(telegramId)) {
+      return NextResponse.json({ error: "telegram_user_id is required" }, { status: 400 });
+    }
+
+    const guard = await guardCheck(telegramId);
+    if (guard.blocked && guard.result?.banned) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "BANNED",
+          message: "🚫 Siz bloklangansiz",
+        },
+        { status: 403 }
+      );
+    }
+
+    const limitCheck = await canUsePDF(telegramId);
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "LIMIT_REACHED",
+          message: "Sizning kunlik PDF limiti tugagan.",
+        },
+        { status: 403 }
+      );
     }
 
     const sendToTelegram =

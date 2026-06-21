@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
-import { canUseScan, incrementScan } from "@/lib/limit-checker";
+import { guardCheck, canUseScan, incrementScan } from "@/lib/limit-checker";
 
 const genAI =
   new GoogleGenerativeAI(
@@ -32,20 +32,34 @@ export async function POST(
     }
 
     const telegramId = Number(telegram_user_id);
-    if (telegramId && !isNaN(telegramId)) {
-      const limitCheck = await canUseScan(telegramId);
-      if (!limitCheck.allowed) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "LIMIT_REACHED",
-            message: "Sizning kunlik Scan limiti tugagan.",
-          },
-          {
-            status: 403,
-          }
-        );
-      }
+    if (!telegramId || isNaN(telegramId)) {
+      return NextResponse.json({ error: "telegram_user_id is required" }, { status: 400 });
+    }
+
+    const guard = await guardCheck(telegramId);
+    if (guard.blocked && guard.result?.banned) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "BANNED",
+          message: "🚫 Siz bloklangansiz",
+        },
+        { status: 403 }
+      );
+    }
+
+    const limitCheck = await canUseScan(telegramId);
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "LIMIT_REACHED",
+          message: "Sizning kunlik Scan limiti tugagan.",
+        },
+        {
+          status: 403,
+        }
+      );
     }
 
     const prompt = `

@@ -3,16 +3,27 @@ import { PLAN_LIMITS } from "./limits";
 import { UsageStats, PlanType } from "./user";
 import { isBanned, checkAndExpirePremium } from "./admin";
 
-// Helper to get stats, resetting them if it's a new day
-export async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
-  let stats = await getUsageStats(telegramId);
+export async function checkDailyReset(telegramId: number): Promise<void> {
+  const stats = await getUsageStats(telegramId);
   const now = new Date();
   const lastReset = new Date(stats.lastResetDate);
   
-  if (now.toDateString() !== lastReset.toDateString()) {
-    stats = await resetUsageStats(telegramId);
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tashkent',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  if (formatter.format(now) !== formatter.format(lastReset)) {
+    await resetUsageStats(telegramId);
   }
-  return stats;
+}
+
+// Helper to get stats, resetting them if it's a new day
+export async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
+  await checkDailyReset(telegramId);
+  return await getUsageStats(telegramId);
 }
 
 export interface CheckResult {
@@ -23,7 +34,7 @@ export interface CheckResult {
 
 // ── Shared guard: runs ban check + premium expiry before every limit check ──
 
-async function guardCheck(telegramId: number): Promise<{ blocked: boolean; result?: CheckResult }> {
+export async function guardCheck(telegramId: number): Promise<{ blocked: boolean; result?: CheckResult }> {
   // 1. Ban check
   const banned = await isBanned(telegramId);
   if (banned) {
@@ -32,6 +43,9 @@ async function guardCheck(telegramId: number): Promise<{ blocked: boolean; resul
 
   // 2. Auto-expire premium if past premium_until date
   await checkAndExpirePremium(telegramId);
+
+  // 3. Check and apply daily reset
+  await checkDailyReset(telegramId);
 
   return { blocked: false };
 }
