@@ -5,7 +5,7 @@ import { Input } from "telegraf";
 import { NextResponse } from "next/server";
 import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan, banUser, unbanUser, getBannedUsers } from "@/lib/admin";
 import { getUser, createUser } from "@/lib/storage";
-import { getPaymentsStats, getRecentPayments } from "@/lib/payment";
+import { getPaymentsStats, getRecentPayments, getPaymentById, updatePaymentStatus } from "@/lib/payment";
 import { bot } from "@/lib/bot";
 
 // TELEGRAM FILE SEND
@@ -500,6 +500,13 @@ async function renderPaymentsMenu(ctx: any) {
         text += `${index + 1}. <b>${p.plan}</b> - ${p.amount} UZS\n`;
         text += `   User: <code>${p.telegram_id}</code> | Status: <i>${p.status}</i>\n`;
         text += `   Sana: ${date}\n\n`;
+
+        if (p.status === "pending") {
+          keyboard.inline_keyboard.push([
+            { text: `✅ Confirm #${index + 1}`, callback_data: `admin:pay:confirm:${p.id}` },
+            { text: `❌ Reject #${index + 1}`, callback_data: `admin:pay:reject:${p.id}` }
+          ]);
+        }
       });
     }
 
@@ -563,6 +570,57 @@ bot.action("admin:payments", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
   await renderPaymentsMenu(ctx);
   await ctx.answerCbQuery();
+});
+
+bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  const paymentId = ctx.match[1];
+  
+  try {
+    const payment = await getPaymentById(paymentId);
+    if (!payment) {
+      await ctx.answerCbQuery("❌ To'lov topilmadi", { show_alert: true });
+      return;
+    }
+    if (payment.status !== "pending") {
+      await ctx.answerCbQuery("Bu to'lov allaqachon ko'rib chiqilgan", { show_alert: true });
+      return;
+    }
+
+    await updatePaymentStatus(paymentId, "paid");
+    if (isValidPaidPlan(payment.plan)) {
+      await givePremium(payment.telegram_id, payment.plan);
+    }
+    await ctx.answerCbQuery("✅ Payment confirmed", { show_alert: true });
+    await renderPaymentsMenu(ctx);
+  } catch (err) {
+    console.error(err);
+    await ctx.answerCbQuery("❌ Xatolik yuz berdi");
+  }
+});
+
+bot.action(/admin:pay:reject:(.+)/, async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  const paymentId = ctx.match[1];
+  
+  try {
+    const payment = await getPaymentById(paymentId);
+    if (!payment) {
+      await ctx.answerCbQuery("❌ To'lov topilmadi", { show_alert: true });
+      return;
+    }
+    if (payment.status !== "pending") {
+      await ctx.answerCbQuery("Bu to'lov allaqachon ko'rib chiqilgan", { show_alert: true });
+      return;
+    }
+
+    await updatePaymentStatus(paymentId, "failed");
+    await ctx.answerCbQuery("❌ Payment rejected", { show_alert: true });
+    await renderPaymentsMenu(ctx);
+  } catch (err) {
+    console.error(err);
+    await ctx.answerCbQuery("❌ Xatolik yuz berdi");
+  }
 });
 
 // INPUT REQUESTS ACTIONS

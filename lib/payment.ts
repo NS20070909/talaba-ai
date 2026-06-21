@@ -74,3 +74,32 @@ export async function getRecentPayments(limit: number = 20): Promise<PaymentRow[
   }
   return data || [];
 }
+
+export async function getPaymentById(id: string): Promise<PaymentRow | null> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    console.error("getPaymentById error:", error);
+    return null;
+  }
+  return data;
+}
+
+export async function updatePaymentStatus(id: string, status: PaymentStatus): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from("payments")
+    .update({ status })
+    .eq("id", id);
+
+  if (error) {
+    console.error("updatePaymentStatus error:", error);
+    throw error;
+  }
+}
