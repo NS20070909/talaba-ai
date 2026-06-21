@@ -492,6 +492,10 @@ async function renderPaymentsMenu(ctx: any) {
     text += `❌ Failed: ${stats.failed}\n\n`;
     
     text += `📋 <b>Oxirgi 20 ta to'lov:</b>\n`;
+    const keyboard = {
+      inline_keyboard: [] as any[]
+    };
+
     if (recent.length === 0) {
       text += `<i>Hozircha to'lovlar yo'q.</i>\n`;
     } else {
@@ -510,11 +514,7 @@ async function renderPaymentsMenu(ctx: any) {
       });
     }
 
-    const keyboard = {
-      inline_keyboard: [
-        [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
-      ]
-    };
+    keyboard.inline_keyboard.push([{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]);
 
     await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
   } catch (error) {
