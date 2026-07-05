@@ -12,6 +12,10 @@ export interface PaymentRow {
   status: PaymentStatus;
   transaction_id: string | null;
   created_at: string;
+  proof_url?: string | null;
+  proof_uploaded_at?: string | null;
+  confirmed_at?: string | null;
+  confirmed_by?: number | null;
 }
 
 export async function createPayment(data: {
@@ -91,15 +95,46 @@ export async function getPaymentById(id: string): Promise<PaymentRow | null> {
   return data;
 }
 
-export async function updatePaymentStatus(id: string, status: PaymentStatus): Promise<void> {
+export async function updatePaymentStatus(id: string, status: PaymentStatus, confirmedBy?: number): Promise<boolean> {
   const supabase = getSupabase();
-  const { error } = await supabase
+  const updateData: any = { status };
+  
+  if (status === "paid" || status === "failed") {
+    updateData.confirmed_at = new Date().toISOString();
+    if (confirmedBy) {
+      updateData.confirmed_by = confirmedBy;
+    }
+  }
+
+  const { data, error } = await supabase
     .from("payments")
-    .update({ status })
-    .eq("id", id);
+    .update(updateData)
+    .eq("id", id)
+    .eq("status", "pending")
+    .select("id");
 
   if (error) {
     console.error("updatePaymentStatus error:", error);
     throw error;
   }
+  return !!(data && data.length > 0);
+}
+
+export async function setPaymentProofUrl(id: string, proofUrl: string): Promise<boolean> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("payments")
+    .update({
+      proof_url: proofUrl,
+      proof_uploaded_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .is("proof_url", null)
+    .select("id");
+
+  if (error) {
+    console.error("setPaymentProofUrl error:", error);
+    throw error;
+  }
+  return !!(data && data.length > 0);
 }

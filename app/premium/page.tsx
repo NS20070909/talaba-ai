@@ -140,6 +140,13 @@ const PRICING_PLANS: PricingPlan[] = [
 export default function PremiumPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanPeriod>("MONTH");
   const [showUpgradeToast, setShowUpgradeToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  
+  // Upload modal state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [createdPaymentId, setCreatedPaymentId] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const handlePurchase = async () => {
     const telegramIdStr = localStorage.getItem("telegram_user_id");
@@ -168,12 +175,46 @@ export default function PremiumPage() {
       if (!res.ok) {
         throw new Error("To'lov so'rovi xatosi");
       }
-
-      setShowUpgradeToast(true);
-      setTimeout(() => setShowUpgradeToast(false), 3000);
+      
+      const data = await res.json();
+      if (data.success && data.payment?.id) {
+        setCreatedPaymentId(data.payment.id);
+        setShowUploadModal(true);
+      }
     } catch (error) {
       console.error(error);
       alert("Xatolik yuz berdi. Qayta urinib ko'ring.");
+    }
+  };
+
+  const handleUploadProof = async () => {
+    if (!createdPaymentId || !selectedFile) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("payment_id", createdPaymentId);
+      formData.append("image", selectedFile);
+
+      const res = await fetch("/api/payments/upload-proof", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Fayl yuklashda xatolik");
+      }
+
+      setShowUploadModal(false);
+      setToastMessage("✅ Chek yuborildi\n⏳ Admin tasdiqlashini kuting");
+      setShowUpgradeToast(true);
+      setTimeout(() => setShowUpgradeToast(false), 5000);
+    } catch (error: any) {
+      console.error(error);
+      alert(error.message || "Xatolik yuz berdi. Qayta urinib ko'ring.");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -343,6 +384,64 @@ export default function PremiumPage() {
         </div>
       </main>
 
+      {/* Upload Proof Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#101622] border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative">
+            <button 
+              onClick={() => setShowUploadModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+            <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
+              📸 To'lov chekini yuklang
+            </h3>
+            <p className="text-slate-400 text-sm mb-4">
+              Premium tarifni faollashtirish uchun to'lov qilinganligini tasdiqlovchi chek rasmini yuklang.
+            </p>
+            
+            <div className="mb-5">
+              <label className="block w-full text-sm text-slate-400
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-cyan-400 file:text-slate-900
+                hover:file:bg-cyan-300 file:cursor-pointer cursor-pointer border border-dashed border-slate-700 rounded-2xl p-4 text-center">
+                Fayl tanlash...
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setSelectedFile(e.target.files[0]);
+                    }
+                  }}
+                />
+              </label>
+              {selectedFile && (
+                <p className="text-xs text-emerald-400 mt-2 text-center">
+                  ✅ {selectedFile.name} tanlandi
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={handleUploadProof}
+              disabled={!selectedFile || uploading}
+              className={`w-full py-3 rounded-xl font-bold transition-all ${
+                !selectedFile || uploading 
+                  ? "bg-slate-800 text-slate-500 cursor-not-allowed" 
+                  : "bg-cyan-400 text-slate-900 hover:bg-cyan-300"
+              }`}
+            >
+              {uploading ? "⏳ Yuklanmoqda..." : "Yuborish"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Upgrade Toast */}
       {showUpgradeToast && (
         <div
@@ -359,11 +458,12 @@ export default function PremiumPage() {
             padding: "12px 22px",
             fontSize: "14px",
             color: "#fff",
-            whiteSpace: "nowrap",
+            whiteSpace: "pre-line",
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            textAlign: "center",
           }}
         >
-          To'lov so'rovi yaratildi
+          {toastMessage}
         </div>
       )}
     </>

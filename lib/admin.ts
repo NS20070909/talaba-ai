@@ -305,6 +305,7 @@ export interface PremiumUserRow {
   username?: string;
   plan: PlanType;
   premiumUntil: Date | null;
+  premiumGivenAt?: Date | null;
 }
 
 export async function getPremiumUsers(): Promise<PremiumUserRow[]> {
@@ -320,12 +321,29 @@ export async function getPremiumUsers(): Promise<PremiumUserRow[]> {
     return [];
   }
 
+  // Fetch successful payments to determine the premium given time (confirmed_at)
+  const { data: paymentsData, error: paymentsError } = await supabase
+    .from("payments")
+    .select("telegram_id, confirmed_at")
+    .eq("status", "paid")
+    .order("confirmed_at", { ascending: false });
+
+  const paymentMap = new Map<number, Date>();
+  if (!paymentsError && paymentsData) {
+    for (const p of paymentsData) {
+      if (p.confirmed_at && !paymentMap.has(Number(p.telegram_id))) {
+        paymentMap.set(Number(p.telegram_id), new Date(p.confirmed_at));
+      }
+    }
+  }
+
   return (data ?? []).map((row: any) => ({
     telegramId: Number(row.telegram_id),
     firstName: row.first_name,
     username: row.username || undefined,
     plan: row.plan as PlanType,
     premiumUntil: row.premium_until ? new Date(row.premium_until) : null,
+    premiumGivenAt: paymentMap.get(Number(row.telegram_id)) || null,
   }));
 }
 

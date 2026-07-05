@@ -7,6 +7,7 @@ import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiu
 import { getUser, createUser } from "@/lib/storage";
 import { getPaymentsStats, getRecentPayments, getPaymentById, updatePaymentStatus } from "@/lib/payment";
 import { bot } from "@/lib/bot";
+import { getSupabase } from "@/lib/supabase";
 
 // TELEGRAM FILE SEND
 export async function sendFileToTelegram(
@@ -373,6 +374,7 @@ async function renderMainPanel(ctx: any) {
           { text: "📊 Statistics", callback_data: "admin:stats" }
         ],
         [
+          { text: "👑 Premium Users", callback_data: "admin:premium:list" },
           { text: "💰 Payments", callback_data: "admin:payments" }
         ]
       ]
@@ -499,24 +501,57 @@ async function renderPaymentsMenu(ctx: any) {
     if (recent.length === 0) {
       text += `<i>Hozircha to'lovlar yo'q.</i>\n`;
     } else {
-      recent.forEach((p, index) => {
+      for (let i = 0; i < recent.length; i++) {
+        const p = recent[i];
         const date = new Date(p.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
-        text += `${index + 1}. <b>${p.plan}</b> - ${p.amount} UZS\n`;
-        text += `   User: <code>${p.telegram_id}</code> | Status: <i>${p.status}</i>\n`;
-        text += `   Sana: ${date}\n\n`;
+        const user = await getUser(p.telegram_id);
+        const firstName = user?.firstName || "Unknown";
+        const username = user?.username ? `@${user.username}` : "yo'q";
+        const proofDate = p.proof_uploaded_at ? new Date(p.proof_uploaded_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" }) : "yo'q";
+
+        let auditStr = "";
+        if (p.confirmed_at) {
+          const confDate = new Date(p.confirmed_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+          auditStr += `\n📅 Tasdiqlangan vaqt: ${confDate}`;
+        }
+        if (p.confirmed_by) {
+          auditStr += `\n👤 Tasdiqladi (Admin ID): <code>${p.confirmed_by}</code>`;
+        }
+
+        text += `${i + 1}. <b>${p.plan}</b> - ${p.amount} UZS\n`;
+        text += `👤 Ism: ${firstName}\n📛 Username: ${username}\n🆔 Telegram ID: <code>${p.telegram_id}</code>\n`;
+        text += `📦 Tarif: ${p.plan}\n💵 Summa: ${p.amount} UZS\n`;
+        text += `📅 Payment yaratilgan vaqt: ${date}\n📸 Proof yuklangan vaqt: ${proofDate}\n📊 Status: <i>${p.status}</i>${auditStr}\n\n`;
+
+        const row: any[] = [];
+        if (p.proof_url) {
+          row.push({ text: `📸 View Proof #${i + 1}`, callback_data: `admin:pay:view:${p.id}` });
+        }
+        if (row.length > 0) {
+          keyboard.inline_keyboard.push(row);
+        }
 
         if (p.status === "pending") {
           keyboard.inline_keyboard.push([
-            { text: `✅ Confirm #${index + 1}`, callback_data: `admin:pay:confirm:${p.id}` },
-            { text: `❌ Reject #${index + 1}`, callback_data: `admin:pay:reject:${p.id}` }
+            { text: `✅ Confirm #${i + 1}`, callback_data: `admin:pay:confirm:${p.id}` },
+            { text: `❌ Reject #${i + 1}`, callback_data: `admin:pay:reject:${p.id}` }
           ]);
         }
-      });
+      }
     }
 
     keyboard.inline_keyboard.push([{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]);
 
-    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    const cbMessage = ctx.callbackQuery?.message as any;
+    if (cbMessage?.text && cbMessage.text.includes("Payments Dashboard")) {
+      await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    } else {
+      if (ctx.callbackQuery) {
+        await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+      } else {
+        await ctx.replyWithHTML(text, { reply_markup: keyboard });
+      }
+    }
   } catch (error) {
     console.error("renderPaymentsMenu error:", error);
     await ctx.reply("❌ Xatolik yuz berdi");
@@ -582,17 +617,25 @@ bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
       await ctx.answerCbQuery("❌ To'lov topilmadi", { show_alert: true });
       return;
     }
-    if (payment.status !== "pending") {
+
+    const updated = await updatePaymentStatus(paymentId, "paid", ctx.from.id);
+    if (!updated) {
       await ctx.answerCbQuery("Bu to'lov allaqachon ko'rib chiqilgan", { show_alert: true });
       return;
     }
 
-    await updatePaymentStatus(paymentId, "paid");
     if (isValidPaidPlan(payment.plan)) {
       await givePremium(payment.telegram_id, payment.plan);
     }
     await ctx.answerCbQuery("✅ Payment confirmed", { show_alert: true });
-    await renderPaymentsMenu(ctx);
+    
+    // Auto update the message text if it was a notification
+    const cbMsg = ctx.callbackQuery?.message as any;
+    if (cbMsg?.text && !cbMsg.text.includes("Payments Dashboard")) {
+       await ctx.editMessageText(cbMsg.text + "\n\n✅ <b>Tasdiqlandi</b>", { reply_markup: { inline_keyboard: [] }});
+    } else {
+       await renderPaymentsMenu(ctx);
+    }
   } catch (err) {
     console.error(err);
     await ctx.answerCbQuery("❌ Xatolik yuz berdi");
@@ -609,14 +652,62 @@ bot.action(/admin:pay:reject:(.+)/, async (ctx) => {
       await ctx.answerCbQuery("❌ To'lov topilmadi", { show_alert: true });
       return;
     }
-    if (payment.status !== "pending") {
+
+    const updated = await updatePaymentStatus(paymentId, "failed", ctx.from.id);
+    if (!updated) {
       await ctx.answerCbQuery("Bu to'lov allaqachon ko'rib chiqilgan", { show_alert: true });
       return;
     }
 
-    await updatePaymentStatus(paymentId, "failed");
     await ctx.answerCbQuery("❌ Payment rejected", { show_alert: true });
-    await renderPaymentsMenu(ctx);
+    
+    const cbMsg = ctx.callbackQuery?.message as any;
+    if (cbMsg?.text && !cbMsg.text.includes("Payments Dashboard")) {
+       await ctx.editMessageText(cbMsg.text + "\n\n❌ <b>Rad etildi</b>", { reply_markup: { inline_keyboard: [] }});
+    } else {
+       await renderPaymentsMenu(ctx);
+    }
+  } catch (err) {
+    console.error(err);
+    await ctx.answerCbQuery("❌ Xatolik yuz berdi");
+  }
+});
+
+bot.action(/admin:pay:view:(.+)/, async (ctx) => {
+  if (!isOwner(ctx.from?.id || 0)) return;
+  const paymentId = ctx.match[1];
+
+  try {
+    const payment = await getPaymentById(paymentId);
+    if (!payment || !payment.proof_url) {
+      await ctx.answerCbQuery("❌ Chek topilmadi", { show_alert: true });
+      return;
+    }
+
+    const supabase = getSupabase();
+    const { data: urlData, error: urlError } = await supabase
+      .storage
+      .from("payment-proofs")
+      .createSignedUrl(payment.proof_url, 60);
+
+    if (urlError || !urlData) {
+      await ctx.answerCbQuery("❌ Rasmni ochishda xatolik", { show_alert: true });
+      return;
+    }
+
+    const user = await getUser(payment.telegram_id);
+    const firstName = user?.firstName || "Unknown";
+    const username = user?.username ? `@${user.username}` : "yo'q";
+    
+    const caption = `👤 Ism: ${firstName}\n` +
+      `📛 Username: ${username}\n` +
+      `🆔 Telegram ID: <code>${payment.telegram_id}</code>\n` +
+      `📦 Tarif: ${payment.plan}\n` +
+      `💵 Summa: ${payment.amount} UZS\n` +
+      `📅 Sana: ${new Date(payment.created_at).toLocaleString("uz-UZ", {timeZone: "Asia/Tashkent"})}`;
+
+    await ctx.replyWithPhoto(urlData.signedUrl, { caption, parse_mode: "HTML" });
+    await ctx.answerCbQuery();
   } catch (err) {
     console.error(err);
     await ctx.answerCbQuery("❌ Xatolik yuz berdi");
@@ -719,21 +810,22 @@ bot.action("admin:premium:list", async (ctx) => {
       await ctx.reply("💎 Hozircha premium foydalanuvchilar yo'q.");
     } else {
       let message = `💎 <b>Premium Users</b>\n\n`;
-      const planDisplayMap: Record<string, string> = {
-        YEAR: "👑 YEAR",
-        QUARTER: "🔥 QUARTER",
-        MONTH: "💎 MONTH",
-        WEEK: "⚡ WEEK",
-        DAY: "🟢 DAY",
-      };
 
       premiumUsers.forEach((u, i) => {
         const usernameDisplay = u.username ? `@${u.username}` : "yo'q";
-        const until = u.premiumUntil
-          ? `${String(u.premiumUntil.getDate()).padStart(2, '0')}/${String(u.premiumUntil.getMonth() + 1).padStart(2, '0')}/${u.premiumUntil.getFullYear()}`
+        const untilStr = u.premiumUntil
+          ? new Date(u.premiumUntil).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" })
           : "—";
-        const planDisplay = planDisplayMap[u.plan] || `👑 ${u.plan}`;
-        message += `${i + 1}.\n\n👤 ${u.firstName}\n📛 ${usernameDisplay}\n🆔 <code>${u.telegramId}</code>\n${planDisplay}\n📅 ${until}\n\n`;
+        const givenAtStr = u.premiumGivenAt
+          ? `\n📅 Premium berilgan vaqt: ${new Date(u.premiumGivenAt).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" })}`
+          : "";
+
+        message += `${i + 1}.\n` +
+          `👤 Ism: ${u.firstName}\n` +
+          `📛 Username: ${usernameDisplay}\n` +
+          `🆔 Telegram ID: <code>${u.telegramId}</code>\n` +
+          `📦 Plan: ${u.plan}\n` +
+          `📅 Premium Until: ${untilStr}${givenAtStr}\n\n`;
       });
       message += `━━━━━━━━━━\n\n📊 Total Premium Users: ${premiumUsers.length}`;
       await ctx.replyWithHTML(message);

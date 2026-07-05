@@ -21,6 +21,38 @@ export async function POST(req: Request) {
       transaction_id: transaction_id,
     });
 
+    try {
+      const { getUser } = await import("@/lib/storage");
+      const { bot } = await import("@/lib/bot");
+      const { OWNER_ID } = await import("@/lib/admin");
+      
+      const user = await getUser(Number(telegram_id));
+      const firstNameDisplay = user?.firstName ? user.firstName : "Noma'lum";
+      const usernameDisplay = user?.username ? `@${user.username}` : "Mavjud emas";
+
+      const msg = `🆕 Yangi Premium So'rov\n\n` +
+        `👤 Ism: ${firstNameDisplay}\n\n` +
+        `📛 Username: ${usernameDisplay}\n\n` +
+        `🆔 ID: ${telegram_id}\n\n` +
+        `📦 Tarif: ${plan}\n\n` +
+        `💵 Summa: ${amount} so'm\n\n` +
+        `📅 Vaqt: ${new Date(payment.created_at).toLocaleString("uz-UZ", {timeZone: "Asia/Tashkent"})}\n\n` +
+        `Status:\n⏳ Pending`;
+
+      const inlineKeyboard = {
+        inline_keyboard: [
+          [
+            { text: "✅ Confirm", callback_data: `admin:pay:confirm:${payment.id}` },
+            { text: "❌ Reject", callback_data: `admin:pay:reject:${payment.id}` }
+          ]
+        ]
+      };
+
+      await bot.telegram.sendMessage(OWNER_ID, msg, { reply_markup: inlineKeyboard });
+    } catch (e) {
+      console.error("Auto notification error:", e);
+    }
+
     return NextResponse.json({ success: true, payment });
   } catch (error: any) {
     console.error("Payment create error:", error);
