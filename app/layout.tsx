@@ -37,14 +37,27 @@ export default function RootLayout({
 
               tg.expand();
 
-              const userId =
-                tg.initDataUnsafe?.user?.id;
+              const user = tg.initDataUnsafe?.user;
 
-              if (userId) {
+              if (user && user.id) {
                 localStorage.setItem(
                   "telegram_user_id",
-                  userId.toString()
+                  user.id.toString()
                 );
+
+                fetch("/api/sync-user", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    id: user.id,
+                    first_name: user.first_name || "Telegram User",
+                    username: user.username || ""
+                  }),
+                }).catch(function(err) {
+                  console.error("Failed to sync user:", err);
+                });
               }
             }
           `}

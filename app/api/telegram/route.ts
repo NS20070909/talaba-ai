@@ -624,10 +624,32 @@ bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
       return;
     }
 
+    let premiumUntil: Date | null = null;
     if (isValidPaidPlan(payment.plan)) {
-      await givePremium(payment.telegram_id, payment.plan);
+      premiumUntil = await givePremium(payment.telegram_id, payment.plan);
     }
     await ctx.answerCbQuery("✅ Payment confirmed", { show_alert: true });
+
+    // Notify user about successful activation
+    try {
+      const premiumUntilStr = premiumUntil
+        ? premiumUntil.toLocaleDateString("uz-UZ", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            timeZone: "Asia/Tashkent",
+          })
+        : "—";
+      await bot.telegram.sendMessage(
+        payment.telegram_id,
+        `🎉 Premium tarifingiz tasdiqlandi!\n\n` +
+        `📦 Tarif: ${payment.plan}\n` +
+        `📅 Amal qilish muddati: ${premiumUntilStr}\n\n` +
+        `Talaba AI Premium muvaffaqiyatli faollashtirildi.`
+      );
+    } catch (notifyErr) {
+      console.error("User confirm notification error:", notifyErr);
+    }
     
     // Auto update the message text if it was a notification
     const cbMsg = ctx.callbackQuery?.message as any;
@@ -660,6 +682,17 @@ bot.action(/admin:pay:reject:(.+)/, async (ctx) => {
     }
 
     await ctx.answerCbQuery("❌ Payment rejected", { show_alert: true });
+
+    // Notify user about rejection
+    try {
+      await bot.telegram.sendMessage(
+        payment.telegram_id,
+        `❌ To'lovingiz tasdiqlanmadi.\n\n` +
+        `Iltimos chekni qayta yuboring yoki administrator bilan bog'laning.`
+      );
+    } catch (notifyErr) {
+      console.error("User reject notification error:", notifyErr);
+    }
     
     const cbMsg = ctx.callbackQuery?.message as any;
     if (cbMsg?.text && !cbMsg.text.includes("Payments Dashboard")) {

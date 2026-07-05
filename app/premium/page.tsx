@@ -237,7 +237,9 @@ export default function PremiumPage() {
             <Link href="/" className="text-slate-400 flex items-center gap-1 transition-all active:scale-95">
               <span>←</span> Orqaga
             </Link>
-            <span className="text-slate-400 text-xs font-medium">Tariflar paneli</span>
+            <Link href="/payments" className="text-cyan-400 hover:text-cyan-300 text-xs font-bold transition-all active:scale-95 flex items-center gap-1">
+              📜 To'lovlar tarixi
+            </Link>
           </div>
 
           {/* Heading */}

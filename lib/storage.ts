@@ -155,9 +155,12 @@ export async function getUsageStats(telegramId: number): Promise<UsageStats> {
     return mapUsageStats(data);
   }
 
-  // Ensure user exists before creating usage stats (auto-create if missing)
+  // Ensure user exists before creating usage stats.
+  // We do NOT create with hardcoded "Telegram User" — that would overwrite real data.
+  // saveOrUpdateUser is called from /api/sync-user at app startup with real Telegram data.
   const user = await getUser(telegramId);
   if (!user) {
+    // Minimal placeholder — will be overwritten once sync-user is called
     await createUser(telegramId, "Telegram User", undefined, "FREE");
   }
 
@@ -245,3 +248,24 @@ export async function resetUsageStats(telegramId: number): Promise<UsageStats> {
 
   return mapUsageStats(data);
 }
+
+export async function saveOrUpdateUser(
+  telegramId: number,
+  firstName: string,
+  username?: string
+): Promise<User> {
+  const user = await getUser(telegramId);
+  if (user) {
+    const updated = await updateUser(telegramId, {
+      firstName,
+      username: username || undefined,
+    });
+    if (!updated) {
+      throw new Error(`Failed to update user: ${telegramId}`);
+    }
+    return updated;
+  } else {
+    return await createUser(telegramId, firstName, username, "FREE");
+  }
+}
+

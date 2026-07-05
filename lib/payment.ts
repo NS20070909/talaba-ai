@@ -79,6 +79,21 @@ export async function getRecentPayments(limit: number = 20): Promise<PaymentRow[
   return data || [];
 }
 
+export async function getUserPayments(telegramId: number): Promise<PaymentRow[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("telegram_id", telegramId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("getUserPayments error:", error);
+    return [];
+  }
+  return data || [];
+}
+
 export async function getPaymentById(id: string): Promise<PaymentRow | null> {
   const supabase = getSupabase();
   const { data, error } = await supabase
