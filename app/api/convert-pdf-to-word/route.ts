@@ -4,6 +4,7 @@ import {
   Document,
   Packer,
   Paragraph,
+  TextRun,
 } from "docx";
 import fs from "fs";
 import os from "os";
@@ -13,150 +14,93 @@ import { promisify } from "util";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
 import { guardCheck, canUsePDF, incrementPDF } from "@/lib/limit-checker";
 
-const execAsync =
-  promisify(exec);
+const execAsync = promisify(exec);
 
-const ai =
-  new GoogleGenAI({
-    apiKey:
-      process.env
-        .GEMINI_DOCUMENT_API_KEY!,
-  });
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_DOCUMENT_API_KEY!,
+});
 
 // FALLBACK MODELS
 const MODELS = [
-  "gemini-3.1-flash-lite",
+  "gemini-1.5-flash", // Hozirda barqaror va tezkor ishlaydigan modellar
   "gemini-2.5-flash",
   "gemini-2.0-flash",
   "gemini-2.5-flash-lite",
-  "gemini-3-flash",
 ];
 
 // OCR GENERATOR
-async function generateOCR(
-  base64: string
-) {
+async function generateOCR(base64: string) {
   let lastError;
 
   for (const model of MODELS) {
     try {
-      console.log(
-        `Trying model: ${model}`
-      );
+      console.log(`Trying model: ${model}`);
 
-      const result =
-        await ai.models.generateContent(
+      const result = await ai.models.generateContent({
+        model,
+        contents: [
           {
-            model,
-            contents: [
+            role: "user",
+            parts: [
               {
-                role:
-                  "user",
-                parts: [
-                  {
-                    text:
-                      "Bu PDF sahifasidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma. Matn strukturasini saqla.",
-                  },
-                  {
-                    inlineData:
-                      {
-                        mimeType:
-                          "image/png",
-                        data: base64,
-                      },
-                  },
-                ],
+                text: "Bu PDF sahifasidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma. Matn strukturasini saqla.",
+              },
+              {
+                inlineData: {
+                  mimeType: "image/png",
+                  data: base64,
+                },
               },
             ],
-          }
-        );
+          },
+        ],
+      });
 
-      console.log(
-        `Success model: ${model}`
-      );
-
-      return (
-        result.text ||
-        ""
-      );
-    } catch (
-      error
-    ) {
-      console.log(
-        `Failed model: ${model}`
-      );
-
-      console.error(
-        error
-      );
-
-      lastError =
-        error;
-
+      console.log(`Success model: ${model}`);
+      return result.text || "";
+    } catch (error) {
+      console.log(`Failed model: ${model}`);
+      console.error(error);
+      lastError = error;
       continue;
     }
   }
+  throw lastError; // Agar barcha modellar xato bersa xatolikni otamiz
+} // <=== MANA SHU YERDA QAVS TUSHIB QOLGAN EDI!
 
-async function generatePDFOCR(
-  base64: string
-) {
+async function generatePDFOCR(base64: string) {
   let lastError;
 
   for (const model of MODELS) {
     try {
-      console.log(
-        `Trying PDF model: ${model}`
-      );
+      console.log(`Trying PDF model: ${model}`);
 
-      const result =
-        await ai.models.generateContent(
+      const result = await ai.models.generateContent({
+        model,
+        contents: [
           {
-            model,
-            contents: [
+            role: "user",
+            parts: [
               {
-                role:
-                  "user",
-                parts: [
-                  {
-                    text:
-                      "Bu PDF hujjatidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma. Matn strukturasini saqla.",
-                  },
-                  {
-                    inlineData:
-                      {
-                        mimeType:
-                          "application/pdf",
-                        data: base64,
-                      },
-                  },
-                ],
+                text: "Bu PDF hujjatidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma. Matn strukturasini saqla.",
+              },
+              {
+                inlineData: {
+                  mimeType: "application/pdf",
+                  data: base64,
+                },
               },
             ],
-          }
-        );
+          },
+        ],
+      });
 
-      console.log(
-        `Success PDF model: ${model}`
-      );
-
-      return (
-        result.text ||
-        ""
-      );
-    } catch (
-      error
-    ) {
-      console.log(
-        `Failed PDF model: ${model}`
-      );
-
-      console.error(
-        error
-      );
-
-      lastError =
-        error;
-
+      console.log(`Success PDF model: ${model}`);
+      return result.text || "";
+    } catch (error) {
+      console.log(`Failed PDF model: ${model}`);
+      console.error(error);
+      lastError = error;
       continue;
     }
   }
@@ -164,22 +108,12 @@ async function generatePDFOCR(
   throw lastError;
 }
 
-export async function POST(
-  request: Request
-) {
+export async function POST(request: Request) {
   try {
-    const formData =
-      await request.formData();
+    const formData = await request.formData();
 
-    const file =
-      formData.get(
-        "file"
-      ) as File | null;
-
-    const userId =
-      formData.get(
-        "telegram_user_id"
-      ) as string | null;
+    const file = formData.get("file") as File | null;
+    const userId = formData.get("telegram_user_id") as string | null;
 
     const telegramId = Number(userId);
     if (!telegramId || isNaN(telegramId)) {
@@ -210,49 +144,25 @@ export async function POST(
       );
     }
 
-    const sendToTelegram =
-      formData.get(
-        "send_to_telegram"
-      ) === "true";
+    const sendToTelegram = formData.get("send_to_telegram") === "true";
 
     if (!file) {
       return NextResponse.json(
         {
-          error:
-            "Fayl topilmadi",
+          error: "Fayl topilmadi",
         },
         { status: 400 }
       );
     }
 
-    const tempDir =
-      os.tmpdir();
+    const tempDir = os.tmpdir();
+    const pdfPath = path.join(tempDir, `${Date.now()}.pdf`);
+    const imgDir = path.join(tempDir, `pdf-images-${Date.now()}`);
 
-    const pdfPath =
-      path.join(
-        tempDir,
-        `${Date.now()}.pdf`
-      );
+    fs.mkdirSync(imgDir);
 
-    const imgDir =
-      path.join(
-        tempDir,
-        `pdf-images-${Date.now()}`
-      );
-
-    fs.mkdirSync(
-      imgDir
-    );
-
-    const bytes =
-      await file.arrayBuffer();
-
-    fs.writeFileSync(
-      pdfPath,
-      Buffer.from(
-        bytes
-      )
-    );
+    const bytes = await file.arrayBuffer();
+    fs.writeFileSync(pdfPath, Buffer.from(bytes));
 
     // PDF → PNG (requires pdftoppm — not available on Vercel serverless)
     const pdftoppmPath = process.env.PDFTOPPM_PATH || "pdftoppm";
@@ -264,62 +174,24 @@ export async function POST(
     let finalText = "";
 
     if (pdftoppmBin) {
-      await execAsync(`
-        "${pdftoppmBin}" -png "${pdfPath}" "${imgDir}/page"
-      `);
+      await execAsync(`"${pdftoppmBin}" -png "${pdfPath}" "${imgDir}/page"`);
 
-      const imageFiles =
-        fs
-          .readdirSync(
-            imgDir
-          )
-          .filter((f) =>
-            f.endsWith(
-              ".png"
-            )
-          );
+      const imageFiles = fs
+        .readdirSync(imgDir)
+        .filter((f) => f.endsWith(".png"));
 
       for (const img of imageFiles) {
-        const imagePath =
-          path.join(
-            imgDir,
-            img
-          );
-
-        const base64 =
-          fs
-            .readFileSync(
-              imagePath
-            )
-            .toString(
-              "base64"
-            );
+        const imagePath = path.join(imgDir, img);
+        const base64 = fs.readFileSync(imagePath).toString("base64");
 
         // OCR
-        const text =
-          await generateOCR(
-            base64
-          );
-
-        finalText +=
-          text +
-          "\n\n";
+        const text = await generateOCR(base64);
+        finalText += text + "\n\n";
       }
 
       // CLEANUP
-      fs.rmSync(
-        imgDir,
-        {
-          recursive:
-            true,
-          force:
-            true,
-        }
-      );
-
-      fs.unlinkSync(
-        pdfPath
-      );
+      fs.rmSync(imgDir, { recursive: true, force: true });
+      fs.unlinkSync(pdfPath);
     } else {
       // Clean up temp directories created before checking pdftoppmBin
       try {
@@ -332,24 +204,30 @@ export async function POST(
       finalText = await generatePDFOCR(pdfBase64);
     }
 
-    const fileName =
-      file.name.replace(
-        ".pdf",
-        ".docx"
-      );
+    // 📝 DOCX FAYLINI YARATISH (Sizda shu qism tushib qolgandi va "buffer" topilmayotgandi)
+    const doc = new Document({
+      sections: [
+        {
+          properties: {},
+          children: finalText.split("\n").map(
+            (line) =>
+              new Paragraph({
+                children: [new TextRun(line)],
+              })
+          ),
+        },
+      ],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+
+    const fileName = file.name.replace(".pdf", ".docx");
 
     // TELEGRAM
-    if (
-      sendToTelegram &&
-      userId
-    ) {
+    if (sendToTelegram && userId) {
       await sendFileToTelegram(
-        Number(
-          userId
-        ),
-        Buffer.from(
-          buffer
-        ),
+        Number(userId),
+        Buffer.from(buffer),
         fileName
       );
 
@@ -357,12 +235,7 @@ export async function POST(
         await incrementPDF(telegramId);
       }
 
-      return NextResponse.json(
-        {
-          success:
-            true,
-        }
-      );
+      return NextResponse.json({ success: true });
     }
 
     // DOWNLOAD
@@ -370,32 +243,19 @@ export async function POST(
       await incrementPDF(telegramId);
     }
 
-    return new Response(
-      new Uint8Array(
-        buffer
-      ),
-      {
-        headers: {
-          "Content-Type":
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-
-          "Content-Disposition":
-            `attachment; filename="${fileName}"`,
-        },
-      }
-    );
-  } catch (
-    error
-  ) {
-    console.error(
-      "PDF to Word error:",
-      error
-    );
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename="${fileName}"`,
+      },
+    });
+  } catch (error) {
+    console.error("PDF to Word error:", error);
 
     return NextResponse.json(
       {
-        error:
-          "PDF → Word xatolik",
+        error: "PDF → Word xatolik",
       },
       {
         status: 500,
