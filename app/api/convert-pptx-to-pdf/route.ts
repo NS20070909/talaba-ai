@@ -11,6 +11,7 @@ const convertAsync = promisify(
 export async function POST(
   request: Request
 ) {
+  console.log("[DIAGNOSTICS] 1. Request received");
   try {
     const formData =
       await request.formData();
@@ -19,12 +20,18 @@ export async function POST(
       "file"
     ) as File | null;
 
+    if (file) {
+      console.log("[DIAGNOSTICS] 2. File name:", file.name);
+      console.log("[DIAGNOSTICS] 3. File size:", file.size);
+    }
+
     const userId =
       formData.get(
         "telegram_user_id"
       ) as string | null;
 
     const telegramId = Number(userId);
+    console.log("[DIAGNOSTICS] 4. telegram_user_id:", telegramId);
     if (!telegramId || isNaN(telegramId)) {
       console.log("PPTX ERROR: telegram_user_id missing or invalid");
       return NextResponse.json({ error: "telegram_user_id is required" }, { status: 400 });
@@ -78,6 +85,7 @@ export async function POST(
 
     const { existsSync } = require("fs") as typeof import("fs");
     const hasSoffice = existsSync(sofficePath);
+    console.log("[DIAGNOSTICS] 5. hasSoffice result:", hasSoffice);
 
     const bytes =
       await file.arrayBuffer();
@@ -96,6 +104,7 @@ export async function POST(
           undefined
         );
     } else if (process.env.CLOUDCONVERT_API_KEY) {
+      console.log("[DIAGNOSTICS] 6. CloudConvert fallback start");
       const { convertWithCloudConvert } = await import("@/lib/cloudconvert");
       pdfBuffer = await convertWithCloudConvert(buffer, file.name, "pptx", "pdf");
     } else {
@@ -149,11 +158,12 @@ export async function POST(
         },
       }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error(
       "PPTX to PDF error:",
       error
     );
+    console.error("[DIAGNOSTICS] 10. Full error.stack:", error?.stack || error);
 
     return NextResponse.json(
       {

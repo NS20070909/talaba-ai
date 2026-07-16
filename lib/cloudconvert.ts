@@ -38,8 +38,10 @@ export async function convertWithCloudConvert(
   if (!uploadTask) throw new Error("CloudConvert task creation failed");
 
   await cloudConvert.tasks.upload(uploadTask, fileBuffer, fileName);
+  console.log("[DIAGNOSTICS] 7. CloudConvert upload success");
 
   const finishedJob = await cloudConvert.jobs.wait(job.id);
+  console.log("[DIAGNOSTICS] 8. CloudConvert job status:", finishedJob.status);
 
   const exportTask = finishedJob.tasks.find((t) => t.name === "export-file");
   if (!exportTask || exportTask.status !== "finished" || !exportTask.result?.files?.[0]?.url) {
@@ -49,6 +51,7 @@ export async function convertWithCloudConvert(
   const fileUrl = exportTask.result.files[0].url;
   const response = await fetch(fileUrl);
   if (!response.ok) throw new Error(`Failed to fetch converted file from CloudConvert: ${response.statusText}`);
+  console.log("[DIAGNOSTICS] 9. CloudConvert download success");
 
   return Buffer.from(await response.arrayBuffer());
 }
