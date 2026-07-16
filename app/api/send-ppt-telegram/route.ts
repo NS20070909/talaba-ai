@@ -41,14 +41,13 @@ export async function POST(
       const base64Content = fileUrl.split(";base64,").pop() || "";
       fileBuffer = Buffer.from(base64Content, "base64");
     } else {
-      const name = fileUrl.split("/").pop() || "Presentation.pptx";
-      fileName = name;
-      const filePath = path.join(
-        process.cwd(),
-        "public",
-        name
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid fileUrl format. Only base64 data URLs are supported on Vercel.",
+        },
+        { status: 400 }
       );
-      fileBuffer = fs.readFileSync(filePath);
     }
 
     const formData =
