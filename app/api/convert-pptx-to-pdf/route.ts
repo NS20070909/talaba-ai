@@ -26,6 +26,7 @@ export async function POST(
 
     const telegramId = Number(userId);
     if (!telegramId || isNaN(telegramId)) {
+      console.log("PPTX ERROR: telegram_user_id missing or invalid");
       return NextResponse.json({ error: "telegram_user_id is required" }, { status: 400 });
     }
 
@@ -59,6 +60,7 @@ export async function POST(
       ) === "true";
 
     if (!file) {
+      console.log("PPTX ERROR: file missing");
       return NextResponse.json(
         {
           error:
