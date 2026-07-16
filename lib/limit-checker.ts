@@ -138,3 +138,32 @@ export async function incrementScan(telegramId: number): Promise<void> {
     scanUsedToday: stats.scanUsedToday + 1,
   });
 }
+
+export async function canUseReferat(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+  
+  const limits = PLAN_LIMITS[plan];
+  if (limits?.unlimited) {
+    return { allowed: true, remaining: Infinity };
+  }
+  
+  const stats = await getOrResetUsage(telegramId);
+  const limit = limits?.referatPerDay || 0;
+  const remaining = Math.max(0, limit - stats.referatUsedToday);
+  
+  return {
+    allowed: remaining > 0,
+    remaining,
+  };
+}
+
+export async function incrementReferat(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    referatUsedToday: stats.referatUsedToday + 1,
+  });
+}

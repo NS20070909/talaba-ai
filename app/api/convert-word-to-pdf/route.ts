@@ -70,9 +70,12 @@ export async function POST(
       );
     }
 
-    // Railway Linux path
-    process.env.SOFFICE_PATH =
-      "/usr/bin/soffice";
+    // LibreOffice path — not available on Vercel serverless
+    const sofficePath = process.env.SOFFICE_PATH || "/usr/bin/soffice";
+    process.env.SOFFICE_PATH = sofficePath;
+
+    const { existsSync } = require("fs") as typeof import("fs");
+    const hasSoffice = existsSync(sofficePath);
 
     const bytes =
       await file.arrayBuffer();
@@ -80,13 +83,28 @@ export async function POST(
     const buffer =
       Buffer.from(bytes);
 
-    // DOCX → PDF
-    const pdfBuffer =
-      await convertAsync(
-        buffer,
-        ".pdf",
-        undefined
+    let pdfBuffer: Buffer;
+
+    if (hasSoffice) {
+      // DOCX → PDF
+      pdfBuffer =
+        await convertAsync(
+          buffer,
+          ".pdf",
+          undefined
+        );
+    } else if (process.env.CLOUDCONVERT_API_KEY) {
+      const { convertWithCloudConvert } = await import("@/lib/cloudconvert");
+      pdfBuffer = await convertWithCloudConvert(buffer, file.name, "docx", "pdf");
+    } else {
+      return NextResponse.json(
+        {
+          error:
+            "Word → PDF Vercelda qo'llab-quvvatlanmaydi. Iltimos CloudConvert API kalitini o'rnating yoki Railwaydan foydalaning.",
+        },
+        { status: 503 }
       );
+    }
 
     // TELEGRAMGA YUBORISH
     if (

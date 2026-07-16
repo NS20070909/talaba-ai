@@ -32,6 +32,7 @@ export interface UsageStats {
   pptUsedToday: number;
   pdfUsedToday: number;
   scanUsedToday: number;
+  referatUsedToday: number;
 
   lastResetDate: Date;
 

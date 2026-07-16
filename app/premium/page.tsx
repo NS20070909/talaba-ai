@@ -17,6 +17,7 @@ export interface PricingPlan {
     scan: string | number;
     ppt: string | number;
     pdf: string | number;
+    referat: string | number;
   };
   features: string[];
   colorClass: string;
@@ -37,8 +38,9 @@ const PRICING_PLANS: PricingPlan[] = [
       scan: 5,
       ppt: 3,
       pdf: 5,
+      referat: 10,
     },
-    features: ["Kunlik 5 ta Scan", "Kunlik 3 ta PPT generator", "Kunlik 5 ta PDF vositalari"],
+    features: ["Kunlik 5 ta Scan", "Kunlik 3 ta PPT generator", "Kunlik 5 ta PDF vositalari", "Kunlik 10 ta AI Referat"],
     colorClass: "border-emerald-500/30 text-emerald-400",
     bgClass: "bg-[#162520]/40",
     glowClass: "",
@@ -55,8 +57,9 @@ const PRICING_PLANS: PricingPlan[] = [
       scan: 50,
       ppt: 20,
       pdf: 50,
+      referat: 50,
     },
-    features: ["Haftalik 50 ta Scan", "Haftalik 20 ta PPT generator", "Haftalik 50 ta PDF vositalari"],
+    features: ["Haftalik 50 ta Scan", "Haftalik 20 ta PPT generator", "Haftalik 50 ta PDF vositalari", "Haftalik 50 ta AI Referat"],
     colorClass: "border-sky-500/30 text-sky-400",
     bgClass: "bg-[#112030]/40",
     glowClass: "",
@@ -74,11 +77,13 @@ const PRICING_PLANS: PricingPlan[] = [
       scan: 300,
       ppt: 120,
       pdf: 300,
+      referat: 120,
     },
     features: [
       "Oylik 300 ta Scan",
       "Oylik 120 ta PPT generator",
       "Oylik 300 ta PDF vositalari",
+      "Oylik 120 ta AI Referat (max 15 bet)",
       "Prioritetli server kirishi",
     ],
     colorClass: "border-purple-500 text-purple-400",
@@ -98,11 +103,13 @@ const PRICING_PLANS: PricingPlan[] = [
       scan: 1000,
       ppt: 400,
       pdf: 1000,
+      referat: 400,
     },
     features: [
       "3 oylik 1000 ta Scan",
       "3 oylik 400 ta PPT generator",
       "3 oylik 1000 ta PDF vositalari",
+      "3 oylik 400 ta AI Referat (max 15 bet)",
       "Prioritetli server kirishi",
       "Premium qo'llab-quvvatlash",
     ],
@@ -122,11 +129,13 @@ const PRICING_PLANS: PricingPlan[] = [
       scan: "Cheksiz",
       ppt: "Cheksiz",
       pdf: "Cheksiz",
+      referat: "Cheksiz",
     },
     features: [
       "Cheksiz Bilet Scan",
       "Cheksiz PPT generator",
       "Cheksiz barcha PDF vositalari",
+      "Cheksiz AI Referat yozish",
       "Premium maxsus nishon",
       "Yangi premium funksiyalarga birinchi kirish",
     ],
@@ -299,18 +308,22 @@ export default function PremiumPage() {
                   </div>
 
                   {/* Limits summary inline */}
-                  <div className="grid grid-cols-3 gap-2 border-t border-slate-800/60 pt-3 mt-1 text-center">
+                  <div className="grid grid-cols-4 gap-1 border-t border-slate-800/60 pt-3 mt-1 text-center">
                     <div>
-                      <span className="text-[10px] text-slate-500 uppercase block font-semibold">📸 Scan</span>
+                      <span className="text-[9px] text-slate-500 block font-semibold">📸 Scan</span>
                       <span className="text-xs font-bold text-slate-300">{plan.limits.scan}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-500 uppercase block font-semibold">📊 PPT</span>
+                      <span className="text-[9px] text-slate-500 block font-semibold">📊 PPT</span>
                       <span className="text-xs font-bold text-slate-300">{plan.limits.ppt}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-500 uppercase block font-semibold">📄 PDF</span>
+                      <span className="text-[9px] text-slate-500 block font-semibold">📄 PDF</span>
                       <span className="text-xs font-bold text-slate-300">{plan.limits.pdf}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 block font-semibold">⚡ Ref</span>
+                      <span className="text-xs font-bold text-slate-300">{plan.limits.referat}</span>
                     </div>
                   </div>
                 </div>
@@ -346,6 +359,12 @@ export default function PremiumPage() {
                 <div>📄 PDF Tools</div>
                 <div className="text-center text-slate-500">2 / kuniga</div>
                 <div className="text-right font-extrabold text-purple-300">Ko'proq / Cheksiz</div>
+              </div>
+
+              <div className="grid grid-cols-3 border-b border-slate-800/40 pb-2 text-slate-300">
+                <div>⚡ AI Referat</div>
+                <div className="text-center text-slate-500">2 / kuniga (max 4 bet)</div>
+                <div className="text-right font-extrabold text-purple-300">Ko'proq (max 15 bet) / Cheksiz</div>
               </div>
 
               <div className="grid grid-cols-3 border-b border-slate-800/40 pb-2 text-slate-300">

@@ -20,6 +20,7 @@ function mapUsageStats(row: any): UsageStats {
     pptUsedToday: row.ppt_used_today,
     pdfUsedToday: row.pdf_used_today,
     scanUsedToday: row.scan_used_today,
+    referatUsedToday: row.referat_used_today || 0,
     lastResetDate: new Date(row.last_reset_date),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -171,6 +172,7 @@ export async function getUsageStats(telegramId: number): Promise<UsageStats> {
       ppt_used_today: 0,
       pdf_used_today: 0,
       scan_used_today: 0,
+      referat_used_today: 0,
       last_reset_date: new Date().toISOString(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -206,6 +208,7 @@ export async function updateUsageStats(
   if (updates.pptUsedToday !== undefined) dbUpdates.ppt_used_today = updates.pptUsedToday;
   if (updates.pdfUsedToday !== undefined) dbUpdates.pdf_used_today = updates.pdfUsedToday;
   if (updates.scanUsedToday !== undefined) dbUpdates.scan_used_today = updates.scanUsedToday;
+  if (updates.referatUsedToday !== undefined) dbUpdates.referat_used_today = updates.referatUsedToday;
   dbUpdates.updated_at = new Date().toISOString();
 
   const supabase = getSupabase();
@@ -234,6 +237,7 @@ export async function resetUsageStats(telegramId: number): Promise<UsageStats> {
       ppt_used_today: 0,
       pdf_used_today: 0,
       scan_used_today: 0,
+      referat_used_today: 0,
       last_reset_date: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -266,6 +270,49 @@ export async function saveOrUpdateUser(
     return updated;
   } else {
     return await createUser(telegramId, firstName, username, "FREE");
+  }
+}
+
+export async function getBotState(telegramId: number): Promise<string | null> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("bot_states")
+    .select("state")
+    .eq("telegram_id", telegramId)
+    .single();
+
+  if (error) {
+    if (error.code !== "PGRST116") {
+      console.error("Error in getBotState:", error);
+    }
+    return null;
+  }
+
+  return data ? data.state : null;
+}
+
+export async function setBotState(telegramId: number, state: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from("bot_states")
+    .upsert({ telegram_id: telegramId, state, updated_at: new Date().toISOString() });
+
+  if (error) {
+    console.error("Error in setBotState:", error);
+    throw error;
+  }
+}
+
+export async function deleteBotState(telegramId: number): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from("bot_states")
+    .delete()
+    .eq("telegram_id", telegramId);
+
+  if (error) {
+    console.error("Error in deleteBotState:", error);
+    throw error;
   }
 }
 

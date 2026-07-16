@@ -106,13 +106,6 @@ export async function POST(
     const bytes =
       await file.arrayBuffer();
 
-    await fs.writeFile(
-      inputPath,
-      Buffer.from(
-        bytes
-      )
-    );
-
     // Compression level
     let pdfSetting =
       "/ebook";
@@ -137,36 +130,81 @@ export async function POST(
     }
 
     const ghostscriptPath =
-      `C:\\Program Files\\gs\\gs10.07.1\\bin\\gswin64c.exe`;
+      process.env.GHOSTSCRIPT_PATH ||
+      "/usr/bin/gs";
 
-    await execFileAsync(
-      ghostscriptPath,
-      [
-        "-sDEVICE=pdfwrite",
-        "-dCompatibilityLevel=1.4",
-        `-dPDFSETTINGS=${pdfSetting}`,
-        "-dNOPAUSE",
-        "-dQUIET",
-        "-dBATCH",
-        `-sOutputFile=${outputPath}`,
+    const { existsSync } = require("fs") as typeof import("fs");
+    const hasGhostscript = existsSync(ghostscriptPath);
+
+    let compressedPdf: Buffer;
+
+    if (hasGhostscript) {
+      await fs.writeFile(
         inputPath,
-      ]
-    );
-
-    const compressedPdf =
-      await fs.readFile(
-        outputPath
+        Buffer.from(
+          bytes
+        )
       );
 
-    // temp cleanup
-    await fs.rm(
-      tempDir,
-      {
-        recursive:
-          true,
-        force: true,
+      await execFileAsync(
+        ghostscriptPath,
+        [
+          "-sDEVICE=pdfwrite",
+          "-dCompatibilityLevel=1.4",
+          `-dPDFSETTINGS=${pdfSetting}`,
+          "-dNOPAUSE",
+          "-dQUIET",
+          "-dBATCH",
+          `-sOutputFile=${outputPath}`,
+          inputPath,
+        ]
+      );
+
+      compressedPdf =
+        await fs.readFile(
+          outputPath
+        );
+
+      // temp cleanup
+      await fs.rm(
+        tempDir,
+        {
+          recursive:
+            true,
+          force: true,
+        }
+      );
+    } else if (process.env.CLOUDCONVERT_API_KEY) {
+      // clean up unused temp directory
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch (err) {}
+
+      const { optimizePDFWithCloudConvert } = await import("@/lib/cloudconvert");
+      let ccProfile: "web" | "print" | "archive" = "web";
+      if (pdfSetting === "/printer") {
+        ccProfile = "print";
       }
-    );
+
+      compressedPdf = await optimizePDFWithCloudConvert(
+        Buffer.from(bytes),
+        file.name,
+        ccProfile
+      );
+    } else {
+      // clean up unused temp directory
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch (err) {}
+
+      return NextResponse.json(
+        {
+          error:
+            "PDF compress Vercelda qo'llab-quvvatlanmaydi. Iltimos CloudConvert API kalitini o'rnating yoki Railwaydan foydalaning.",
+        },
+        { status: 503 }
+      );
+    }
 
     await incrementPDF(telegramId);
 

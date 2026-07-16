@@ -7,8 +7,6 @@ import PptxGenJS from "pptxgenjs";
 import { generateOutline } from "@/app/talaba-tools/ppt/actions";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
 import { guardCheck, canUsePPT, incrementPPT } from "@/lib/limit-checker";
-import fs from "fs";
-import path from "path";
 import axios from "axios";
 
 // PEXELS IMAGE
@@ -1482,7 +1480,7 @@ else {
         }
       );
     }
-        const safeName =
+    const safeName =
       body.topic.replace(
         /[^a-zA-Z0-9]/g,
         "_"
@@ -1491,17 +1489,7 @@ else {
     const fileName =
       `${safeName}.pptx`;
 
-    const filePath =
-      path.join(
-        process.cwd(),
-        "public",
-        fileName
-      );
-
-    await pptx.writeFile({
-      fileName:
-        filePath,
-    });
+    const fileBuffer = (await pptx.write({ outputType: "nodebuffer" })) as Buffer;
 
     if (telegramId && !isNaN(telegramId)) {
       await incrementPPT(telegramId);
@@ -1512,11 +1500,6 @@ else {
       sendToTelegram &&
       telegramUserId
     ) {
-      const fileBuffer =
-        fs.readFileSync(
-          filePath
-        );
-
       await sendFileToTelegram(
         Number(
           telegramUserId
@@ -1531,10 +1514,12 @@ else {
     }
 
     // DOWNLOAD
+    const base64Data = fileBuffer.toString("base64");
+    const downloadUrl = `data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,${base64Data}`;
+
     return NextResponse.json({
       success: true,
-      downloadUrl:
-        `/${fileName}`,
+      downloadUrl,
     });
   } catch (
     error

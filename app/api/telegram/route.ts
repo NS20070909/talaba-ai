@@ -4,7 +4,10 @@
 import { Input } from "telegraf";
 import { NextResponse } from "next/server";
 import { isOwner, isAdmin, getSystemStats, getUserInfo, getAllUserIds, getPremiumUsers, getAdmins, addAdmin, removeAdmin, givePremium, removePremium, isValidPaidPlan, banUser, unbanUser, getBannedUsers } from "@/lib/admin";
-import { getUser, createUser } from "@/lib/storage";
+import { getUser, createUser, getBotState, setBotState, deleteBotState } from "@/lib/storage";
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://talaba-ai-chi.vercel.app";
+
 import { getPaymentsStats, getRecentPayments, getPaymentById, updatePaymentStatus } from "@/lib/payment";
 import { bot } from "@/lib/bot";
 import { getSupabase } from "@/lib/supabase";
@@ -45,11 +48,7 @@ export async function sendFileToTelegram(
   }
 }
 
-// USER STATE
-const userState: Record<
-  number,
-  string
-> = {};
+// USER STATE IS STORED IN DATABASE (bot_states table)
 
 // START
 bot.start(async (ctx) => {
@@ -81,26 +80,26 @@ bot.start(async (ctx) => {
     `• ℹ️ /about — Platforma haqida\n\n` +
     `Boshlash uchun quyidagi tugmalardan birini bosing 👇`,
     {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "🚀 Talaba AI ochish",
-              web_app: {
-                url: "https://talaba-ai-production.up.railway.app",
-              },
-            },
-          ],
-          [
-            {
-              text: "📸 Bilet Scan",
-              web_app: {
-                url: `https://talaba-ai-production.up.railway.app?tab=scan&userId=${userId}`,
-              },
-            },
-          ],
-        ],
+     reply_markup: {
+  inline_keyboard: [
+    [
+      {
+        text: "🚀 Talaba AI ochish",
+        web_app: {
+          url: `${APP_URL}`,
+        },
       },
+    ],
+    [
+      {
+        text: "📸 Bilet Scan",
+        web_app: {
+          url: `${APP_URL}?tab=scan&userId=${userId}`,
+        },
+      },
+    ],
+  ],
+},
     }
   );
 });
@@ -127,7 +126,7 @@ pastdagi tugmani bosing 👇
                   "🚀 Open Talaba AI",
                 web_app: {
                   url:
-                    "https://talaba-ai-production.up.railway.app",
+                    `${APP_URL}`,
                 },
               },
             ],
@@ -163,7 +162,7 @@ bot.command(
               {
                 text: "🚀 Platformani ochish",
                 web_app: {
-                  url: "https://talaba-ai-production.up.railway.app",
+                  url: `${APP_URL}`,
                 },
               },
             ],
@@ -185,7 +184,7 @@ bot.command(
       `• Gemini AI\n` +
       `• Next.js\n` +
       `• Supabase\n` +
-      `• Railway\n` +
+      `• Vercel\n` +
       `• Telegram Bot\n\n` +
       `📁 <b>Versiya:</b> MVP v1.0`,
       {
@@ -248,7 +247,7 @@ bot.command(
               {
                 text: "🚀 Tariflarni ochish",
                 web_app: {
-                  url: "https://talaba-ai-production.up.railway.app/premium",
+                  url: `${APP_URL}/premium`,
                 },
               },
             ],
@@ -282,7 +281,7 @@ pastdagi tugmani bosing 👇
                   "📸 Open Bilet Scan",
                 web_app: {
                   url:
-                    `https://talaba-ai-production.up.railway.app?tab=scan&userId=${userId}`,
+                    `${APP_URL}?tab=scan&userId=${userId}`,
                 },
               },
             ],
@@ -300,10 +299,9 @@ bot.on(
     const userId =
       ctx.from.id;
 
+    const state = await getBotState(userId);
     if (
-      userState[
-        userId
-      ] !==
+      state !==
       "waiting_for_scan"
     ) {
       return;
@@ -318,9 +316,9 @@ bot.on(
 ✅ Rasm qabul qilindi
 `);
 
-      delete userState[
+      await deleteBotState(
         userId
-      ];
+      );
     } catch (
       error
     ) {
@@ -750,56 +748,56 @@ bot.action(/admin:pay:view:(.+)/, async (ctx) => {
 // INPUT REQUESTS ACTIONS
 bot.action("admin:search:start", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  userState[ctx.from!.id] = "owner:waiting_for_search";
+  await setBotState(ctx.from!.id, "owner:waiting_for_search");
   await ctx.reply("🔍 Iltimos, qidiriladigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:broadcast:start", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  userState[ctx.from!.id] = "owner:waiting_for_broadcast";
+  await setBotState(ctx.from!.id, "owner:waiting_for_broadcast");
   await ctx.reply("📢 Iltimos, barcha foydalanuvchilarga yuboriladigan xabarni kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:admins:add", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  userState[ctx.from!.id] = "owner:waiting_for_add_admin";
+  await setBotState(ctx.from!.id, "owner:waiting_for_add_admin");
   await ctx.reply("➕ Iltimos, admin qilib qo'shiladigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:admins:remove", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  userState[ctx.from!.id] = "owner:waiting_for_remove_admin";
+  await setBotState(ctx.from!.id, "owner:waiting_for_remove_admin");
   await ctx.reply("➖ Iltimos, admindan o'chiriladigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:premium:give", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  userState[ctx.from!.id] = "owner:waiting_for_give_premium";
+  await setBotState(ctx.from!.id, "owner:waiting_for_give_premium");
   await ctx.reply("💎 Iltimos, premium beriladigan foydalanuvchi ID si va planini kiriting (Masalan: 12345678 MONTH):");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:premium:remove", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  userState[ctx.from!.id] = "owner:waiting_for_remove_premium";
+  await setBotState(ctx.from!.id, "owner:waiting_for_remove_premium");
   await ctx.reply("💎 Iltimos, premium tarif o'chiriladigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:ban:ban", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  userState[ctx.from!.id] = "owner:waiting_for_ban";
+  await setBotState(ctx.from!.id, "owner:waiting_for_ban");
   await ctx.reply("🚫 Iltimos, bloklanadigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:ban:unban", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
-  userState[ctx.from!.id] = "owner:waiting_for_unban";
+  await setBotState(ctx.from!.id, "owner:waiting_for_unban");
   await ctx.reply("🔓 Iltimos, blokdan chiqariladigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
@@ -903,19 +901,19 @@ bot.on("message", async (ctx, next) => {
     return next();
   }
 
-  const state = userState[userId];
+  const state = await getBotState(userId);
   if (!state || !state.startsWith("owner:")) {
     return next();
   }
 
   const text = (ctx.message as any).text || "";
   if (text.startsWith("/")) {
-    delete userState[userId];
+    await deleteBotState(userId);
     return next();
   }
 
   // Clear state
-  delete userState[userId];
+  await deleteBotState(userId);
 
   try {
     if (state === "owner:waiting_for_search") {

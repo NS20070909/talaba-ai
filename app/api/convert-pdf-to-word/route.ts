@@ -97,6 +97,70 @@ async function generateOCR(
     }
   }
 
+async function generatePDFOCR(
+  base64: string
+) {
+  let lastError;
+
+  for (const model of MODELS) {
+    try {
+      console.log(
+        `Trying PDF model: ${model}`
+      );
+
+      const result =
+        await ai.models.generateContent(
+          {
+            model,
+            contents: [
+              {
+                role:
+                  "user",
+                parts: [
+                  {
+                    text:
+                      "Bu PDF hujjatidagi barcha matnni xatosiz OCR qilib chiqar. Hech narsani qisqartirma. Matn strukturasini saqla.",
+                  },
+                  {
+                    inlineData:
+                      {
+                        mimeType:
+                          "application/pdf",
+                        data: base64,
+                      },
+                  },
+                ],
+              },
+            ],
+          }
+        );
+
+      console.log(
+        `Success PDF model: ${model}`
+      );
+
+      return (
+        result.text ||
+        ""
+      );
+    } catch (
+      error
+    ) {
+      console.log(
+        `Failed PDF model: ${model}`
+      );
+
+      console.error(
+        error
+      );
+
+      lastError =
+        error;
+
+      continue;
+    }
+  }
+
   throw lastError;
 }
 
@@ -190,95 +254,83 @@ export async function POST(
       )
     );
 
-    // PDF → PNG
-    await execAsync(`
-      pdftoppm -png "${pdfPath}" "${imgDir}/page"
-    `);
+    // PDF → PNG (requires pdftoppm — not available on Vercel serverless)
+    const pdftoppmPath = process.env.PDFTOPPM_PATH || "pdftoppm";
+    const { existsSync } = require("fs") as typeof import("fs");
+    const pdftoppmBin = pdftoppmPath === "pdftoppm"
+      ? (existsSync("/usr/bin/pdftoppm") ? "/usr/bin/pdftoppm" : null)
+      : pdftoppmPath;
 
-    const imageFiles =
-      fs
-        .readdirSync(
-          imgDir
-        )
-        .filter((f) =>
-          f.endsWith(
-            ".png"
-          )
-        );
+    let finalText = "";
 
-    let finalText =
-      "";
+    if (pdftoppmBin) {
+      await execAsync(`
+        "${pdftoppmBin}" -png "${pdfPath}" "${imgDir}/page"
+      `);
 
-    for (const img of imageFiles) {
-      const imagePath =
-        path.join(
-          imgDir,
-          img
-        );
-
-      const base64 =
+      const imageFiles =
         fs
-          .readFileSync(
-            imagePath
+          .readdirSync(
+            imgDir
           )
-          .toString(
-            "base64"
+          .filter((f) =>
+            f.endsWith(
+              ".png"
+            )
           );
 
-      // OCR
-      const text =
-        await generateOCR(
-          base64
-        );
+      for (const img of imageFiles) {
+        const imagePath =
+          path.join(
+            imgDir,
+            img
+          );
 
-      finalText +=
-        text +
-        "\n\n";
-    }
+        const base64 =
+          fs
+            .readFileSync(
+              imagePath
+            )
+            .toString(
+              "base64"
+            );
 
-    // DOCX
-    const doc =
-      new Document({
-        sections: [
-          {
-            properties:
-              {},
-            children:
-              finalText
-                .split(
-                  "\n"
-                )
-                .map(
-                  (
-                    line
-                  ) =>
-                    new Paragraph(
-                      line
-                    )
-                ),
-          },
-        ],
-      });
+        // OCR
+        const text =
+          await generateOCR(
+            base64
+          );
 
-    const buffer =
-      await Packer.toBuffer(
-        doc
+        finalText +=
+          text +
+          "\n\n";
+      }
+
+      // CLEANUP
+      fs.rmSync(
+        imgDir,
+        {
+          recursive:
+            true,
+          force:
+            true,
+        }
       );
 
-    // CLEANUP
-    fs.rmSync(
-      imgDir,
-      {
-        recursive:
-          true,
-        force:
-          true,
-      }
-    );
+      fs.unlinkSync(
+        pdfPath
+      );
+    } else {
+      // Clean up temp directories created before checking pdftoppmBin
+      try {
+        fs.rmSync(imgDir, { recursive: true, force: true });
+        fs.unlinkSync(pdfPath);
+      } catch (err) {}
 
-    fs.unlinkSync(
-      pdfPath
-    );
+      // Native Gemini PDF OCR (fully compatible on Vercel)
+      const pdfBase64 = Buffer.from(bytes).toString("base64");
+      finalText = await generatePDFOCR(pdfBase64);
+    }
 
     const fileName =
       file.name.replace(

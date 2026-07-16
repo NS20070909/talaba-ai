@@ -54,6 +54,8 @@ export async function GET(req: Request) {
         pdfLimit: limits.pdfPerDay ?? 0,
         scanUsed: stats.scanUsedToday,
         scanLimit: limits.scanPerDay ?? 0,
+        referatUsed: stats.referatUsedToday,
+        referatLimit: limits.referatPerDay ?? 0,
       },
     });
   } catch (error) {

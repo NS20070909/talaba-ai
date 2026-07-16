@@ -34,21 +34,22 @@ export async function POST(
       );
     }
 
-    const fileName =
-      fileUrl.split("/")
-        .pop();
+    let fileBuffer: Buffer;
+    let fileName = "Presentation.pptx";
 
-    const filePath =
-      path.join(
+    if (fileUrl.startsWith("data:")) {
+      const base64Content = fileUrl.split(";base64,").pop() || "";
+      fileBuffer = Buffer.from(base64Content, "base64");
+    } else {
+      const name = fileUrl.split("/").pop() || "Presentation.pptx";
+      fileName = name;
+      const filePath = path.join(
         process.cwd(),
         "public",
-        fileName || ""
+        name
       );
-
-    const fileBuffer =
-      fs.readFileSync(
-        filePath
-      );
+      fileBuffer = fs.readFileSync(filePath);
+    }
 
     const formData =
       new FormData();
@@ -61,7 +62,7 @@ export async function POST(
     formData.append(
       "document",
       new Blob([
-        fileBuffer,
+        new Uint8Array(fileBuffer.buffer, fileBuffer.byteOffset, fileBuffer.byteLength),
       ]),
       fileName
     );

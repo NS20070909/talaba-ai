@@ -54,8 +54,8 @@ const tools = [
       "AI yordamida referat yaratish",
     color:
       "from-blue-500/20 to-indigo-500/10",
-    link: "#",
-    active: false,
+    link: "/talaba-tools/write-referat",
+    active: true,
   },
 ];
 
