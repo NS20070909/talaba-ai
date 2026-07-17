@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { checkReferatLimitAndUsage } from "../../lib/limit-checker";
+import { checkReferatLimitAndUsage } from "@/lib/limit-checker";
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from "docx";
 
 const generateReferatPrompt = (topic: string, requirements: string) => {
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
     // Increment referat usage after successful generation
     await checkReferatLimitAndUsage(req, true);
 
-    return new NextResponse(docxBuffer as Buffer, {
+    return new NextResponse(new Uint8Array(docxBuffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": `attachment; filename="referat_${Date.now()}.docx"`,
