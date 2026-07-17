@@ -11,6 +11,7 @@ const convertAsync = promisify(
 export async function POST(
   request: Request
 ) {
+  console.log("[DIAGNOSTICS] 1. Request received");
   try {
     const formData =
       await request.formData();
@@ -19,12 +20,18 @@ export async function POST(
       "file"
     ) as File | null;
 
+    if (file) {
+      console.log("[DIAGNOSTICS] 2. File exists");
+      console.log("[DIAGNOSTICS] 3. File name:", file.name);
+    }
+
     const userId =
       formData.get(
         "telegram_user_id"
       ) as string | null;
 
     const telegramId = Number(userId);
+    console.log("[DIAGNOSTICS] 4. telegram_user_id:", telegramId);
     if (!telegramId || isNaN(telegramId)) {
       return NextResponse.json({ error: "telegram_user_id is required" }, { status: 400 });
     }
@@ -86,6 +93,8 @@ export async function POST(
     let pdfBuffer: Buffer;
 
     if (hasSoffice) {
+      console.log("[DIAGNOSTICS] 5. Validation result: hasSoffice = true");
+      console.log("[DIAGNOSTICS] 6. Conversion start (Soffice)");
       // DOCX → PDF
       pdfBuffer =
         await convertAsync(
@@ -94,6 +103,8 @@ export async function POST(
           undefined
         );
     } else if (process.env.CLOUDCONVERT_API_KEY) {
+      console.log("[DIAGNOSTICS] 5. Validation result: hasSoffice = false, using CloudConvert");
+      console.log("[DIAGNOSTICS] 6. Conversion start (CloudConvert)");
       const { convertWithCloudConvert } = await import("@/lib/cloudconvert");
       pdfBuffer = await convertWithCloudConvert(buffer, file.name, "docx", "pdf");
     } else {
