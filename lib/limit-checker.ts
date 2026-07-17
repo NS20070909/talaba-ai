@@ -44,7 +44,7 @@ export const checkReferatLimitAndUsage = async (
   };
 };
 
-// PDF LIMITI UCHUN (Avvalgi funksiyalar)
+// PDF LIMITI UCHUN
 
 interface GuardCheckResult {
   blocked: boolean;
@@ -93,4 +93,26 @@ export const incrementPDF = async (userId: number): Promise<void> => {
   }
   userPdfCounts[userId]++;
   console.log(`User ${userId} PDF count: ${userPdfCounts[userId]}`);
+};
+
+// PPT LIMITI UCHUN
+const USER_PPT_LIMIT = 3; // Misol uchun, bitta foydalanuvchi 3 ta PPT yaratishi mumkin
+let currentUserPptCount = 0; // Bu real dasturda ma'lumotlar bazasidan olinadi
+
+export const canUsePPT = async (userId: number): Promise<{
+  allowed: boolean;
+  message?: string;
+}> => {
+  if (currentUserPptCount >= USER_PPT_LIMIT) {
+    return {
+      allowed: false,
+      message: "Sizning kunlik PPT yaratish limiti tugagan."
+    };
+  }
+  return { allowed: true };
+};
+
+export const incrementPPT = async (userId: number): Promise<void> => {
+  currentUserPptCount++;
+  console.log(`User ${userId} PPT count: ${currentUserPptCount}`);
 };
