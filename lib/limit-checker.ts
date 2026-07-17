@@ -116,3 +116,55 @@ export const incrementPPT = async (userId: number): Promise<void> => {
   currentUserPptCount++;
   console.log(`User ${userId} PPT count: ${currentUserPptCount}`);
 };
+
+// SCAN LIMITI UCHUN
+let userScanCounts: { [key: number]: number } = {};
+
+export const canUseScan = async (userId: number): Promise<{
+  allowed: boolean;
+  message?: string;
+}> => {
+  // Real ilovada, bu yerda foydalanuvchining kunlik Scan limitini tekshirasiz.
+  if (!userScanCounts[userId]) {
+    userScanCounts[userId] = 0;
+  }
+
+  // Misol uchun, kunlik 3 ta Scan limiti
+  const SCAN_DAILY_LIMIT = 3;
+
+  if (userScanCounts[userId] >= SCAN_DAILY_LIMIT) {
+    return {
+      allowed: false,
+      message: "Sizning kunlik Scan limiti tugagan.",
+    };
+  }
+
+  return { allowed: true };
+};
+
+export const incrementScan = async (userId: number): Promise<void> => {
+  // Real ilovada, bu yerda foydalanuvchining Scan foydalanish sonini oshirasiz.
+  if (!userScanCounts[userId]) {
+    userScanCounts[userId] = 0;
+  }
+  userScanCounts[userId]++;
+  console.log(`User ${userId} Scan count: ${userScanCounts[userId]}`);
+};
+
+// UMUMIY STATISTIKA (daily usage)
+interface DailyUsageStats {
+  pptUsedToday: number;
+  pdfUsedToday: number;
+  scanUsedToday: number;
+  referatUsedToday: number;
+}
+
+export const getOrResetUsage = async (userId: number): Promise<DailyUsageStats> => {
+  // Real ilovada bu yerda kun asosida reset bilan ma'lumotlar bazasidan o'qiladi.
+  return {
+    pptUsedToday: currentUserPptCount,
+    pdfUsedToday: userPdfCounts[userId] || 0,
+    scanUsedToday: userScanCounts[userId] || 0,
+    referatUsedToday: currentUserReferatCount,
+  };
+};
