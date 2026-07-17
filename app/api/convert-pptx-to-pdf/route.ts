@@ -185,6 +185,7 @@ export async function POST(
       {
         error:
           "Convert qilishda xatolik",
+        details: error?.message || "Noma'lum xatolik",
       },
       {
         status: 500,
