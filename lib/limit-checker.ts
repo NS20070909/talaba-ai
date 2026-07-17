@@ -1,170 +1,169 @@
+import { getUser, getUsageStats, updateUsageStats, resetUsageStats } from "./storage";
+import { PLAN_LIMITS } from "./limits";
+import { UsageStats, PlanType } from "./user";
+import { isBanned, checkAndExpirePremium } from "./admin";
 
-// lib/limit-checker.ts
+export async function checkDailyReset(telegramId: number): Promise<void> {
+  const stats = await getUsageStats(telegramId);
+  const now = new Date();
+  const lastReset = new Date(stats.lastResetDate);
+  
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tashkent',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  
+  if (formatter.format(now) !== formatter.format(lastReset)) {
+    await resetUsageStats(telegramId);
+  }
+}
 
-import { NextRequest } from "next/server";
+// Helper to get stats, resetting them if it's a new day
+export async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
+  await checkDailyReset(telegramId);
+  return await getUsageStats(telegramId);
+}
 
-// Bu joyda sizning haqiqiy limit tekshiruvi va foydalanish logikangiz bo'ladi.
-// Hozircha soddalashtirilgan versiyasini ishlatamiz.
-
-interface LimitCheckResult {
-  hasLimitExceeded: boolean;
-  message: string;
-  allowed?: boolean;
+export interface CheckResult {
+  allowed: boolean;
+  remaining: number;
   banned?: boolean;
 }
 
-// REFERAT LIMITI UCHUN
-const USER_REFERAT_LIMIT = 5; // Misol uchun, bitta foydalanuvchi 5 ta referat yaratishi mumkin
-let currentUserReferatCount = 0; // Bu real dasturda ma'lumotlar bazasidan olinadi
+// ── Shared guard: runs ban check + premium expiry before every limit check ──
 
-export const checkReferatLimitAndUsage = async (
-  req: NextRequest,
-  increment: boolean = false
-): Promise<LimitCheckResult> => {
-  // Real ilovada, bu yerda foydalanuvchining ID si orqali uning limitini tekshirasiz
-  // va ma'lumotlar bazasidan foydalanish sonini olasiz.
-
-  // Foydalanuvchi ID sini req.headers dan olish mumkin, masalan.
-  // const userId = req.headers.get("x-user-id");
-
-  if (increment) {
-    currentUserReferatCount++;
+export async function guardCheck(telegramId: number): Promise<{ blocked: boolean; result?: CheckResult }> {
+  // 1. Ban check
+  const banned = await isBanned(telegramId);
+  if (banned) {
+    return { blocked: true, result: { allowed: false, remaining: 0, banned: true } };
   }
 
-  if (currentUserReferatCount >= USER_REFERAT_LIMIT) {
-    return {
-      hasLimitExceeded: true,
-      message: "Sizning referat yaratish limitingiz tugagan. Keyingi oyda yana urinib ko'ring."
-    };
-  }
+  // 2. Auto-expire premium if past premium_until date
+  await checkAndExpirePremium(telegramId);
 
-  return {
-    hasLimitExceeded: false,
-    message: "Limit doirasida."
-  };
-};
+  // 3. Check and apply daily reset
+  await checkDailyReset(telegramId);
 
-// PDF LIMITI UCHUN
-
-interface GuardCheckResult {
-  blocked: boolean;
-  result?: { banned: boolean };
+  return { blocked: false };
 }
 
-let userPdfCounts: { [key: number]: number } = {};
-let bannedUsers: { [key: number]: boolean } = {};
+// ─────────────────────────────────────────────────────────────────────────────
 
-export const guardCheck = async (userId: number): Promise<GuardCheckResult> => {
-  // Real ilovada, bu yerda foydalanuvchining bloklanganligini tekshirasiz
-  // va ma'lumotlar bazasidan olasiz.
+export async function canUsePPT(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+  
+  const limits = PLAN_LIMITS[plan];
+  if (limits?.unlimited) {
+    return { allowed: true, remaining: Infinity };
+  }
+  
+  const stats = await getOrResetUsage(telegramId);
+  const limit = limits?.pptPerDay || 0;
+  const remaining = Math.max(0, limit - stats.pptUsedToday);
+  
   return {
-    blocked: bannedUsers[userId] || false,
-    result: { banned: bannedUsers[userId] || false },
+    allowed: remaining > 0,
+    remaining,
   };
-};
-
-export const canUsePDF = async (userId: number): Promise<{
-  allowed: boolean;
-  message?: string;
-}> => {
-  // Real ilovada, bu yerda foydalanuvchining kunlik PDF limitini tekshirasiz.
-  const today = new Date().toDateString();
-  if (!userPdfCounts[userId]) {
-    userPdfCounts[userId] = 0;
-  }
-
-  // Misol uchun, kunlik 3 ta PDF limiti
-  const PDF_DAILY_LIMIT = 3;
-
-  if (userPdfCounts[userId] >= PDF_DAILY_LIMIT) {
-    return {
-      allowed: false,
-      message: "Sizning kunlik PDF limiti tugagan."
-    };
-  }
-
-  return { allowed: true };
-};
-
-export const incrementPDF = async (userId: number): Promise<void> => {
-  // Real ilovada, bu yerda foydalanuvchining PDF foydalanish sonini oshirasiz.
-  if (!userPdfCounts[userId]) {
-    userPdfCounts[userId] = 0;
-  }
-  userPdfCounts[userId]++;
-  console.log(`User ${userId} PDF count: ${userPdfCounts[userId]}`);
-};
-
-// PPT LIMITI UCHUN
-const USER_PPT_LIMIT = 3; // Misol uchun, bitta foydalanuvchi 3 ta PPT yaratishi mumkin
-let currentUserPptCount = 0; // Bu real dasturda ma'lumotlar bazasidan olinadi
-
-export const canUsePPT = async (userId: number): Promise<{
-  allowed: boolean;
-  message?: string;
-}> => {
-  if (currentUserPptCount >= USER_PPT_LIMIT) {
-    return {
-      allowed: false,
-      message: "Sizning kunlik PPT yaratish limiti tugagan."
-    };
-  }
-  return { allowed: true };
-};
-
-export const incrementPPT = async (userId: number): Promise<void> => {
-  currentUserPptCount++;
-  console.log(`User ${userId} PPT count: ${currentUserPptCount}`);
-};
-
-// SCAN LIMITI UCHUN
-let userScanCounts: { [key: number]: number } = {};
-
-export const canUseScan = async (userId: number): Promise<{
-  allowed: boolean;
-  message?: string;
-}> => {
-  // Real ilovada, bu yerda foydalanuvchining kunlik Scan limitini tekshirasiz.
-  if (!userScanCounts[userId]) {
-    userScanCounts[userId] = 0;
-  }
-
-  // Misol uchun, kunlik 3 ta Scan limiti
-  const SCAN_DAILY_LIMIT = 3;
-
-  if (userScanCounts[userId] >= SCAN_DAILY_LIMIT) {
-    return {
-      allowed: false,
-      message: "Sizning kunlik Scan limiti tugagan.",
-    };
-  }
-
-  return { allowed: true };
-};
-
-export const incrementScan = async (userId: number): Promise<void> => {
-  // Real ilovada, bu yerda foydalanuvchining Scan foydalanish sonini oshirasiz.
-  if (!userScanCounts[userId]) {
-    userScanCounts[userId] = 0;
-  }
-  userScanCounts[userId]++;
-  console.log(`User ${userId} Scan count: ${userScanCounts[userId]}`);
-};
-
-// UMUMIY STATISTIKA (daily usage)
-interface DailyUsageStats {
-  pptUsedToday: number;
-  pdfUsedToday: number;
-  scanUsedToday: number;
-  referatUsedToday: number;
 }
 
-export const getOrResetUsage = async (userId: number): Promise<DailyUsageStats> => {
-  // Real ilovada bu yerda kun asosida reset bilan ma'lumotlar bazasidan o'qiladi.
+export async function canUsePDF(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+  
+  const limits = PLAN_LIMITS[plan];
+  if (limits?.unlimited) {
+    return { allowed: true, remaining: Infinity };
+  }
+  
+  const stats = await getOrResetUsage(telegramId);
+  const limit = limits?.pdfPerDay || 0;
+  const remaining = Math.max(0, limit - stats.pdfUsedToday);
+  
   return {
-    pptUsedToday: currentUserPptCount,
-    pdfUsedToday: userPdfCounts[userId] || 0,
-    scanUsedToday: userScanCounts[userId] || 0,
-    referatUsedToday: currentUserReferatCount,
+    allowed: remaining > 0,
+    remaining,
   };
-};
+}
+
+export async function canUseScan(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+  
+  const limits = PLAN_LIMITS[plan];
+  if (limits?.unlimited) {
+    return { allowed: true, remaining: Infinity };
+  }
+  
+  const stats = await getOrResetUsage(telegramId);
+  const limit = limits?.scanPerDay || 0;
+  const remaining = Math.max(0, limit - stats.scanUsedToday);
+  
+  return {
+    allowed: remaining > 0,
+    remaining,
+  };
+}
+
+export async function incrementPPT(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    pptUsedToday: stats.pptUsedToday + 1,
+  });
+}
+
+export async function incrementPDF(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    pdfUsedToday: stats.pdfUsedToday + 1,
+  });
+}
+
+export async function incrementScan(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    scanUsedToday: stats.scanUsedToday + 1,
+  });
+}
+
+export async function canUseReferat(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+  
+  const limits = PLAN_LIMITS[plan];
+  if (limits?.unlimited) {
+    return { allowed: true, remaining: Infinity };
+  }
+  
+  const stats = await getOrResetUsage(telegramId);
+  const limit = limits?.referatPerDay || 0;
+  const remaining = Math.max(0, limit - stats.referatUsedToday);
+  
+  return {
+    allowed: remaining > 0,
+    remaining,
+  };
+}
+
+export async function incrementReferat(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    referatUsedToday: stats.referatUsedToday + 1,
+  });
+}

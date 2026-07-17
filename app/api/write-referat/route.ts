@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { checkReferatLimitAndUsage } from "@/lib/limit-checker";
+import { guardCheck, canUseReferat, incrementReferat } from "@/lib/limit-checker";
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from "docx";
 
 const generateReferatPrompt = (topic: string, requirements: string) => {
@@ -92,7 +92,8 @@ export async function POST(req: NextRequest) {
   try {
     const {
       topic,
-      requirements
+      requirements,
+      telegram_user_id
     } = await req.json();
 
     if (!topic) {
@@ -101,10 +102,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const telegramId = Number(telegram_user_id);
+    if (!telegramId || isNaN(telegramId)) {
+      return new NextResponse("telegram_user_id is required", { status: 400 });
+    }
+
+    const guard = await guardCheck(telegramId);
+    if (guard.blocked) {
+      return new NextResponse(guard.result?.banned ? "🚫 Siz bloklangansiz" : "Ruxsat etilmagan", {
+        status: 403
+      });
+    }
+
     // Check referat limit
-    const limitCheck = await checkReferatLimitAndUsage(req);
-    if (limitCheck.hasLimitExceeded) {
-      return new NextResponse(limitCheck.message, {
+    const limitCheck = await canUseReferat(telegramId);
+    if (!limitCheck.allowed) {
+      return new NextResponse("Sizning referat yaratish limitingiz tugagan. Keyingi oyda yana urinib ko'ring.", {
         status: 403
       });
     }
@@ -119,7 +132,7 @@ export async function POST(req: NextRequest) {
     const docxBuffer = await generateDocx(aiResponseContent);
 
     // Increment referat usage after successful generation
-    await checkReferatLimitAndUsage(req, true);
+    await incrementReferat(telegramId);
 
     return new NextResponse(new Uint8Array(docxBuffer), {
       headers: {
