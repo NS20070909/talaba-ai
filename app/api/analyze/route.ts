@@ -2,6 +2,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import { guardCheck, canUseScan, incrementScan } from "@/lib/limit-checker";
 
+export const maxDuration = 60;
+
 const genAI =
   new GoogleGenerativeAI(
     process.env

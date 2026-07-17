@@ -9,12 +9,14 @@ export async function convertWithCloudConvert(
   outputFormat: string,
   options: Record<string, any> = {}
 ): Promise<Buffer> {
+  console.log("[DIAGNOSTICS] 1. CLOUDCONVERT_API_KEY exists?", !!apiKey);
   if (!apiKey) {
     throw new Error("CLOUDCONVERT_API_KEY environment variable is not defined");
   }
 
   const cloudConvert = new CloudConvert(apiKey);
 
+  console.log("[DIAGNOSTICS] 2. CloudConvert job creation start");
   const job = await cloudConvert.jobs.create({
     tasks: {
       "import-file": {
@@ -33,15 +35,18 @@ export async function convertWithCloudConvert(
       },
     },
   });
+  console.log("[DIAGNOSTICS] 2. CloudConvert job creation success, Job ID:", job.id);
 
   const uploadTask = job.tasks.find((t) => t.name === "import-file");
   if (!uploadTask) throw new Error("CloudConvert task creation failed");
 
+  console.log("[DIAGNOSTICS] 3. Upload start");
   await cloudConvert.tasks.upload(uploadTask, fileBuffer, fileName);
-  console.log("[DIAGNOSTICS] 7. CloudConvert upload success");
+  console.log("[DIAGNOSTICS] 3. Upload success");
 
+  console.log("[DIAGNOSTICS] 4. Conversion wait start");
   const finishedJob = await cloudConvert.jobs.wait(job.id);
-  console.log("[DIAGNOSTICS] 8. CloudConvert job status:", finishedJob.status);
+  console.log("[DIAGNOSTICS] 4. Conversion success, Job status:", finishedJob.status);
 
   const exportTask = finishedJob.tasks.find((t) => t.name === "export-file");
   if (!exportTask || exportTask.status !== "finished" || !exportTask.result?.files?.[0]?.url) {
@@ -49,9 +54,11 @@ export async function convertWithCloudConvert(
   }
 
   const fileUrl = exportTask.result.files[0].url;
+  
+  console.log("[DIAGNOSTICS] 5. Download start");
   const response = await fetch(fileUrl);
   if (!response.ok) throw new Error(`Failed to fetch converted file from CloudConvert: ${response.statusText}`);
-  console.log("[DIAGNOSTICS] 9. CloudConvert download success");
+  console.log("[DIAGNOSTICS] 5. Download success");
 
   return Buffer.from(await response.arrayBuffer());
 }

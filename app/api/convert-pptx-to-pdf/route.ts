@@ -87,15 +87,20 @@ export async function POST(
     const hasSoffice = existsSync(sofficePath);
     console.log("[DIAGNOSTICS] 5. hasSoffice result:", hasSoffice);
 
+    console.log("[DIAGNOSTICS] before await file.arrayBuffer()");
     const bytes =
       await file.arrayBuffer();
+    console.log("[DIAGNOSTICS] after await file.arrayBuffer()");
 
+    console.log("[DIAGNOSTICS] before Buffer.from()");
     const buffer =
       Buffer.from(bytes);
+    console.log("[DIAGNOSTICS] after Buffer.from()");
 
     let pdfBuffer: Buffer;
 
     if (hasSoffice) {
+      console.log("[DIAGNOSTICS] before await convertAsync()");
       // PPTX → PDF
       pdfBuffer =
         await convertAsync(
@@ -103,18 +108,27 @@ export async function POST(
           ".pdf",
           undefined
         );
-    } else if (process.env.CLOUDCONVERT_API_KEY) {
-      console.log("[DIAGNOSTICS] 6. CloudConvert fallback start");
-      const { convertWithCloudConvert } = await import("@/lib/cloudconvert");
-      pdfBuffer = await convertWithCloudConvert(buffer, file.name, "pptx", "pdf");
+      console.log("[DIAGNOSTICS] after await convertAsync()");
     } else {
-      return NextResponse.json(
-        {
-          error:
-            "PPTX → PDF Vercelda qo'llab-quvvatlanmaydi. Iltimos CloudConvert API kalitini o'rnating yoki Railwaydan foydalaning.",
-        },
-        { status: 503 }
-      );
+      console.log("[DIAGNOSTICS] A. entering CloudConvert branch");
+      console.log("[DIAGNOSTICS] B. CLOUDCONVERT_API_KEY exists?", !!process.env.CLOUDCONVERT_API_KEY);
+      if (process.env.CLOUDCONVERT_API_KEY) {
+        console.log("[DIAGNOSTICS] 6. CloudConvert fallback start");
+        console.log("[DIAGNOSTICS] C. importing cloudconvert helper");
+        const { convertWithCloudConvert } = await import("@/lib/cloudconvert");
+        console.log("[DIAGNOSTICS] D. before convertWithCloudConvert()");
+        pdfBuffer = await convertWithCloudConvert(buffer, file.name, "pptx", "pdf");
+        console.log("[DIAGNOSTICS] E. after convertWithCloudConvert()");
+      } else {
+        console.log("[DIAGNOSTICS] before return 503");
+        return NextResponse.json(
+          {
+            error:
+              "PPTX → PDF Vercelda qo'llab-quvvatlanmaydi. Iltimos CloudConvert API kalitini o'rnating yoki Railwaydan foydalaning.",
+          },
+          { status: 503 }
+        );
+      }
     }
 
     const fileName =
@@ -159,6 +173,8 @@ export async function POST(
       }
     );
   } catch (error: any) {
+    console.log("[DIAGNOSTICS] F. caught error.message:", error?.message);
+    console.log("[DIAGNOSTICS] G. caught error.stack:", error?.stack);
     console.error(
       "PPTX to PDF error:",
       error

@@ -145,6 +145,11 @@ export default function MergePdfPage() {
           }
         );
 
+        const userId = localStorage.getItem("telegram_user_id");
+        if (userId) {
+          formData.append("telegram_user_id", userId);
+        }
+
         const response =
           await fetch(
             "/api/merge-pdf",
