@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 
-// Mock subjects for dropdown
+// Subjects for dropdown
 const SUBJECTS = [
   { id: "cs", name: "Kiberxavfsizlik" },
   { id: "history", name: "O'zbekiston tarixi" },
@@ -14,12 +14,36 @@ const SUBJECTS = [
   { id: "custom", name: "Boshqa (O'zingiz yozasiz)" },
 ];
 
-// Mock size options
-const SIZES = [
-  { label: "Kichik (5-10 bet)", value: "5-10", desc: "Tezkor va lo'nda referatlar uchun" },
-  { label: "O'rtacha (10-15 bet)", value: "10-15", desc: "Standart OTM talablari uchun" },
-  { label: "Katta (15-20 bet)", value: "15-20", desc: "Batafsil tahlil va tadqiqotlar uchun" },
-];
+// Plan limits helper
+const getLimitsForPlan = (plan: string) => {
+  switch (plan) {
+    case "FREE":
+      return { name: "Free", min: 3, max: 4 };
+    case "DAY":
+    case "STARTER":
+      return { name: "Starter", min: 5, max: 8 };
+    case "WEEK":
+    case "STUDENT":
+      return { name: "Weekly", min: 5, max: 15 };
+    case "MONTH":
+    case "PREMIUM":
+      return { name: "Premium", min: 5, max: 20 };
+    case "QUARTER":
+    case "PRO":
+      return { name: "Pro", min: 5, max: 30 };
+    case "YEAR":
+    case "ELITE":
+      return { name: "Elite", min: 5, max: Infinity };
+    default:
+      return { name: "Free", min: 3, max: 4 };
+  }
+};
+
+interface OutlineResult {
+  title: string;
+  outline: string[];
+  model: string;
+}
 
 export default function WriteReferatPage() {
   // Form states
@@ -27,51 +51,44 @@ export default function WriteReferatPage() {
   const [selectedSubject, setSelectedSubject] = useState(SUBJECTS[0].id);
   const [customSubject, setCustomSubject] = useState("");
   const [language, setLanguage] = useState("uz");
-  const [size, setSize] = useState("10-15");
-  
+  const [userPlan, setUserPlan] = useState<string>("FREE");
+  const [pagesVal, setPagesVal] = useState<string>("3"); // 3 = FREE plan minimum; updated by useEffect when plan loads
+  const pagesCount = parseInt(pagesVal, 10) || 0;
+
   // Interactive UX states
   const [loading, setLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [showResult, setShowResult] = useState(false);
   const [isTelegramSent, setIsTelegramSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Loading animation step messages
-  const steps = [
-    "AI mavzuni tahlil qilmoqda...",
-    "Reja va mundarija shakllantirilmoqda...",
-    "Boblar bo'yicha ilmiy matnlar yozilmoqda...",
-    "OTM standartlari bo'yicha formatlanmoqda...",
-    "Word (.docx) hujjati tayyorlanmoqda...",
-  ];
+  // Real API result
+  const [result, setResult] = useState<OutlineResult | null>(null);
 
+  // Fetch user stats on mount to determine plan
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (loading) {
-      interval = setInterval(() => {
-        setLoadingStep((prev) => {
-          if (prev < steps.length - 1) {
-            return prev + 1;
-          } else {
-            clearInterval(interval);
-            setLoading(false);
-            setShowResult(true);
-            return 0;
+    const userId = localStorage.getItem("telegram_user_id");
+    if (userId) {
+      fetch(`/api/user-stats?telegram_id=${userId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.stats) {
+            setUserPlan(data.stats.plan || "FREE");
           }
-        });
-      }, 1500); // changes step every 1.5s
+        })
+        .catch((err) => console.error("Error fetching user stats:", err));
     }
-    return () => clearInterval(interval);
-  }, [loading, steps.length]);
+  }, []);
 
-  const handleGenerate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!topic.trim()) return;
-    
-    setShowResult(false);
-    setIsTelegramSent(false);
-    setLoading(true);
-    setLoadingStep(0);
-  };
+  // Update page count when user plan changes to match minimum
+  useEffect(() => {
+    const limits = getLimitsForPlan(userPlan);
+    setPagesVal(limits.min.toString());
+  }, [userPlan]);
+
+  const planLimits = getLimitsForPlan(userPlan);
+  const isExceeded = pagesCount > planLimits.max;
+  const isInvalid = pagesCount < planLimits.min || isExceeded;
 
   const triggerTelegramSend = () => {
     setIsTelegramSent(true);
@@ -85,10 +102,79 @@ export default function WriteReferatPage() {
     return SUBJECTS.find((s) => s.id === selectedSubject)?.name || "Erkin mavzu";
   };
 
+  const handleGenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!topic.trim()) return;
+
+    setShowResult(false);
+    setResult(null);
+    setError(null);
+    setIsTelegramSent(false);
+    setLoading(true);
+    setLoadingMessage("AI mavzuni tahlil qilmoqda...");
+
+    const telegramUserId = localStorage.getItem("telegram_user_id");
+    console.log("[UI] Calling referat-outline with:", { topic, subject: getSubjectName(), language, pages: pagesCount, telegram_user_id: telegramUserId });
+
+    try {
+      // Step 1 – animate loading messages while waiting
+      const messages = [
+        "AI mavzuni tahlil qilmoqda...",
+        "Reja va mundarija shakllantirilmoqda...",
+        "Akademik strukturа yaratilmoqda...",
+      ];
+      let msgIdx = 0;
+      const msgInterval = setInterval(() => {
+        msgIdx = (msgIdx + 1) % messages.length;
+        setLoadingMessage(messages[msgIdx]);
+      }, 1800);
+
+      // Step 2 – real API call
+      const res = await fetch("/api/referat-outline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: topic.trim(),
+          subject: getSubjectName(),
+          language,
+          pages: pagesCount,
+          telegram_user_id: telegramUserId,
+        }),
+      });
+
+      clearInterval(msgInterval);
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Serverdan xato javob keldi.");
+      }
+
+      console.log("[UI] Outline received from model:", data.model);
+
+      setResult({
+        title: data.title,
+        outline: data.outline,
+        model: data.model,
+      });
+      setShowResult(true);
+
+      // Dispatch event so UsageStatsWidget re-fetches immediately (fixes issue #1 & #4)
+      window.dispatchEvent(new CustomEvent("refetch-stats"));
+    } catch (err: any) {
+      console.error("[UI] Error:", err.message);
+      setError(err.message || "Noma'lum xato yuz berdi.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const romanNumerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+
   return (
     <main className="min-h-screen bg-[#0f1724] text-white selection:bg-cyan-500/30">
       <div className="max-w-md mx-auto px-4 py-4">
-        
+
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <Link
@@ -118,7 +204,7 @@ export default function WriteReferatPage() {
           <form onSubmit={handleGenerate} className="space-y-4">
             {/* Input Card */}
             <div className="rounded-[28px] bg-[#243140] border border-cyan-500/10 p-5 space-y-4 shadow-lg">
-              
+
               {/* Topic */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
@@ -233,67 +319,121 @@ export default function WriteReferatPage() {
                 </div>
               </div>
 
-              {/* Size Select */}
+               {/* Pages Numeric Input */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
-                  Hajm (Sahifalar soni)
+                <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wider">
+                  Sahifalar soni (Pages)
                 </label>
-                <div className="space-y-2">
-                  {SIZES.map((s) => (
-                    <label
-                      key={s.value}
-                      onClick={() => setSize(s.value)}
-                      className={`
-                        flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all
-                        ${
-                          size === s.value
-                            ? "bg-cyan-500/10 border-cyan-400/40 shadow-sm"
-                            : "bg-[#1b2635] border-white/10 opacity-70 hover:opacity-100"
-                        }
-                      `}
-                    >
-                      <input
-                        type="radio"
-                        name="size"
-                        value={s.value}
-                        checked={size === s.value}
-                        onChange={() => {}}
-                        className="accent-cyan-400 h-4 w-4"
-                      />
-                      <div className="flex-1">
-                        <span className="block text-xs font-bold text-white">
-                          {s.label}
-                        </span>
-                        <span className="block text-[10px] text-slate-400 mt-0.5">
-                          {s.desc}
-                        </span>
-                      </div>
-                    </label>
-                  ))}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = parseInt(pagesVal, 10) || 0;
+                      setPagesVal(Math.max(1, current - 1).toString());
+                    }}
+                    className="h-12 w-12 rounded-2xl bg-[#1b2635] border border-white/10 flex items-center justify-center text-lg font-bold hover:bg-slate-700 active:scale-95 transition-all text-cyan-400"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    value={pagesVal}
+                    onChange={(e) => setPagesVal(e.target.value)}
+                    className="
+                      flex-1 h-12 text-center
+                      bg-[#1b2635]
+                      border border-white/10
+                      rounded-2xl
+                      text-white
+                      font-bold
+                      outline-none
+                      focus:border-cyan-400
+                      transition-all
+                    "
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = parseInt(pagesVal, 10) || 0;
+                      setPagesVal((current + 1).toString());
+                    }}
+                    className="h-12 w-12 rounded-2xl bg-[#1b2635] border border-white/10 flex items-center justify-center text-lg font-bold hover:bg-slate-700 active:scale-95 transition-all text-cyan-400"
+                  >
+                    +
+                  </button>
                 </div>
+                
+                {/* Dynamically display current plan and allowed pages */}
+                <div className="mt-4 p-4 rounded-[20px] bg-[#1b2635]/60 border border-white/5 space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-medium">Joriy tarif (Current Plan):</span>
+                    <span className="text-cyan-400 font-extrabold">{planLimits.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-medium">Ruxsat etilgan sahifalar (Allowed pages):</span>
+                    <span className="text-slate-200 font-bold">
+                      {planLimits.max === Infinity ? "Cheksiz (Unlimited)" : `${planLimits.min}–${planLimits.max}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Inline warning and Upgrade button */}
+                {isExceeded && (
+                  <div className="mt-4 p-4 rounded-[20px] bg-amber-500/10 border border-amber-500/20 text-xs space-y-3">
+                    <p className="text-amber-400 font-semibold leading-relaxed">
+                      ⚠️ Sizning joriy tarifingizda maksimal {planLimits.max} sahifa yozish mumkin. Kattaroq referat yozish uchun tarifingizni yangilang.
+                    </p>
+                    <Link
+                      href="/premium"
+                      className="block w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-center shadow-md active:scale-95 transition-all"
+                    >
+                      👑 Tarifni Yangilash (Upgrade Plan)
+                    </Link>
+                  </div>
+                )}
+                
+                {/* Warning for less than minimum pages */}
+                {!isExceeded && pagesCount < planLimits.min && (
+                  <div className="mt-4 p-3 rounded-[20px] bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 font-semibold">
+                    ⚠️ Sahifa soni kamida {planLimits.min} bo'lishi kerak.
+                  </div>
+                )}
               </div>
 
             </div>
 
-            {/* Actions */}
+            {/* Error */}
+            {error && (
+              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 text-red-400 text-xs">
+                ⚠️ {error}
+              </div>
+            )}
+
+            {/* Submit */}
             <button
               type="submit"
-              disabled={!topic.trim()}
+              disabled={!topic.trim() || isInvalid}
               className={`
                 w-full py-4 rounded-[20px] font-bold text-center text-sm shadow-md transition-all
                 ${
-                  topic.trim()
+                  isExceeded
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30 cursor-not-allowed"
+                    : isInvalid
+                    ? "bg-[#243140] text-slate-500 border border-white/5 cursor-not-allowed"
+                    : topic.trim()
                     ? "bg-cyan-500 hover:bg-cyan-400 text-black active:scale-95 shadow-cyan-500/10"
                     : "bg-[#243140] text-slate-500 border border-white/5 cursor-not-allowed"
                 }
               `}
             >
-              ✨ AI Referat Yozish
+              {isExceeded
+                ? "👑 Tarifni yangilang (Upgrade Plan)"
+                : "✨ AI Referat Yozish"}
             </button>
           </form>
         )}
 
-        {/* Loading / Generating State */}
+        {/* Loading State */}
         {loading && (
           <div className="rounded-[28px] bg-[#243140] border border-cyan-500/10 p-8 text-center space-y-6 shadow-xl my-6">
             <div className="relative w-20 h-20 mx-auto">
@@ -303,20 +443,17 @@ export default function WriteReferatPage() {
                 ⚡
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <h3 className="text-lg font-bold text-cyan-400">Referat tayyorlanmoqda</h3>
               <p className="text-xs text-slate-400 italic transition-all duration-300">
-                {steps[loadingStep]}
+                {loadingMessage}
               </p>
             </div>
 
             {/* Loading Indicator Bar */}
             <div className="w-full bg-[#1b2635] h-1.5 rounded-full overflow-hidden">
-              <div 
-                className="bg-gradient-to-r from-cyan-400 to-fuchsia-500 h-full transition-all duration-300"
-                style={{ width: `${((loadingStep + 1) / steps.length) * 100}%` }}
-              />
+              <div className="bg-gradient-to-r from-cyan-400 to-fuchsia-500 h-full animate-pulse w-2/3" />
             </div>
             <p className="text-[10px] text-slate-500">
               Bu amal taxminan 5-10 soniya vaqt oladi. Iltimos sahifadan chiqmang.
@@ -325,9 +462,9 @@ export default function WriteReferatPage() {
         )}
 
         {/* Result Screen */}
-        {showResult && !loading && (
+        {showResult && !loading && result && (
           <div className="space-y-4">
-            
+
             {/* Header Result */}
             <div className="rounded-[28px] bg-[#243140] border border-emerald-500/20 p-5 shadow-lg relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -340,46 +477,37 @@ export default function WriteReferatPage() {
                     Muvaffaqiyatli Yaratildi
                   </span>
                   <h2 className="text-base font-bold leading-tight">
-                    {topic}
+                    {result.title}
                   </h2>
                   <p className="text-xs text-slate-400">
-                    Fan: {getSubjectName()} • Til: {language.toUpperCase()} • Hajm: {size} bet
+                    Fan: {getSubjectName()} • Til: {language.toUpperCase()} • Hajm: {pagesVal} bet
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    🤖 Model: {result.model}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Outline Preview */}
+            {/* Outline Preview — real Gemini data */}
             <div className="rounded-[28px] bg-[#243140] border border-white/5 p-5 space-y-4 shadow-md">
               <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                 Mundarija (Reja)
               </h3>
-              
+
               <ul className="space-y-2.5 text-sm">
-                <li className="flex items-center gap-2 text-slate-300">
-                  <span className="text-cyan-400 text-xs">I.</span>
-                  <span className="font-medium">Kirish</span>
-                </li>
-                <li className="flex items-center gap-2 text-slate-300">
-                  <span className="text-cyan-400 text-xs">II.</span>
-                  <span>{getSubjectName()} fanining umumiy prinsiplari</span>
-                </li>
-                <li className="flex items-center gap-2 text-slate-300">
-                  <span className="text-cyan-400 text-xs">III.</span>
-                  <span>Mavzuning amaliy tahlili va muammolari</span>
-                </li>
-                <li className="flex items-center gap-2 text-slate-300">
-                  <span className="text-cyan-400 text-xs">IV.</span>
-                  <span>Rivojlantirish istiqbollari va xulosalar</span>
-                </li>
-                <li className="flex items-center gap-2 text-slate-300">
-                  <span className="text-cyan-400 text-xs">V.</span>
-                  <span className="text-slate-400">Foydalanilgan adabiyotlar ro'yxati</span>
-                </li>
+                {result.outline.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-slate-300">
+                    <span className="text-cyan-400 text-xs shrink-0 mt-0.5">
+                      {romanNumerals[idx] ?? idx + 1}.
+                    </span>
+                    <span>{item}</span>
+                  </li>
+                ))}
               </ul>
 
               <div className="pt-3 border-t border-white/5 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>📖 Adabiyotlar soni: 7 ta</span>
+                <span>📖 Bo'limlar soni: {result.outline.length} ta</span>
                 <span>📋 Times New Roman 14pt formatda</span>
               </div>
             </div>
@@ -417,6 +545,7 @@ export default function WriteReferatPage() {
               <button
                 onClick={() => {
                   setShowResult(false);
+                  setResult(null);
                   setTopic("");
                 }}
                 className="

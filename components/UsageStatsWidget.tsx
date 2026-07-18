@@ -11,6 +11,8 @@ interface UsageStats {
   pdfLimit: number;
   scanUsed: number;
   scanLimit: number;
+  referatUsed: number;
+  referatLimit: number;
 }
 
 export default function UsageStatsWidget() {
@@ -19,33 +21,61 @@ export default function UsageStatsWidget() {
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
-  useEffect(() => {
-    async function fetchStats() {
-      try {
-        const userId = localStorage.getItem("telegram_user_id");
-        if (!userId) {
-          setError("Telegram ID topilmadi");
-          setLoading(false);
-          return;
-        }
-
-        const res = await fetch(`/api/user-stats?telegram_id=${userId}`);
-        const data = await res.json();
-        
-        if (data.success) {
-          setStats(data.stats);
-        } else {
-          setError(data.message || "Xatolik yuz berdi");
-        }
-      } catch (err) {
-        console.error("Widget fetch error:", err);
-        setError("Ulanishda xatolik");
-      } finally {
+  const fetchStats = async () => {
+    try {
+      const userId = localStorage.getItem("telegram_user_id");
+      if (!userId) {
+        setError("Telegram ID topilmadi");
         setLoading(false);
+        return;
       }
-    }
 
+      // cache: no-store ensures fresh data on every call
+      const res = await fetch(`/api/user-stats?telegram_id=${userId}&t=${Date.now()}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setStats(data.stats);
+        setError(null);
+        localStorage.removeItem("user_stats_dirty");
+      } else {
+        setError(data.message || "Xatolik yuz berdi");
+      }
+    } catch (err) {
+      console.error("Widget fetch error:", err);
+      setError("Ulanishda xatolik");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchStats();
+
+    const handleRefresh = () => fetchStats();
+    const checkDirtyAndRefresh = () => {
+      if (localStorage.getItem("user_stats_dirty") === "true") {
+        fetchStats();
+      }
+    };
+
+    window.addEventListener("refetch-stats", handleRefresh);
+    window.addEventListener("focus", checkDirtyAndRefresh);
+    window.addEventListener("pageshow", handleRefresh);
+    document.addEventListener("visibilitychange", checkDirtyAndRefresh);
+
+    const interval = setInterval(checkDirtyAndRefresh, 1000);
+
+    return () => {
+      window.removeEventListener("refetch-stats", handleRefresh);
+      window.removeEventListener("focus", checkDirtyAndRefresh);
+      window.removeEventListener("pageshow", handleRefresh);
+      document.removeEventListener("visibilitychange", checkDirtyAndRefresh);
+      clearInterval(interval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -104,7 +134,7 @@ export default function UsageStatsWidget() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2.5 text-xs text-slate-300 font-semibold">
+        <div className="flex items-center gap-2 text-xs text-slate-300 font-semibold flex-wrap justify-end">
           <div className="flex items-center gap-1">
             <span>📸</span>
             <span>{stats.scanUsed}/{stats.isUnlimited ? "∞" : stats.scanLimit}</span>
@@ -118,6 +148,11 @@ export default function UsageStatsWidget() {
           <div className="flex items-center gap-1">
             <span>📊</span>
             <span>{stats.pptUsed}/{stats.isUnlimited ? "∞" : stats.pptLimit}</span>
+          </div>
+          <div className="w-px h-3 bg-slate-800" />
+          <div className="flex items-center gap-1">
+            <span>📝</span>
+            <span>{stats.referatUsed}/{stats.isUnlimited ? "∞" : stats.referatLimit}</span>
           </div>
         </div>
       </div>
@@ -204,6 +239,24 @@ export default function UsageStatsWidget() {
                       !stats.isUnlimited && stats.pptUsed >= stats.pptLimit
                         ? "bg-gradient-to-r from-rose-500 to-red-400"
                         : "bg-gradient-to-r from-violet-500 to-fuchsia-400"
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Referat */}
+              <div>
+                <div className="flex justify-between text-xs font-semibold text-slate-300 mb-1.5">
+                  <span>📝 Referat</span>
+                  <span>{stats.referatUsed}/{stats.isUnlimited ? "∞" : stats.referatLimit}</span>
+                </div>
+                <div className="h-1.5 w-full bg-[#121c29] rounded-full overflow-hidden border border-slate-800">
+                  <div 
+                    style={{ width: `${getPercent(stats.referatUsed, stats.referatLimit)}%` }} 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      !stats.isUnlimited && stats.referatUsed >= stats.referatLimit
+                        ? "bg-gradient-to-r from-rose-500 to-red-400"
+                        : "bg-gradient-to-r from-cyan-500 to-indigo-400"
                     }`}
                   />
                 </div>

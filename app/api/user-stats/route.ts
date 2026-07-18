@@ -5,6 +5,8 @@ import { PLAN_LIMITS } from "@/lib/limits";
 import { PlanType } from "@/lib/user";
 import { checkAndExpirePremium } from "@/lib/admin";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);

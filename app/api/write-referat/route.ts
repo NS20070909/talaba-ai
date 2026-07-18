@@ -1,6 +1,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { guardCheck, canUseReferat, incrementReferat } from "@/lib/limit-checker";
+import { getUser } from "@/lib/storage";
+import { PLAN_LIMITS } from "@/lib/limits";
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from "docx";
 
 const generateReferatPrompt = (topic: string, requirements: string) => {
@@ -93,7 +95,9 @@ export async function POST(req: NextRequest) {
     const {
       topic,
       requirements,
-      telegram_user_id
+      telegram_user_id,
+      pages,
+      size
     } = await req.json();
 
     if (!topic) {
@@ -110,6 +114,38 @@ export async function POST(req: NextRequest) {
     const guard = await guardCheck(telegramId);
     if (guard.blocked) {
       return new NextResponse(guard.result?.banned ? "🚫 Siz bloklangansiz" : "Ruxsat etilmagan", {
+        status: 403
+      });
+    }
+
+    // Backend validation of pages count
+    const requestedPages = pages || size;
+    let requestedMaxPages = 4; // default to FREE
+    if (requestedPages) {
+      if (typeof requestedPages === "string") {
+        if (requestedPages.toLowerCase() === "cheksiz") {
+          requestedMaxPages = Infinity;
+        } else {
+          const parts = requestedPages.split("-");
+          const lastPart = parts[parts.length - 1];
+          const parsed = parseInt(lastPart.replace("+", ""), 10);
+          if (!isNaN(parsed)) {
+            requestedMaxPages = parsed;
+          }
+        }
+      } else if (typeof requestedPages === "number") {
+        requestedMaxPages = requestedPages;
+      }
+    }
+
+    const user = await getUser(telegramId);
+    const planName = user ? user.plan : "FREE";
+    const limits = PLAN_LIMITS[planName] || PLAN_LIMITS.FREE;
+    const planMinLimit = limits.referatMinPages ?? 3;
+    const planMaxLimit = limits.unlimited ? Infinity : (limits.referatMaxPages ?? 4);
+
+    if (requestedPages && (requestedMaxPages > planMaxLimit || requestedMaxPages < planMinLimit)) {
+      return new NextResponse(`Sizning tarifingizda referat sahifa soni cheklangan. Ruxsat etilgan diapazon: ${planMinLimit}-${planMaxLimit === Infinity ? "Cheksiz" : planMaxLimit} bet. (Tarif: ${planName}).`, {
         status: 403
       });
     }

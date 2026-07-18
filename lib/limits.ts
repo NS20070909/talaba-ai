@@ -4,6 +4,7 @@ export interface PlanLimits {
   pdfPerDay?: number;
   scanPerDay?: number;
   referatPerDay?: number;
+  referatMinPages?: number;
   referatMaxPages?: number;
   unlimited?: boolean;
 }
@@ -15,6 +16,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pdfPerDay: 2,
     scanPerDay: 2,
     referatPerDay: 2,
+    referatMinPages: 3,
     referatMaxPages: 4,
   },
   STARTER: {
@@ -23,14 +25,16 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pdfPerDay: 6,
     scanPerDay: 6,
     referatPerDay: 10,
-    referatMaxPages: 15,
+    referatMinPages: 5,
+    referatMaxPages: 8,
   },
   STUDENT: {
     durationDays: 30,
     pptPerDay: 12,
     pdfPerDay: 12,
     scanPerDay: 12,
-    referatPerDay: 30,
+    referatPerDay: 50,
+    referatMinPages: 5,
     referatMaxPages: 15,
   },
   PRO: {
@@ -38,8 +42,9 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 30,
     pdfPerDay: 30,
     scanPerDay: 30,
-    referatPerDay: 120,
-    referatMaxPages: 15,
+    referatPerDay: 400,
+    referatMinPages: 5,
+    referatMaxPages: 30,
   },
   PREMIUM: {
     unlimited: true,
@@ -52,7 +57,8 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 3,
     pdfPerDay: 5,
     referatPerDay: 10,
-    referatMaxPages: 15,
+    referatMinPages: 5,
+    referatMaxPages: 8,
   },
   WEEK: {
     durationDays: 7,
@@ -60,6 +66,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 20,
     pdfPerDay: 50,
     referatPerDay: 50,
+    referatMinPages: 5,
     referatMaxPages: 15,
   },
   MONTH: {
@@ -68,7 +75,8 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 120,
     pdfPerDay: 300,
     referatPerDay: 120,
-    referatMaxPages: 15,
+    referatMinPages: 5,
+    referatMaxPages: 20,
   },
   QUARTER: {
     durationDays: 90,
@@ -76,7 +84,8 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 400,
     pdfPerDay: 1000,
     referatPerDay: 400,
-    referatMaxPages: 15,
+    referatMinPages: 5,
+    referatMaxPages: 30,
   },
   YEAR: {
     durationDays: 365,

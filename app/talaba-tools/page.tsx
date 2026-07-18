@@ -21,13 +21,23 @@ const tools = [
   active: true,
 },
   {
+    icon: "⚡",
+    title: "Referat Yozish",
+    desc:
+      "AI yordamida referat yaratish",
+    color:
+      "from-blue-500/20 to-indigo-500/10",
+    link: "/talaba-tools/write-referat",
+    active: true,
+  },
+  {
     icon: "📄",
     title: "Referat Formatlash",
     desc: "OTM formatiga moslash",
     color:
       "from-emerald-500/20 to-green-500/10",
-    link: "#",
-    active: false,
+    link: "/talaba-tools/format-referat",
+    active: true,
   },
   {
     icon: "📝",
@@ -46,16 +56,6 @@ const tools = [
       "from-pink-500/20 to-rose-500/10",
     link: "#",
     active: false,
-  },
-  {
-    icon: "⚡",
-    title: "Referat Yozish",
-    desc:
-      "AI yordamida referat yaratish",
-    color:
-      "from-blue-500/20 to-indigo-500/10",
-    link: "/talaba-tools/write-referat",
-    active: true,
   },
 ];
 

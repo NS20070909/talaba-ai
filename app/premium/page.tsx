@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useDropzone } from "react-dropzone";
 
 export type PlanPeriod = "FREE" | "DAY" | "WEEK" | "MONTH" | "QUARTER" | "YEAR";
 
@@ -18,6 +19,7 @@ export interface PricingPlan {
     ppt: string | number;
     pdf: string | number;
     referat: string | number;
+    format: string | number;
   };
   features: string[];
   colorClass: string;
@@ -34,13 +36,15 @@ const PRICING_PLANS: PricingPlan[] = [
     durationText: "1 Kunlik",
     priceText: "2,900 so'm",
     rawPrice: 2900,
-    limits: {
-      scan: 5,
-      ppt: 3,
-      pdf: 5,
-      referat: 10,
-    },
-    features: ["Kunlik 5 ta Scan", "Kunlik 3 ta PPT generator", "Kunlik 5 ta PDF vositalari", "Kunlik 10 ta AI Referat"],
+    limits: { scan: 5, ppt: 3, pdf: 5, referat: 10, format: 10 },
+    features: [
+      "Kunlik 5 ta Scan",
+      "Kunlik 3 ta PPT generator",
+      "Kunlik 5 ta PDF",
+      "Kunlik 10 ta AI Referat yozish",
+      "Kunlik 10 ta OTM Referat formatlash",
+      "Maksimal 5–8 bet referat",
+    ],
     colorClass: "border-emerald-500/30 text-emerald-400",
     bgClass: "bg-[#162520]/40",
     glowClass: "",
@@ -53,13 +57,15 @@ const PRICING_PLANS: PricingPlan[] = [
     durationText: "7 Kunlik",
     priceText: "11,900 so'm",
     rawPrice: 11900,
-    limits: {
-      scan: 50,
-      ppt: 20,
-      pdf: 50,
-      referat: 50,
-    },
-    features: ["Haftalik 50 ta Scan", "Haftalik 20 ta PPT generator", "Haftalik 50 ta PDF vositalari", "Haftalik 50 ta AI Referat"],
+    limits: { scan: 50, ppt: 20, pdf: 50, referat: 50, format: 50 },
+    features: [
+      "Kunlik 50 ta Scan",
+      "Kunlik 20 ta PPT generator",
+      "Kunlik 50 ta PDF",
+      "Kunlik 50 ta AI Referat yozish",
+      "Kunlik 50 ta OTM Referat formatlash",
+      "Maksimal 5–15 bet referat",
+    ],
     colorClass: "border-sky-500/30 text-sky-400",
     bgClass: "bg-[#112030]/40",
     glowClass: "",
@@ -73,17 +79,14 @@ const PRICING_PLANS: PricingPlan[] = [
     priceText: "29,900 so'm",
     rawPrice: 29900,
     badge: "⭐ ENG MASHHUR",
-    limits: {
-      scan: 300,
-      ppt: 120,
-      pdf: 300,
-      referat: 120,
-    },
+    limits: { scan: 300, ppt: 120, pdf: 300, referat: 120, format: 120 },
     features: [
-      "Oylik 300 ta Scan",
-      "Oylik 120 ta PPT generator",
-      "Oylik 300 ta PDF vositalari",
-      "Oylik 120 ta AI Referat (max 15 bet)",
+      "Kunlik 300 ta Scan",
+      "Kunlik 120 ta PPT generator",
+      "Kunlik 300 ta PDF",
+      "Kunlik 120 ta AI Referat yozish",
+      "Kunlik 120 ta OTM Referat formatlash",
+      "Maksimal 5–20 bet referat",
       "Prioritetli server kirishi",
     ],
     colorClass: "border-purple-500 text-purple-400",
@@ -99,18 +102,14 @@ const PRICING_PLANS: PricingPlan[] = [
     priceText: "69,900 so'm",
     rawPrice: 69900,
     badge: "🔥 ENG FOYDALI",
-    limits: {
-      scan: 1000,
-      ppt: 400,
-      pdf: 1000,
-      referat: 400,
-    },
+    limits: { scan: 1000, ppt: 400, pdf: 1000, referat: 400, format: 400 },
     features: [
-      "3 oylik 1000 ta Scan",
-      "3 oylik 400 ta PPT generator",
-      "3 oylik 1000 ta PDF vositalari",
-      "3 oylik 400 ta AI Referat (max 15 bet)",
-      "Prioritetli server kirishi",
+      "Kunlik 1000 ta Scan",
+      "Kunlik 400 ta PPT generator",
+      "Kunlik 1000 ta PDF",
+      "Kunlik 400 ta AI Referat yozish",
+      "Kunlik 400 ta OTM Referat formatlash",
+      "Maksimal 5–30 bet referat",
       "Premium qo'llab-quvvatlash",
     ],
     colorClass: "border-orange-500 text-orange-400",
@@ -130,14 +129,16 @@ const PRICING_PLANS: PricingPlan[] = [
       ppt: "Cheksiz",
       pdf: "Cheksiz",
       referat: "Cheksiz",
+      format: "Cheksiz",
     },
     features: [
       "Cheksiz Bilet Scan",
       "Cheksiz PPT generator",
-      "Cheksiz barcha PDF vositalari",
+      "Cheksiz PDF",
       "Cheksiz AI Referat yozish",
+      "Cheksiz OTM Referat formatlash",
+      "Cheksiz bet (referat hajmi)",
       "Premium maxsus nishon",
-      "Yangi premium funksiyalarga birinchi kirish",
     ],
     colorClass: "border-amber-500/40 text-amber-400",
     bgClass: "bg-[#252010]/30",
@@ -146,12 +147,11 @@ const PRICING_PLANS: PricingPlan[] = [
   },
 ];
 
+
 export default function PremiumPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanPeriod>("MONTH");
   const [showUpgradeToast, setShowUpgradeToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-  
-  // Upload modal state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [createdPaymentId, setCreatedPaymentId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -164,16 +164,13 @@ export default function PremiumPage() {
       return;
     }
     const telegramId = parseInt(telegramIdStr, 10);
-
     const activePlan = PRICING_PLANS.find((plan) => plan.id === selectedPlan);
     if (!activePlan) return;
 
     try {
       const res = await fetch("/api/payments/create", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           telegram_id: telegramId,
           amount: activePlan.rawPrice,
@@ -181,10 +178,8 @@ export default function PremiumPage() {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error("To'lov so'rovi xatosi");
-      }
-      
+      if (!res.ok) throw new Error("To'lov so'rovi xatosi");
+
       const data = await res.json();
       if (data.success && data.payment?.id) {
         setCreatedPaymentId(data.payment.id);
@@ -205,23 +200,17 @@ export default function PremiumPage() {
       formData.append("payment_id", createdPaymentId);
       formData.append("image", selectedFile);
 
-      const res = await fetch("/api/payments/upload-proof", {
-        method: "POST",
-        body: formData,
-      });
-
+      const res = await fetch("/api/payments/upload-proof", { method: "POST", body: formData });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Fayl yuklashda xatolik");
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || "Fayl yuklashda xatolik");
 
       setShowUploadModal(false);
       setToastMessage("✅ Chek yuborildi\n⏳ Admin tasdiqlashini kuting");
       setShowUpgradeToast(true);
       setTimeout(() => setShowUpgradeToast(false), 5000);
-    } catch (error: any) {
-      console.error(error);
-      alert(error.message || "Xatolik yuz berdi. Qayta urinib ko'ring.");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Xatolik yuz berdi. Qayta urinib ko'ring.";
+      alert(message);
     } finally {
       setUploading(false);
     }
@@ -241,7 +230,6 @@ export default function PremiumPage() {
 
       <main className="min-h-screen bg-[#070b12] text-white">
         <div className="max-w-md mx-auto px-4 py-5 pb-24">
-          {/* Navigation header */}
           <div className="flex items-center justify-between mb-6">
             <Link href="/" className="text-slate-400 flex items-center gap-1 transition-all active:scale-95">
               <span>←</span> Orqaga
@@ -251,8 +239,7 @@ export default function PremiumPage() {
             </Link>
           </div>
 
-          {/* Heading */}
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <div className="inline-block px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-400 text-xs font-bold mb-3 tracking-wider">
               👑 PREMIUM A'ZOLIK
             </div>
@@ -262,12 +249,10 @@ export default function PremiumPage() {
             </p>
           </div>
 
-          {/* Pricing Cards List */}
+
           <div className="space-y-4">
             {PRICING_PLANS.map((plan) => {
               const isSelected = selectedPlan === plan.id;
-              const isHighlited = plan.id === "MONTH" || plan.id === "QUARTER";
-
               return (
                 <div
                   key={plan.id}
@@ -280,14 +265,12 @@ export default function PremiumPage() {
                     ${isSelected ? "ring-2 ring-cyan-400 border-transparent bg-[#142032]" : "border-slate-800"}
                   `}
                 >
-                  {/* Selected indicator */}
                   {isSelected && (
                     <div className="absolute -top-1.5 -right-1.5 bg-cyan-400 text-slate-900 rounded-full w-6 h-6 flex items-center justify-center text-xs font-extrabold shadow-[0_0_10px_rgba(34,211,238,0.5)]">
                       ✓
                     </div>
                   )}
 
-                  {/* Badge top */}
                   {plan.badge && (
                     <span className="absolute -top-3 left-6 px-3 py-0.5 rounded-full text-[9px] font-extrabold tracking-wider bg-gradient-to-r from-violet-600 to-indigo-600 border border-violet-500 text-white shadow-md">
                       {plan.badge}
@@ -307,31 +290,37 @@ export default function PremiumPage() {
                     </div>
                   </div>
 
-                  {/* Limits summary inline */}
-                  <div className="grid grid-cols-4 gap-1 border-t border-slate-800/60 pt-3 mt-1 text-center">
-                    <div>
-                      <span className="text-[9px] text-slate-500 block font-semibold">📸 Scan</span>
-                      <span className="text-xs font-bold text-slate-300">{plan.limits.scan}</span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-slate-500 block font-semibold">📊 PPT</span>
-                      <span className="text-xs font-bold text-slate-300">{plan.limits.ppt}</span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-slate-500 block font-semibold">📄 PDF</span>
-                      <span className="text-xs font-bold text-slate-300">{plan.limits.pdf}</span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-slate-500 block font-semibold">⚡ Ref</span>
-                      <span className="text-xs font-bold text-slate-300">{plan.limits.referat}</span>
-                    </div>
+                  <div className="grid grid-cols-5 gap-1 border-t border-slate-800/60 pt-3 mt-1 text-center">
+                    {[
+                      { label: "📸", key: "scan" as const },
+                      { label: "📊", key: "ppt" as const },
+                      { label: "📄", key: "pdf" as const },
+                      { label: "⚡", key: "referat" as const },
+                      { label: "📋", key: "format" as const },
+                    ].map(({ label, key }) => (
+                      <div key={key}>
+                        <span className="text-[8px] text-slate-500 block font-semibold">{label}</span>
+                        <span className="text-[10px] font-bold text-slate-300">{plan.limits[key]}</span>
+                      </div>
+                    ))}
                   </div>
+                  <p className="text-[9px] text-slate-600 text-center mt-1.5">
+                    ⚡ Yozish · 📋 Formatlash (kunlik)
+                  </p>
+
+                  <ul className="mt-4 space-y-1.5 text-xs text-slate-300 border-t border-slate-800/40 pt-3">
+                    {plan.features.map((feat, idx) => (
+                      <li key={idx} className="flex items-center gap-1.5">
+                        <span className="text-cyan-400">✓</span>
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               );
             })}
           </div>
 
-          {/* Premium Comparison Section */}
           <div className="mt-10 bg-[#101622]/60 rounded-3xl border border-slate-800 p-5 shadow-[0_0_20px_rgba(0,0,0,0.3)]">
             <h3 className="text-base font-extrabold text-center mb-4 text-cyan-400 flex items-center justify-center gap-1.5">
               <span>⚖️</span> FREE vs PREMIUM solishtirish
@@ -343,45 +332,28 @@ export default function PremiumPage() {
                 <div className="text-right text-purple-400">PREMIUM</div>
               </div>
 
-              <div className="grid grid-cols-3 border-b border-slate-800/40 pb-2 text-slate-300">
-                <div>📸 Bilet Scan</div>
-                <div className="text-center text-slate-500">2 / kuniga</div>
-                <div className="text-right font-extrabold text-purple-300">Ko'proq / Cheksiz</div>
-              </div>
-
-              <div className="grid grid-cols-3 border-b border-slate-800/40 pb-2 text-slate-300">
-                <div>📊 AI Slayd</div>
-                <div className="text-center text-slate-500">2 / kuniga</div>
-                <div className="text-right font-extrabold text-purple-300">Ko'proq / Cheksiz</div>
-              </div>
-
-              <div className="grid grid-cols-3 border-b border-slate-800/40 pb-2 text-slate-300">
-                <div>📄 PDF Tools</div>
-                <div className="text-center text-slate-500">2 / kuniga</div>
-                <div className="text-right font-extrabold text-purple-300">Ko'proq / Cheksiz</div>
-              </div>
-
-              <div className="grid grid-cols-3 border-b border-slate-800/40 pb-2 text-slate-300">
-                <div>⚡ AI Referat</div>
-                <div className="text-center text-slate-500">2 / kuniga (max 4 bet)</div>
-                <div className="text-right font-extrabold text-purple-300">Ko'proq (max 15 bet) / Cheksiz</div>
-              </div>
-
-              <div className="grid grid-cols-3 border-b border-slate-800/40 pb-2 text-slate-300">
-                <div>⚡ Tezlik</div>
-                <div className="text-center text-slate-500">Oddiy</div>
-                <div className="text-right font-extrabold text-purple-300">Prioritetli tezkor</div>
-              </div>
-
-              <div className="grid grid-cols-3 text-slate-300">
-                <div>⭐ Premium nishon</div>
-                <div className="text-center text-slate-500">Yo'q</div>
-                <div className="text-right font-extrabold text-purple-300">Bor ✅</div>
-              </div>
+              {[
+                ["📸 Bilet Scan", "2 / kuniga", "Ko'proq / Cheksiz"],
+                ["📊 AI Slayd", "2 / kuniga", "Ko'proq / Cheksiz"],
+                ["📄 PDF Tools", "2 / kuniga", "Ko'proq / Cheksiz"],
+                ["⚡ AI Referat yozish", "2 / kuniga (3–4 bet)", "Ko'proq / Cheksiz"],
+                ["📋 OTM Referat formatlash", "2 / kuniga", "Ko'proq / Cheksiz"],
+                ["📏 Maksimal referat beti", "4 bet", "8–30 bet / Cheksiz"],
+                ["⚡ Tezlik", "Oddiy", "Prioritetli tezkor"],
+                ["⭐ Premium nishon", "Yo'q", "Bor ✅"],
+              ].map(([label, free, premium], i, arr) => (
+                <div
+                  key={label}
+                  className={`grid grid-cols-3 text-slate-300 ${i < arr.length - 1 ? "border-b border-slate-800/40 pb-2" : ""}`}
+                >
+                  <div>{label}</div>
+                  <div className="text-center text-slate-500">{free}</div>
+                  <div className="text-right font-extrabold text-purple-300">{premium}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* CTA Footer Section */}
           <div className="mt-8 border-t border-slate-800/80 pt-6 text-center space-y-4">
             <div>
               <h2 className="text-xl font-black text-slate-100 flex items-center justify-center gap-1.5">
@@ -389,7 +361,9 @@ export default function PremiumPage() {
               </h2>
               {activePlanDetails && (
                 <p className="text-slate-400 text-xs mt-1">
-                  Tanlangan plan: <strong className="text-cyan-400">{activePlanDetails.name}</strong> ({activePlanDetails.durationText} — {activePlanDetails.priceText})
+                  Tanlangan plan:{" "}
+                  <strong className="text-cyan-400">{activePlanDetails.name}</strong> (
+                  {activePlanDetails.durationText} — {activePlanDetails.priceText})
                 </p>
               )}
             </div>
@@ -405,55 +379,38 @@ export default function PremiumPage() {
         </div>
       </main>
 
-      {/* Upload Proof Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-[#101622] border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative">
-            <button 
-              onClick={() => setShowUploadModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
+            <button onClick={() => setShowUploadModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
               ✕
             </button>
-            <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
-              📸 To'lov chekini yuklang
-            </h3>
+            <h3 className="text-xl font-bold mb-2 flex items-center gap-2">📸 To'lov chekini yuklang</h3>
             <p className="text-slate-400 text-sm mb-4">
               Premium tarifni faollashtirish uchun to'lov qilinganligini tasdiqlovchi chek rasmini yuklang.
             </p>
-            
             <div className="mb-5">
-              <label className="block w-full text-sm text-slate-400
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-full file:border-0
-                file:text-sm file:font-semibold
-                file:bg-cyan-400 file:text-slate-900
-                hover:file:bg-cyan-300 file:cursor-pointer cursor-pointer border border-dashed border-slate-700 rounded-2xl p-4 text-center">
+              <label className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-400 file:text-slate-900 hover:file:bg-cyan-300 file:cursor-pointer cursor-pointer border border-dashed border-slate-700 rounded-2xl p-4 text-center">
                 Fayl tanlash...
-                <input 
-                  type="file" 
-                  accept="image/*" 
+                <input
+                  type="file"
+                  accept="image/*"
                   className="hidden"
                   onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      setSelectedFile(e.target.files[0]);
-                    }
+                    if (e.target.files?.length) setSelectedFile(e.target.files[0]);
                   }}
                 />
               </label>
               {selectedFile && (
-                <p className="text-xs text-emerald-400 mt-2 text-center">
-                  ✅ {selectedFile.name} tanlandi
-                </p>
+                <p className="text-xs text-emerald-400 mt-2 text-center">✅ {selectedFile.name} tanlandi</p>
               )}
             </div>
-
             <button
               onClick={handleUploadProof}
               disabled={!selectedFile || uploading}
               className={`w-full py-3 rounded-xl font-bold transition-all ${
-                !selectedFile || uploading 
-                  ? "bg-slate-800 text-slate-500 cursor-not-allowed" 
+                !selectedFile || uploading
+                  ? "bg-slate-800 text-slate-500 cursor-not-allowed"
                   : "bg-cyan-400 text-slate-900 hover:bg-cyan-300"
               }`}
             >
@@ -463,7 +420,6 @@ export default function PremiumPage() {
         </div>
       )}
 
-      {/* Upgrade Toast */}
       {showUpgradeToast && (
         <div
           className="animate-fade-in-up"
