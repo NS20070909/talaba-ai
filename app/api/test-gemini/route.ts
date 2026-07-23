@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
 import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
@@ -17,16 +17,21 @@ export async function GET() {
       );
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
     const prompt = "Reply with: Gemini connection successful";
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const { text, model } = await runGeminiWithFallback({
+      apiKey,
+      modelChain: [
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+      ],
+      prompt,
+    });
 
     return NextResponse.json({
       success: true,
+      model,
       message: text.trim(), // Should be "Gemini connection successful"
     });
   } catch (error: any) {

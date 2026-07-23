@@ -33,6 +33,7 @@ export interface UsageStats {
   pdfUsedToday: number;
   scanUsedToday: number;
   referatUsedToday: number;
+  translationUsedToday: number;
 
   lastResetDate: Date;
 

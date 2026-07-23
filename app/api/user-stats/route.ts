@@ -58,6 +58,8 @@ export async function GET(req: Request) {
         scanLimit: limits.scanPerDay ?? 0,
         referatUsed: stats.referatUsedToday,
         referatLimit: limits.referatPerDay ?? 0,
+        translationUsed: stats.translationUsedToday,
+        translationLimit: limits.translationPerDay ?? 2,
       },
     });
   } catch (error) {

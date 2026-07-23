@@ -127,5 +127,6 @@ export type SupportedInputFormat = "docx";
 export interface DocumentLimits {
   maxFileBytes: number;
   maxPages: number;
+  dailyLimit: number;
   isPremium: boolean;
 }

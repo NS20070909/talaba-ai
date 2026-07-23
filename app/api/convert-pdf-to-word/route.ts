@@ -22,9 +22,11 @@ const ai = new GoogleGenAI({
 
 // FALLBACK MODELS
 const MODELS = [
-  "gemini-1.5-flash", // Hozirda barqaror va tezkor ishlaydigan modellar
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash-lite",
   "gemini-1.5-flash",
-  "gemini-1.5-pro",
+  "gemini-2.5-pro",
 ];
 
 // OCR GENERATOR

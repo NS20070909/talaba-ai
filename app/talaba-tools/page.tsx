@@ -42,20 +42,20 @@ const tools = [
   {
     icon: "📝",
     title: "Hujjat Tozalash",
-    desc: "Shrift va formatni tuzatish",
+    desc: "AI tahlil + OTM formatiga tayyorlash",
     color:
       "from-orange-500/20 to-amber-500/10",
-    link: "#",
-    active: false,
+    link: "/talaba-tools/hujjat-tozalash",
+    active: true,
   },
   {
     icon: "🌍",
     title: "Tarjima Pro",
-    desc: "UZ, RU va EN tarjima",
+    desc: "AI professional tarjima (UZ · EN · RU)",
     color:
       "from-pink-500/20 to-rose-500/10",
-    link: "#",
-    active: false,
+    link: "/talaba-tools/tarjima-pro",
+    active: true,
   },
 ];
 

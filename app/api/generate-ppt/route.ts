@@ -14,6 +14,7 @@ async function getPexelsImage(
   query: string
 ) {
   try {
+    if (!process.env.PEXELS_API_KEY) return null;
     const response =
       await axios.get(
         "https://api.pexels.com/v1/search",

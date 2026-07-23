@@ -1,6 +1,5 @@
 "use server";
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { PPT_SYSTEM_PROMPT } from "./prompt";
 
 type GenerateOutlineParams = {
@@ -10,38 +9,15 @@ type GenerateOutlineParams = {
   style: string;
 };
 
-const gemini =
-  new GoogleGenerativeAI(
-    process.env
-      .GEMINI_PPT_API_KEY!
-  );
+import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
 
 const GEMINI_MODELS = [
-  // FAST + kuchli
   "gemini-2.5-flash",
-
-  // eng yaxshi fallback
-  "gemini-3.5-flash",
-
-  // ultra cheap / limit tejaydi
-  "gemini-3.1-flash-lite",
-
-  // stable
-  "gemini-2-flash",
-
-  // cheap backup
   "gemini-2.5-flash-lite",
-
-  // legacy backup
-  "gemini-1.5-flash",
-
-  // emergency
-  "gemini-1.5-flash-8b",
-  // PRIMARY (eng tez + sifatli)
-  "gemini-2.5-flash-preview-05-20",
-
-  // FAST FALLBACK
   "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-2.5-pro",
 ];
 
 const OPENROUTER_MODELS = [
@@ -51,63 +27,25 @@ const OPENROUTER_MODELS = [
   "openai/gpt-oss-120b:free",
 ];
 
-async function tryGemini(
-  prompt: string
-) {
-  for (const modelName of GEMINI_MODELS) {
-    try {
-      console.log(
-        `Trying Gemini: ${modelName}`
-      );
-
-      const model =
-        gemini.getGenerativeModel(
-          {
-            model:
-              modelName,
-          }
-        );
-
-      const result: any =
-  await Promise.race([
-    model.generateContent(
-      prompt
-    ),
-
-    new Promise(
-      (_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                "Timeout"
-              )
-            ),
-          30000
-        )
-    ),
-  ]);
-
-      const text =
-        result.response.text();
-
-      if (text) {
-        console.log(
-          `Success Gemini: ${modelName}`
-        );
-
-        return text;
-      }
-    } catch (
-      error
-    ) {
-      console.log(
-        `Failed ${modelName}`
-      );
-    }
+async function tryGemini(prompt: string) {
+  const apiKey = process.env.GEMINI_PPT_API_KEY;
+  if (!apiKey) {
+    console.error("GEMINI_PPT_API_KEY missing");
+    return null;
   }
 
-  return null;
+  try {
+    const { text } = await runGeminiWithFallback({
+      apiKey,
+      modelChain: GEMINI_MODELS,
+      prompt,
+      timeoutMs: 30000,
+    });
+    return text;
+  } catch (error) {
+    console.error("All Gemini models failed in PPT actions:", error);
+    return null;
+  }
 }
 
 async function tryOpenRouter(

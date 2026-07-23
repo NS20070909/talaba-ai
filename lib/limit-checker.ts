@@ -167,3 +167,32 @@ export async function incrementReferat(telegramId: number): Promise<void> {
     referatUsedToday: stats.referatUsedToday + 1,
   });
 }
+
+export async function canUseTranslation(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+
+  const limits = PLAN_LIMITS[plan];
+  if (limits?.unlimited) {
+    return { allowed: true, remaining: Infinity };
+  }
+
+  const stats = await getOrResetUsage(telegramId);
+  const limit = limits?.translationPerDay ?? 2;
+  const remaining = Math.max(0, limit - stats.translationUsedToday);
+
+  return {
+    allowed: remaining > 0,
+    remaining,
+  };
+}
+
+export async function incrementTranslation(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    translationUsedToday: stats.translationUsedToday + 1,
+  });
+}

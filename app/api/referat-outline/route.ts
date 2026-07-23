@@ -1,18 +1,18 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse, NextRequest } from "next/server";
 import { getUser } from "@/lib/storage";
 import { PLAN_LIMITS } from "@/lib/limits";
 import { guardCheck, canUseReferat, incrementReferat } from "@/lib/limit-checker";
+import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const MODEL_CHAIN = [
-  "gemini-3.1-pro-preview",
-  "gemini-3.5-flash",
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-1.5-pro",
 ];
 
 function cleanJson(text: string): string {
@@ -21,25 +21,6 @@ function cleanJson(text: string): string {
   if (cleaned.startsWith("```")) cleaned = cleaned.substring(3);
   if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length - 3);
   return cleaned.trim();
-}
-
-async function generateWithFallback(
-  prompt: string,
-  genAI: GoogleGenerativeAI
-): Promise<{ text: string; model: string }> {
-  for (const modelName of MODEL_CHAIN) {
-    console.log(`[Gemini] Trying: ${modelName}`);
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      console.log(`[Gemini] Success: ${modelName}`);
-      return { text, model: modelName };
-    } catch (err: any) {
-      console.warn(`[Gemini] Failed: ${modelName} - ${err.message}`);
-    }
-  }
-  throw new Error("All Gemini models in the fallback chain failed.");
 }
 
 export async function POST(req: NextRequest) {
@@ -126,19 +107,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use REFERAT_GEMINI_API_KEY (production) with fallback to GEMINI_API_KEY (local dev)
-    const apiKey = process.env.REFERAT_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+    const apiKey = process.env.REFERAT_GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing REFERAT_GEMINI_API_KEY and GEMINI_API_KEY",
+          error: "REFERAT_GEMINI_API_KEY topilmadi",
         },
         { status: 500 }
       );
     }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
 
     const prompt = `You are an expert academic writer and professor.
 Your task is to create a highly professional, well-structured academic outline for a referat (research paper/essay).
@@ -164,7 +142,11 @@ Requirements:
 3. The response must be entirely in the requested Language (${language}).
 4. Ensure the outline depth is appropriate for a paper of ${pages} pages.`;
 
-    const { text: rawText, model: usedModel } = await generateWithFallback(prompt, genAI);
+    const { text: rawText, model: usedModel } = await runGeminiWithFallback({
+      apiKey,
+      modelChain: MODEL_CHAIN,
+      prompt,
+    });
     const cleaned = cleanJson(rawText);
     const parsedData = JSON.parse(cleaned);
 

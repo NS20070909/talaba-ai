@@ -11,11 +11,11 @@ export async function POST(
       gpa,
     } = await req.json();
 
-    if (!userId) {
+    if (!userId || !Array.isArray(subjects)) {
       return NextResponse.json(
         {
           error:
-            "Telegram user topilmadi",
+            "Telegram user yoki fanlar ro'yxati topilmadi",
         },
         {
           status: 400,

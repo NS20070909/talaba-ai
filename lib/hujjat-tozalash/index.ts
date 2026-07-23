@@ -1,4 +1,5 @@
 export { cleanDocument } from "./pipeline";
+export { getHujjatUsageInfo, canUseHujjatTozalash } from "./usage";
 export type {
   CleanDocumentResult,
   CleaningReport,

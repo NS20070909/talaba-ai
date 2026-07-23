@@ -4,6 +4,7 @@ export interface PlanLimits {
   pdfPerDay?: number;
   scanPerDay?: number;
   referatPerDay?: number;
+  translationPerDay?: number;
   referatMinPages?: number;
   referatMaxPages?: number;
   unlimited?: boolean;
@@ -16,6 +17,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pdfPerDay: 2,
     scanPerDay: 2,
     referatPerDay: 2,
+    translationPerDay: 2,
     referatMinPages: 3,
     referatMaxPages: 4,
   },
@@ -25,6 +27,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pdfPerDay: 6,
     scanPerDay: 6,
     referatPerDay: 10,
+    translationPerDay: 6,
     referatMinPages: 5,
     referatMaxPages: 8,
   },
@@ -34,6 +37,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pdfPerDay: 12,
     scanPerDay: 12,
     referatPerDay: 50,
+    translationPerDay: 12,
     referatMinPages: 5,
     referatMaxPages: 15,
   },
@@ -43,6 +47,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pdfPerDay: 30,
     scanPerDay: 30,
     referatPerDay: 400,
+    translationPerDay: 30,
     referatMinPages: 5,
     referatMaxPages: 30,
   },
@@ -57,6 +62,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 3,
     pdfPerDay: 5,
     referatPerDay: 10,
+    translationPerDay: 5,
     referatMinPages: 5,
     referatMaxPages: 8,
   },
@@ -66,6 +72,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 20,
     pdfPerDay: 50,
     referatPerDay: 50,
+    translationPerDay: 50,
     referatMinPages: 5,
     referatMaxPages: 15,
   },
@@ -75,6 +82,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 120,
     pdfPerDay: 300,
     referatPerDay: 120,
+    translationPerDay: 300,
     referatMinPages: 5,
     referatMaxPages: 20,
   },
@@ -84,6 +92,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     pptPerDay: 400,
     pdfPerDay: 1000,
     referatPerDay: 400,
+    translationPerDay: 1000,
     referatMinPages: 5,
     referatMaxPages: 30,
   },

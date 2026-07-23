@@ -1,14 +1,7 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import { guardCheck, canUseScan, incrementScan } from "@/lib/limit-checker";
 
 export const maxDuration = 60;
-
-const genAI =
-  new GoogleGenerativeAI(
-    process.env
-      .GEMINI_API_KEY!
-  );
 
 export async function POST(
   req: Request
@@ -143,228 +136,34 @@ FORMATNI BUZMA.
 RASMNI DIQQAT BILAN O‘QI.
 `;
 
-    let responseText =
-      "";
-
-    // MODEL 1
-    try {
-      console.log(
-        "✅ Gemini 2.5 Flash ishladi"
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { result: "❌ GEMINI_API_KEY sozlanmagan" },
+        { status: 500 }
       );
-
-      const model =
-        genAI.getGenerativeModel(
-          {
-            model:
-              "gemini-2.5-flash",
-          }
-        );
-
-      const result =
-        await model.generateContent(
-          [
-            prompt,
-            {
-              inlineData:
-                {
-                  mimeType:
-                    "image/jpeg",
-                  data:
-                    image,
-                },
-            },
-          ]
-        );
-
-      responseText =
-        result.response.text();
     }
 
-    // MODEL 2
-    catch (error1) {
-      console.log(
-        "❌ 2.5 Flash ishlamadi → Gemini 3.1 Flash Lite"
-      );
-
-      try {
-        const model =
-          genAI.getGenerativeModel(
-            {
-              model:
-                "gemini-3.1-flash-lite",
-            }
-          );
-
-        const result =
-          await model.generateContent(
-            [
-              prompt,
-              {
-                inlineData:
-                  {
-                    mimeType:
-                      "image/jpeg",
-                    data:
-                      image,
-                  },
-              },
-            ]
-          );
-
-        responseText =
-          result.response.text();
-      }
-
-      // MODEL 3
-      catch (
-        error2
-      ) {
-        console.log(
-          "❌ 3.1 Flash Lite ishlamadi → Gemini 2 Flash"
-        );
-
-        try {
-          const model =
-            genAI.getGenerativeModel(
-              {
-                model:
-                  "gemini-2.0-flash",
-              }
-            );
-
-          const result =
-            await model.generateContent(
-              [
-                prompt,
-                {
-                  inlineData:
-                    {
-                      mimeType:
-                        "image/jpeg",
-                      data:
-                        image,
-                    },
-                },
-              ]
-            );
-
-          responseText =
-            result.response.text();
-        }
-
-        // MODEL 4
-        catch (
-          error3
-        ) {
-          console.log(
-            "❌ Gemini 2 Flash ishlamadi → Gemini 3 Flash"
-          );
-
-          try {
-            const model =
-              genAI.getGenerativeModel(
-                {
-                  model:
-                    "gemini-3-flash",
-                }
-              );
-
-            const result =
-              await model.generateContent(
-                [
-                  prompt,
-                  {
-                    inlineData:
-                      {
-                        mimeType:
-                          "image/jpeg",
-                        data:
-                          image,
-                      },
-                  },
-                ]
-              );
-
-            responseText =
-              result.response.text();
-          }
-
-          // MODEL 5
-          catch (
-            error4
-          ) {
-            console.log(
-              "❌ Gemini 3 Flash ishlamadi → Gemini 2.5 Flash Lite"
-            );
-
-            try {
-              const model =
-                genAI.getGenerativeModel(
-                  {
-                    model:
-                      "gemini-2.5-flash-lite",
-                  }
-                );
-
-              const result =
-                await model.generateContent(
-                  [
-                    prompt,
-                    {
-                      inlineData:
-                        {
-                          mimeType:
-                            "image/jpeg",
-                          data:
-                            image,
-                        },
-                    },
-                  ]
-                );
-
-              responseText =
-                result.response.text();
-            }
-
-            // MODEL 6
-            catch (
-              error5
-            ) {
-              console.log(
-                "❌ 2.5 Flash Lite ishlamadi → Gemini 2 Flash Lite"
-              );
-
-              const model =
-                genAI.getGenerativeModel(
-                  {
-                    model:
-                      "gemini-2.0-flash-lite",
-                  }
-                );
-
-              const result =
-                await model.generateContent(
-                  [
-                    prompt,
-                    {
-                      inlineData:
-                        {
-                          mimeType:
-                            "image/jpeg",
-                          data:
-                            image,
-                        },
-                    },
-                  ]
-                );
-
-              responseText =
-                result.response.text();
-            }
-          }
-        }
-      }
-    }
+    const { runGeminiWithFallback } = await import("@/lib/ai-fallback-runner");
+    const { text: responseText } = await runGeminiWithFallback({
+      apiKey,
+      modelChain: [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+      ],
+      prompt: [
+        prompt,
+        {
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: image,
+          },
+        },
+      ],
+    });
 
     if (telegramId && !isNaN(telegramId)) {
       await incrementScan(telegramId);

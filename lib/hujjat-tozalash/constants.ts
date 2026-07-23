@@ -17,8 +17,9 @@ export const FIRST_LINE_INDENT = 709; // ~1.25 cm
 
 export const FREE_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const PREMIUM_MAX_FILE_BYTES = 15 * 1024 * 1024;
-export const FREE_MAX_PAGES = 30;
+export const FREE_MAX_PAGES = 5;
 export const PREMIUM_MAX_PAGES = 100;
+export const FREE_DAILY_LIMIT = 2;
 
 export const MIN_TEXT_LENGTH = 20;
 export const WORDS_PER_PAGE = 250;
@@ -32,12 +33,31 @@ export const GEMINI_MODEL_CHAIN = [
 
 export function getDocumentLimits(plan: PlanType): DocumentLimits {
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
-  const isPremium = !!limits.unlimited;
+  const isPremium = !!limits.unlimited || plan !== "FREE";
+
+  if (limits.unlimited) {
+    return {
+      maxFileBytes: PREMIUM_MAX_FILE_BYTES,
+      maxPages: PREMIUM_MAX_PAGES,
+      dailyLimit: Infinity,
+      isPremium: true,
+    };
+  }
+
+  if (plan === "FREE") {
+    return {
+      maxFileBytes: FREE_MAX_FILE_BYTES,
+      maxPages: FREE_MAX_PAGES,
+      dailyLimit: FREE_DAILY_LIMIT,
+      isPremium: false,
+    };
+  }
 
   return {
-    maxFileBytes: isPremium ? PREMIUM_MAX_FILE_BYTES : FREE_MAX_FILE_BYTES,
-    maxPages: isPremium ? PREMIUM_MAX_PAGES : FREE_MAX_PAGES,
-    isPremium,
+    maxFileBytes: PREMIUM_MAX_FILE_BYTES,
+    maxPages: limits.referatMaxPages ?? 15,
+    dailyLimit: limits.referatPerDay ?? FREE_DAILY_LIMIT,
+    isPremium: true,
   };
 }
 

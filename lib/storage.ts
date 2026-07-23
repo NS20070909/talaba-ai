@@ -14,13 +14,21 @@ function mapUser(row: any): User {
   };
 }
 
+function isMissingColumnError(error: any, columnName: string): boolean {
+  if (!error) return false;
+  if (error.code === "PGRST204") return true;
+  const msg = (error.message || "").toLowerCase();
+  return msg.includes(columnName.toLowerCase()) || msg.includes("schema cache") || msg.includes("could not find");
+}
+
 function mapUsageStats(row: any): UsageStats {
   return {
     telegramId: Number(row.telegram_id),
-    pptUsedToday: row.ppt_used_today,
-    pdfUsedToday: row.pdf_used_today,
-    scanUsedToday: row.scan_used_today,
-    referatUsedToday: row.referat_used_today || 0,
+    pptUsedToday: row.ppt_used_today ?? 0,
+    pdfUsedToday: row.pdf_used_today ?? 0,
+    scanUsedToday: row.scan_used_today ?? 0,
+    referatUsedToday: row.referat_used_today ?? 0,
+    translationUsedToday: row.translation_used_today ?? 0,
     lastResetDate: new Date(row.last_reset_date),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -157,28 +165,39 @@ export async function getUsageStats(telegramId: number): Promise<UsageStats> {
   }
 
   // Ensure user exists before creating usage stats.
-  // We do NOT create with hardcoded "Telegram User" — that would overwrite real data.
-  // saveOrUpdateUser is called from /api/sync-user at app startup with real Telegram data.
   const user = await getUser(telegramId);
   if (!user) {
-    // Minimal placeholder — will be overwritten once sync-user is called
     await createUser(telegramId, "Telegram User", undefined, "FREE");
   }
 
-  const { data: insertedData, error: insertError } = await supabase
+  const insertPayload: any = {
+    telegram_id: telegramId,
+    ppt_used_today: 0,
+    pdf_used_today: 0,
+    scan_used_today: 0,
+    referat_used_today: 0,
+    translation_used_today: 0,
+    last_reset_date: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  let { data: insertedData, error: insertError } = await supabase
     .from("usage_stats")
-    .insert({
-      telegram_id: telegramId,
-      ppt_used_today: 0,
-      pdf_used_today: 0,
-      scan_used_today: 0,
-      referat_used_today: 0,
-      last_reset_date: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .insert(insertPayload)
     .select("*")
     .single();
+
+  if (insertError && isMissingColumnError(insertError, "translation_used_today")) {
+    delete insertPayload.translation_used_today;
+    const retryRes = await supabase
+      .from("usage_stats")
+      .insert(insertPayload)
+      .select("*")
+      .single();
+    insertedData = retryRes.data;
+    insertError = retryRes.error;
+  }
 
   if (insertError) {
     if (insertError.code === "23505") {
@@ -209,15 +228,32 @@ export async function updateUsageStats(
   if (updates.pdfUsedToday !== undefined) dbUpdates.pdf_used_today = updates.pdfUsedToday;
   if (updates.scanUsedToday !== undefined) dbUpdates.scan_used_today = updates.scanUsedToday;
   if (updates.referatUsedToday !== undefined) dbUpdates.referat_used_today = updates.referatUsedToday;
+  if (updates.translationUsedToday !== undefined) dbUpdates.translation_used_today = updates.translationUsedToday;
   dbUpdates.updated_at = new Date().toISOString();
 
   const supabase = getSupabase();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("usage_stats")
     .update(dbUpdates)
     .eq("telegram_id", telegramId)
     .select("*")
     .single();
+
+  if (error && isMissingColumnError(error, "translation_used_today") && dbUpdates.translation_used_today !== undefined) {
+    delete dbUpdates.translation_used_today;
+    const remainingKeys = Object.keys(dbUpdates).filter((k) => k !== "updated_at");
+    if (remainingKeys.length === 0) {
+      return await getUsageStats(telegramId);
+    }
+    const retryRes = await supabase
+      .from("usage_stats")
+      .update(dbUpdates)
+      .eq("telegram_id", telegramId)
+      .select("*")
+      .single();
+    data = retryRes.data;
+    error = retryRes.error;
+  }
 
   if (error) {
     console.error("Error in updateUsageStats:", error);
@@ -231,19 +267,34 @@ export async function resetUsageStats(telegramId: number): Promise<UsageStats> {
   await getUsageStats(telegramId);
 
   const supabase = getSupabase();
-  const { data, error } = await supabase
+  const resetPayload: any = {
+    ppt_used_today: 0,
+    pdf_used_today: 0,
+    scan_used_today: 0,
+    referat_used_today: 0,
+    translation_used_today: 0,
+    last_reset_date: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  let { data, error } = await supabase
     .from("usage_stats")
-    .update({
-      ppt_used_today: 0,
-      pdf_used_today: 0,
-      scan_used_today: 0,
-      referat_used_today: 0,
-      last_reset_date: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(resetPayload)
     .eq("telegram_id", telegramId)
     .select("*")
     .single();
+
+  if (error && isMissingColumnError(error, "translation_used_today")) {
+    delete resetPayload.translation_used_today;
+    const retryRes = await supabase
+      .from("usage_stats")
+      .update(resetPayload)
+      .eq("telegram_id", telegramId)
+      .select("*")
+      .single();
+    data = retryRes.data;
+    error = retryRes.error;
+  }
 
   if (error) {
     console.error("Error in resetUsageStats:", error);
