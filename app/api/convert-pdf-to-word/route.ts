@@ -16,21 +16,18 @@ import { guardCheck, canUsePDF, incrementPDF } from "@/lib/limit-checker";
 
 const execAsync = promisify(exec);
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_DOCUMENT_API_KEY!,
-});
+// NOTE: GEMINI_DOCUMENT_API_KEY is the only allowed key for this module.
+// No fallback to other keys is permitted.
 
 // FALLBACK MODELS
 const MODELS = [
-  "gemini-2.5-flash",
   "gemini-2.0-flash",
-  "gemini-2.5-flash-lite",
   "gemini-1.5-flash",
-  "gemini-2.5-pro",
+  "gemini-1.5-pro",
 ];
 
 // OCR GENERATOR
-async function generateOCR(base64: string) {
+async function generateOCR(base64: string, ai: GoogleGenAI) {
   let lastError;
 
   for (const model of MODELS) {
@@ -69,7 +66,7 @@ async function generateOCR(base64: string) {
   throw lastError; // Agar barcha modellar xato bersa xatolikni otamiz
 } // <=== MANA SHU YERDA QAVS TUSHIB QOLGAN EDI!
 
-async function generatePDFOCR(base64: string) {
+async function generatePDFOCR(base64: string, ai: GoogleGenAI) {
   let lastError;
 
   for (const model of MODELS) {
@@ -110,6 +107,16 @@ async function generatePDFOCR(base64: string) {
 }
 
 export async function POST(request: Request) {
+  const geminiDocumentApiKey = process.env.GEMINI_DOCUMENT_API_KEY;
+  if (!geminiDocumentApiKey) {
+    return NextResponse.json(
+      { error: "Server configuration error: GEMINI_DOCUMENT_API_KEY is not set." },
+      { status: 500 }
+    );
+  }
+
+  const ai = new GoogleGenAI({ apiKey: geminiDocumentApiKey });
+
   try {
     const formData = await request.formData();
 
@@ -186,7 +193,7 @@ export async function POST(request: Request) {
         const base64 = fs.readFileSync(imagePath).toString("base64");
 
         // OCR
-        const text = await generateOCR(base64);
+        const text = await generateOCR(base64, ai);
         finalText += text + "\n\n";
       }
 
@@ -202,7 +209,7 @@ export async function POST(request: Request) {
 
       // Native Gemini PDF OCR (fully compatible on Vercel)
       const pdfBase64 = Buffer.from(bytes).toString("base64");
-      finalText = await generatePDFOCR(pdfBase64);
+      finalText = await generatePDFOCR(pdfBase64, ai);
     }
 
     // 📝 DOCX FAYLINI YARATISH (Sizda shu qism tushib qolgandi va "buffer" topilmayotgandi)
