@@ -333,7 +333,7 @@ export async function getBotState(telegramId: number): Promise<string | null> {
     .single();
 
   if (error) {
-    if (error.code !== "PGRST116") {
+    if (error.code !== "PGRST116" && error.code !== "PGRST205") {
       console.error("Error in getBotState:", error);
     }
     return null;
@@ -349,6 +349,10 @@ export async function setBotState(telegramId: number, state: string): Promise<vo
     .upsert({ telegram_id: telegramId, state, updated_at: new Date().toISOString() });
 
   if (error) {
+    if (error.code === "PGRST205") {
+      console.warn("bot_states table missing in Supabase. Please run migration 20260716_bot_states.sql");
+      return;
+    }
     console.error("Error in setBotState:", error);
     throw error;
   }
@@ -362,6 +366,7 @@ export async function deleteBotState(telegramId: number): Promise<void> {
     .eq("telegram_id", telegramId);
 
   if (error) {
+    if (error.code === "PGRST205") return;
     console.error("Error in deleteBotState:", error);
     throw error;
   }

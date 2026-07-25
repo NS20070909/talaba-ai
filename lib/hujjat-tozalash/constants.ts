@@ -25,9 +25,18 @@ export const MIN_TEXT_LENGTH = 20;
 export const WORDS_PER_PAGE = 250;
 
 export const GEMINI_MODEL_CHAIN = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+
   "gemini-2.5-flash",
-  "gemini-2.0-flash",
   "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+
+  "gemini-flash-latest",
+
+  "gemini-2.0-flash",
   "gemini-2.0-flash-lite",
 ];
 

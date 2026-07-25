@@ -66,13 +66,14 @@ export async function getAdminCount(): Promise<number> {
   const supabase = getSupabase();
   const { count, error } = await supabase
     .from("admins")
-    .select("*", { count: "exact", head: true });
+    .select("*", { count: "exact", head: true })
+    .neq("telegram_id", OWNER_ID);
 
   if (error) {
     console.error("getAdminCount error:", error);
     return 0;
   }
-  // +1 for the owner who is always admin
+  // +1 for the owner who is always admin but excluded from table count above
   return (count ?? 0) + 1;
 }
 
@@ -191,6 +192,8 @@ export interface AdminUserInfo {
   scanUsed: number;
   pdfUsed: number;
   pptUsed: number;
+  referatUsedToday: number;
+  translationUsedToday: number;
   createdAt: Date;
 }
 
@@ -203,10 +206,16 @@ export async function getUserInfo(telegramId: number): Promise<AdminUserInfo | n
   const freshUser = await getUser(telegramId);
   if (!freshUser) return null;
 
-  let stats = { scanUsedToday: 0, pdfUsedToday: 0, pptUsedToday: 0 };
+  let stats = { scanUsedToday: 0, pdfUsedToday: 0, pptUsedToday: 0, referatUsedToday: 0, translationUsedToday: 0 };
   try {
     const s = await getUsageStats(telegramId);
-    stats = { scanUsedToday: s.scanUsedToday, pdfUsedToday: s.pdfUsedToday, pptUsedToday: s.pptUsedToday };
+    stats = {
+      scanUsedToday: s.scanUsedToday,
+      pdfUsedToday: s.pdfUsedToday,
+      pptUsedToday: s.pptUsedToday,
+      referatUsedToday: s.referatUsedToday,
+      translationUsedToday: s.translationUsedToday,
+    };
   } catch {
     // stats table may not exist for this user yet
   }
@@ -227,6 +236,8 @@ export async function getUserInfo(telegramId: number): Promise<AdminUserInfo | n
     scanUsed: stats.scanUsedToday,
     pdfUsed: stats.pdfUsedToday,
     pptUsed: stats.pptUsedToday,
+    referatUsedToday: stats.referatUsedToday,
+    translationUsedToday: stats.translationUsedToday,
     createdAt: freshUser.createdAt,
   };
 }
@@ -242,6 +253,8 @@ export interface SystemStats {
   scanToday: number;
   pptToday: number;
   pdfToday: number;
+  referatToday: number;
+  translationToday: number;
   adminCount: number;
 }
 
@@ -259,23 +272,34 @@ export async function getSystemStats(): Promise<SystemStats> {
     .select("*", { count: "exact", head: true })
     .neq("plan", "FREE");
 
-  // Today's usage totals
-  const today = new Date().toDateString();
+  // Today's usage totals using Asia/Tashkent timezone
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const today = formatter.format(new Date());
+
   const { data: usageRows } = await supabase
     .from("usage_stats")
-    .select("scan_used_today, ppt_used_today, pdf_used_today, last_reset_date");
+    .select("scan_used_today, ppt_used_today, pdf_used_today, referat_used_today, translation_used_today, last_reset_date");
 
   let scanToday = 0;
   let pptToday = 0;
   let pdfToday = 0;
+  let referatToday = 0;
+  let translationToday = 0;
 
   if (usageRows) {
     for (const row of usageRows) {
-      // Only count rows that were reset today (active today)
-      if (new Date(row.last_reset_date).toDateString() === today) {
+      // Only count rows that were reset today (active today) in Asia/Tashkent
+      if (row.last_reset_date && formatter.format(new Date(row.last_reset_date)) === today) {
         scanToday += row.scan_used_today ?? 0;
         pptToday += row.ppt_used_today ?? 0;
         pdfToday += row.pdf_used_today ?? 0;
+        referatToday += row.referat_used_today ?? 0;
+        translationToday += row.translation_used_today ?? 0;
       }
     }
   }
@@ -291,6 +315,8 @@ export async function getSystemStats(): Promise<SystemStats> {
     scanToday,
     pptToday,
     pdfToday,
+    referatToday,
+    translationToday,
     adminCount,
   };
 }

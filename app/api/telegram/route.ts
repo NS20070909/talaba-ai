@@ -12,6 +12,19 @@ import { getPaymentsStats, getRecentPayments, getPaymentById, updatePaymentStatu
 import { bot } from "@/lib/bot";
 import { getSupabase } from "@/lib/supabase";
 
+// Global Telegraf error handler for non-fatal Telegram API errors
+bot.catch((err: any) => {
+  const msg = String(err?.message || err?.description || err || "").toLowerCase();
+  if (
+    msg.includes("message is not modified") ||
+    msg.includes("query is too old") ||
+    msg.includes("response timeout expired")
+  ) {
+    return;
+  }
+  console.error("Telegraf bot error:", err);
+});
+
 // TELEGRAM FILE SEND
 export async function sendFileToTelegram(
   userId: number,
@@ -338,8 +351,7 @@ bot.command("admin", async (ctx) => {
   const userId = ctx.from?.id;
   if (!userId) return;
 
-  // Visible ONLY to OWNER. Admins should NOT see the owner panel.
-  if (!isOwner(userId)) return;
+  if (!(await isAdmin(userId))) return;
 
   await renderMainPanel(ctx);
 });
@@ -355,7 +367,9 @@ async function renderMainPanel(ctx: any) {
       `🆓 <b>Free:</b> ${stats.freeUsers}\n\n` +
       `📸 <b>Scan Today:</b> ${stats.scanToday}\n` +
       `📊 <b>PPT Today:</b> ${stats.pptToday}\n` +
-      `📄 <b>PDF Today:</b> ${stats.pdfToday}`;
+      `📄 <b>PDF Today:</b> ${stats.pdfToday}\n` +
+      `📝 <b>Referat Today:</b> ${stats.referatToday}\n` +
+      `🌐 <b>Translation Today:</b> ${stats.translationToday}`;
 
     const keyboard = {
       inline_keyboard: [
@@ -466,7 +480,9 @@ async function renderStatsMenu(ctx: any) {
       `🆓 <b>Free Users:</b> ${stats.freeUsers}\n\n` +
       `📸 <b>Scan Today:</b> ${stats.scanToday}\n` +
       `📊 <b>PPT Today:</b> ${stats.pptToday}\n` +
-      `📄 <b>PDF Today:</b> ${stats.pdfToday}\n\n` +
+      `📄 <b>PDF Today:</b> ${stats.pdfToday}\n` +
+      `📝 <b>Referat Today:</b> ${stats.referatToday}\n` +
+      `🌐 <b>Translation Today:</b> ${stats.translationToday}\n\n` +
       `👑 <b>Admin Count:</b> ${stats.adminCount}`;
 
     const keyboard = {
@@ -558,19 +574,19 @@ async function renderPaymentsMenu(ctx: any) {
 
 // CALLBACK ACTIONS
 bot.action("admin:main", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderMainPanel(ctx);
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:search", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderSearchMenu(ctx);
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:broadcast", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderBroadcastMenu(ctx);
   await ctx.answerCbQuery();
 });
@@ -582,31 +598,31 @@ bot.action("admin:admins", async (ctx) => {
 });
 
 bot.action("admin:premium", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderPremiumMenu(ctx);
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:ban", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderBanMenu(ctx);
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:stats", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderStatsMenu(ctx);
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:payments", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderPaymentsMenu(ctx);
   await ctx.answerCbQuery();
 });
 
 bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   const paymentId = ctx.match[1];
   
   try {
@@ -663,7 +679,7 @@ bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
 });
 
 bot.action(/admin:pay:reject:(.+)/, async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   const paymentId = ctx.match[1];
   
   try {
@@ -705,7 +721,7 @@ bot.action(/admin:pay:reject:(.+)/, async (ctx) => {
 });
 
 bot.action(/admin:pay:view:(.+)/, async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   const paymentId = ctx.match[1];
 
   try {
@@ -747,14 +763,14 @@ bot.action(/admin:pay:view:(.+)/, async (ctx) => {
 
 // INPUT REQUESTS ACTIONS
 bot.action("admin:search:start", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await setBotState(ctx.from!.id, "owner:waiting_for_search");
   await ctx.reply("🔍 Iltimos, qidiriladigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:broadcast:start", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await setBotState(ctx.from!.id, "owner:waiting_for_broadcast");
   await ctx.reply("📢 Iltimos, barcha foydalanuvchilarga yuboriladigan xabarni kiriting:");
   await ctx.answerCbQuery();
@@ -775,28 +791,28 @@ bot.action("admin:admins:remove", async (ctx) => {
 });
 
 bot.action("admin:premium:give", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await setBotState(ctx.from!.id, "owner:waiting_for_give_premium");
   await ctx.reply("💎 Iltimos, premium beriladigan foydalanuvchi ID si va planini kiriting (Masalan: 12345678 MONTH):");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:premium:remove", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await setBotState(ctx.from!.id, "owner:waiting_for_remove_premium");
   await ctx.reply("💎 Iltimos, premium tarif o'chiriladigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:ban:ban", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await setBotState(ctx.from!.id, "owner:waiting_for_ban");
   await ctx.reply("🚫 Iltimos, bloklanadigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
 });
 
 bot.action("admin:ban:unban", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
   await setBotState(ctx.from!.id, "owner:waiting_for_unban");
   await ctx.reply("🔓 Iltimos, blokdan chiqariladigan foydalanuvchining Telegram ID sini kiriting:");
   await ctx.answerCbQuery();
@@ -832,7 +848,7 @@ bot.action("admin:admins:list", async (ctx) => {
 });
 
 bot.action("admin:premium:list", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
 
   try {
     const premiumUsers = await getPremiumUsers();
@@ -870,7 +886,7 @@ bot.action("admin:premium:list", async (ctx) => {
 });
 
 bot.action("admin:ban:list", async (ctx) => {
-  if (!isOwner(ctx.from?.id || 0)) return;
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
 
   try {
     const list = await getBannedUsers();
@@ -897,7 +913,7 @@ bot.action("admin:ban:list", async (ctx) => {
 
 bot.on("message", async (ctx, next) => {
   const userId = ctx.from?.id;
-  if (!userId || !isOwner(userId)) {
+  if (!userId || !(await isAdmin(userId))) {
     return next();
   }
 
@@ -943,7 +959,9 @@ bot.on("message", async (ctx, next) => {
             `📊 <b>Bugungi foydalanish:</b>\n` +
             `  📸 Scan: ${info.scanUsed}\n` +
             `  📊 PPT: ${info.pptUsed}\n` +
-            `  📄 PDF: ${info.pdfUsed}\n\n` +
+            `  📄 PDF: ${info.pdfUsed}\n` +
+            `  📝 Referat: ${info.referatUsedToday}\n` +
+            `  🌐 Translation: ${info.translationUsedToday}\n\n` +
             `🗓 <b>Ro'yxatdan o'tgan:</b> ${createdAt}`;
 
           await ctx.replyWithHTML(message);
@@ -964,9 +982,15 @@ bot.on("message", async (ctx, next) => {
           try {
             await bot.telegram.sendMessage(uid, broadcastMsg);
             delivered++;
-          } catch {
+          } catch (err: any) {
             failed++;
+            if (err?.code === 429 || err?.response?.error_code === 429 || err?.parameters?.retry_after) {
+              const retryAfter = (err?.parameters?.retry_after || 1) * 1000;
+              await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfter, 3000)));
+            }
           }
+          // Throttle sending rate to ~20-25 messages/sec
+          await new Promise((resolve) => setTimeout(resolve, 40));
         }
 
         await ctx.replyWithHTML(
@@ -975,8 +999,13 @@ bot.on("message", async (ctx, next) => {
           `❌ <b>Yuborilmadi:</b> ${failed}\n` +
           `👥 <b>Jami:</b> ${userIds.length}`
         );
+        await deleteBotState(userId);
       }
     } else if (state === "owner:waiting_for_add_admin") {
+      if (!isOwner(userId)) {
+        await ctx.reply("❌ Ruxsat berilmagan (Faqat Owner uchun)");
+        return;
+      }
       const targetId = Number(text.trim());
       if (isNaN(targetId) || targetId <= 0) {
         await ctx.reply("❌ Noto'g'ri Telegram ID. Raqam kiriting.");
@@ -998,6 +1027,10 @@ bot.on("message", async (ctx, next) => {
       await addAdmin(targetId);
       await ctx.replyWithHTML(`✅ Admin qo'shildi\n\nTelegram ID:\n<code>${targetId}</code>`);
     } else if (state === "owner:waiting_for_remove_admin") {
+      if (!isOwner(userId)) {
+        await ctx.reply("❌ Ruxsat berilmagan (Faqat Owner uchun)");
+        return;
+      }
       const targetId = Number(text.trim());
       if (isNaN(targetId) || targetId <= 0) {
         await ctx.reply("❌ Noto'g'ri Telegram ID. Raqam kiriting.");
@@ -1043,6 +1076,32 @@ bot.on("message", async (ctx, next) => {
             await ctx.replyWithHTML(`❌ <b>User not found</b>\n\nTelegram ID: <code>${targetId}</code>`);
           } else {
             const premiumUntil = await givePremium(targetId, plan as any);
+
+            // Audit record for manual premium grant
+            try {
+              const PLAN_PRICES: Record<string, number> = {
+                DAY: 2900,
+                WEEK: 11900,
+                MONTH: 29900,
+                QUARTER: 69900,
+                YEAR: 199900,
+              };
+              const transaction_id = `manual_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+              const supabase = getSupabase();
+              await supabase.from("payments").insert({
+                telegram_id: targetId,
+                amount: PLAN_PRICES[plan] || 0,
+                provider: "manual",
+                plan: plan,
+                status: "paid",
+                transaction_id: transaction_id,
+                confirmed_at: new Date().toISOString(),
+                confirmed_by: ctx.from?.id || 6630030492,
+              });
+            } catch (auditError) {
+              console.error("Manual premium payment audit record error:", auditError);
+            }
+
             const untilStr = premiumUntil.toLocaleDateString("uz-UZ", { year: "numeric", month: "2-digit", day: "2-digit" });
             await ctx.replyWithHTML(
               `✅ <b>Premium berildi</b>\n\n` +
@@ -1124,9 +1183,19 @@ export async function POST(
       ok: true,
     });
   } catch (
-    error
+    error: any
   ) {
+    const msg = String(error?.message || error?.description || error || "").toLowerCase();
+    if (
+      msg.includes("message is not modified") ||
+      msg.includes("query is too old") ||
+      msg.includes("response timeout expired")
+    ) {
+      return NextResponse.json({ ok: true });
+    }
+
     console.error(
+      "Telegram webhook error:",
       error
     );
 

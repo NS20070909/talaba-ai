@@ -21,6 +21,9 @@ export const LANG_LABELS: Record<LangCode, string> = {
 
 /** Tez matn tarjimasi */
 export const FAST_MODEL_CHAIN = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
   "gemini-2.5-flash-lite",
   "gemini-2.0-flash-lite",
   "gemini-2.5-flash",
@@ -28,6 +31,10 @@ export const FAST_MODEL_CHAIN = [
 
 /** Standart hujjat tarjimasi */
 export const STANDARD_MODEL_CHAIN = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
   "gemini-2.5-flash-lite",
@@ -35,9 +42,12 @@ export const STANDARD_MODEL_CHAIN = [
 
 /** Akademik / murakkab tarjima (Premium) */
 export const ACADEMIC_MODEL_CHAIN = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
-  "gemini-2.5-pro",
 ];
 
 export function getTranslationLimits(plan: PlanType): TranslationLimits {

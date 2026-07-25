@@ -27,9 +27,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Proof already uploaded" }, { status: 400 });
     }
 
+    // Validate file type — only images allowed
+    const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+    const ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+    const fileExt = (file.name.split(".").pop() || "").toLowerCase();
+    if (!ALLOWED_MIME_TYPES.includes(file.type) || !ALLOWED_EXTENSIONS.includes(fileExt)) {
+      return NextResponse.json(
+        { success: false, error: "Faqat rasm fayllarini yuklash mumkin (JPEG, PNG, WEBP)" },
+        { status: 400 }
+      );
+    }
+
     // Upload to Supabase Storage
     const supabase = getSupabase();
-    const fileExt = file.name.split('.').pop() || 'jpg';
     const randomStr = Math.floor(Math.random() * 1000000);
     const fileName = `${paymentId}_${Date.now()}_${randomStr}.${fileExt}`;
     const filePath = `${fileName}`;

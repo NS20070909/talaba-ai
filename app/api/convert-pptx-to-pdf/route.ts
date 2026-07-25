@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import libre from "libreoffice-convert";
 import { promisify } from "util";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
+import { isBanned } from "@/lib/admin";
 
 const convertAsync = promisify(
   libre.convert
@@ -28,6 +29,18 @@ export async function POST(
       formData.get(
         "telegram_user_id"
       ) as string | null;
+
+    const telegramId = Number(userId);
+    if (telegramId && !isNaN(telegramId) && (await isBanned(telegramId))) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "BANNED",
+          message: "🚫 Siz bloklangansiz",
+        },
+        { status: 403 }
+      );
+    }
 
 
     const sendToTelegram =

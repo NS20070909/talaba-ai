@@ -1,5 +1,5 @@
 import { guardCheck } from "@/lib/limit-checker";
-import { getUser } from "@/lib/storage";
+import { getUser, createUser } from "@/lib/storage";
 import { getSupabase } from "@/lib/supabase";
 import type { PlanType } from "@/lib/user";
 import { getDocumentLimits } from "./constants";
@@ -14,6 +14,11 @@ function tashkentDayKey(date: Date): string {
 }
 
 async function ensureUsageRow(telegramId: number): Promise<void> {
+  const user = await getUser(telegramId);
+  if (!user) {
+    await createUser(telegramId, "Telegram User", undefined, "FREE");
+  }
+
   const supabase = getSupabase();
   const { data } = await supabase
     .from("hujjat_tozalash_usage")
@@ -22,11 +27,14 @@ async function ensureUsageRow(telegramId: number): Promise<void> {
     .maybeSingle();
 
   if (!data) {
-    await supabase.from("hujjat_tozalash_usage").insert({
+    const { error } = await supabase.from("hujjat_tozalash_usage").insert({
       telegram_id: telegramId,
       used_today: 0,
       last_reset_date: new Date().toISOString(),
     });
+    if (error && error.code !== "23505") {
+      console.error("Error in ensureUsageRow insert:", error);
+    }
   }
 }
 
