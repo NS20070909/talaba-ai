@@ -19,7 +19,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     referatPerDay: 2,
     translationPerDay: 2,
     referatMinPages: 3,
-    referatMaxPages: 4,
+    referatMaxPages: 7,
   },
   STARTER: {
     durationDays: 15,
@@ -29,7 +29,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     referatPerDay: 10,
     translationPerDay: 6,
     referatMinPages: 5,
-    referatMaxPages: 8,
+    referatMaxPages: 10,
   },
   STUDENT: {
     durationDays: 30,
@@ -53,6 +53,8 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
   },
   PREMIUM: {
     unlimited: true,
+    referatMinPages: 5,
+    referatMaxPages: 50,
   },
 
   // ── New duration-based plans ─────────────────────────────────────────────
@@ -64,7 +66,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     referatPerDay: 10,
     translationPerDay: 5,
     referatMinPages: 5,
-    referatMaxPages: 8,
+    referatMaxPages: 10,
   },
   WEEK: {
     durationDays: 7,
@@ -84,7 +86,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     referatPerDay: 120,
     translationPerDay: 300,
     referatMinPages: 5,
-    referatMaxPages: 20,
+    referatMaxPages: 50,
   },
   QUARTER: {
     durationDays: 90,
@@ -99,6 +101,8 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
   YEAR: {
     durationDays: 365,
     unlimited: true,
+    referatMinPages: 5,
+    referatMaxPages: 50,
   },
 };
 

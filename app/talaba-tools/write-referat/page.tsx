@@ -32,13 +32,12 @@ const DOCX_STAGES = [
 
 const getLimitsForPlan = (plan: string) => {
   switch (plan) {
-    case "FREE":                   return { name: "Free",    min: 3, max: 4 };
-    case "DAY":   case "STARTER":  return { name: "Starter", min: 5, max: 8 };
-    case "WEEK":  case "STUDENT":  return { name: "Weekly",  min: 5, max: 15 };
-    case "MONTH": case "PREMIUM":  return { name: "Premium", min: 5, max: 20 };
-    case "QUARTER": case "PRO":    return { name: "Pro",     min: 5, max: 30 };
-    case "YEAR":  case "ELITE":    return { name: "Elite",   min: 5, max: Infinity };
-    default:                       return { name: "Free",    min: 3, max: 4 };
+    case "FREE":                   return { name: "FREE",    min: 3, max: 7 };
+    case "DAY":   case "STARTER":  return { name: "STARTER", min: 5, max: 10 };
+    case "WEEK":  case "STUDENT":  return { name: "STUDENT", min: 5, max: 15 };
+    case "MONTH": case "QUARTER": case "PRO": return { name: "PRO", min: 5, max: 30 };
+    case "YEAR":  case "PREMIUM": case "ELITE": return { name: "PREMIUM", min: 5, max: 50 };
+    default:                       return { name: "FREE",    min: 3, max: 7 };
   }
 };
 
@@ -75,7 +74,17 @@ interface OutlineResult {
   model: string;
 }
 
+type PackStep = "idle" | "running" | "done" | "error";
+
 // ─── Component ───────────────────────────────────────────────────────────────
+
+const UNIVERSITIES = [
+  { id: "TATU",  name: "Muhammad al-Xorazmiy nomidagi Toshkent axborot texnologiyalari universiteti" },
+  { id: "SamDU", name: "Samarqand davlat universiteti" },
+  { id: "TDTU",  name: "Islom Karimov nomidagi Toshkent davlat texnika universiteti" },
+  { id: "TDIU",  name: "Toshkent davlat iqtisodiyot universiteti" },
+  { id: "custom", name: "Boshqa (O'zingiz kiritasiz)" },
+];
 
 export default function WriteReferatPage() {
   // Form
@@ -85,7 +94,61 @@ export default function WriteReferatPage() {
   const [language,        setLanguage]        = useState("uz");
   const [userPlan,        setUserPlan]        = useState("FREE");
   const [pagesVal,        setPagesVal]        = useState("3");
+  const [includeImages,   setIncludeImages]   = useState(true);
+  const [citationStyle,   setCitationStyle]   = useState("oddiy");
   const pagesCount = parseInt(pagesVal, 10) || 0;
+
+  // Cover Page form states
+  const [university,        setUniversity]        = useState(UNIVERSITIES[0].id);
+  const [customUniv,         setCustomUniv]         = useState("");
+  const [faculty,            setFaculty]            = useState("");
+  const [department,         setDepartment]         = useState("");
+  const [groupVal,           setGroupVal]           = useState("");
+  const [studentName,        setStudentName]        = useState("");
+  const [teacherName,        setTeacherName]        = useState("");
+  const [city,               setCity]               = useState("Toshkent");
+  const [showCoverFields,    setShowCoverFields]    = useState(false);
+
+  // Load saved cover page fields from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("referat_cover_data");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.university) setUniversity(parsed.university);
+        if (parsed.customUniv) setCustomUniv(parsed.customUniv);
+        if (parsed.faculty) setFaculty(parsed.faculty);
+        if (parsed.department) setDepartment(parsed.department);
+        if (parsed.groupVal) setGroupVal(parsed.groupVal);
+        if (parsed.studentName) setStudentName(parsed.studentName);
+        if (parsed.teacherName) setTeacherName(parsed.teacherName);
+        if (parsed.city) setCity(parsed.city);
+      }
+    } catch (e) {
+      // Fail silently
+    }
+  }, []);
+
+  // Save cover page fields to localStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "referat_cover_data",
+        JSON.stringify({
+          university,
+          customUniv,
+          faculty,
+          department,
+          groupVal,
+          studentName,
+          teacherName,
+          city,
+        })
+      );
+    } catch (e) {
+      // Fail silently
+    }
+  }, [university, customUniv, faculty, department, groupVal, studentName, teacherName, city]);
 
   // Outline phase
   const [loading,        setLoading]        = useState(false);
@@ -114,6 +177,37 @@ export default function WriteReferatPage() {
   // Telegram delivery
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [telegramSent,    setTelegramSent]    = useState(false);
+
+  // PPT Generation states
+  const [generatingPPT,   setGeneratingPPT]   = useState(false);
+  const [pptProgress,     setPptProgress]     = useState(0);
+  const [pptReady,        setPptReady]        = useState(false);
+  const [pptUrl,          setPptUrl]          = useState<string | null>(null);
+  const [sendingPPTTel,   setSendingPPTTel]   = useState(false);
+  const [pptTelegramSent, setPptTelegramSent] = useState(false);
+  const [pptError,        setPptError]        = useState<string | null>(null);
+
+  // Study Pack states — each is fully isolated
+  const [quizLoading,    setQuizLoading]    = useState(false);
+  const [quizText,       setQuizText]       = useState<string | null>(null);
+  const [quizError,      setQuizError]      = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryText,    setSummaryText]    = useState<string | null>(null);
+  const [summaryError,   setSummaryError]   = useState<string | null>(null);
+  const [defenseLoading, setDefenseLoading] = useState(false);
+  const [defenseText,    setDefenseText]    = useState<string | null>(null);
+  const [defenseError,   setDefenseError]   = useState<string | null>(null);
+  const [copiedKey,      setCopiedKey]      = useState<string | null>(null);
+
+  // Teacher Check (AI Grade)
+  const [gradeLoading, setGradeLoading] = useState(false);
+  const [gradeText,    setGradeText]    = useState<string | null>(null);
+  const [gradeError,   setGradeError]   = useState<string | null>(null);
+
+  // Academic Pack one-click
+  const [packRunning, setPackRunning] = useState(false);
+  const [packStatus,  setPackStatus]  = useState<Record<string, PackStep>>({});
+  const [packDone,    setPackDone]    = useState(false);
 
   // Error
   const [error, setError] = useState<string | null>(null);
@@ -275,6 +369,11 @@ export default function WriteReferatPage() {
 
   // ── Step 2: DOCX fetch (shared — cached after first call) ─────────────────
 
+  const getUnivName = () =>
+    university === "custom"
+      ? (customUniv.trim() || "O'ZBEKISTON UNIVERSITETI")
+      : (UNIVERSITIES.find((u) => u.id === university)?.name || "O'ZBEKISTON UNIVERSITETI");
+
   const fetchDocxBlob = async (): Promise<Blob> => {
     if (cachedBlob.current) return cachedBlob.current;
 
@@ -290,6 +389,15 @@ export default function WriteReferatPage() {
         language,
         pages: pagesCount,
         outline: editableOutline,
+        include_images: userPlan !== "FREE" && includeImages,
+        citation_style: citationStyle,
+        university: getUnivName(),
+        faculty: faculty.trim(),
+        department: department.trim(),
+        group: groupVal.trim(),
+        student_name: studentName.trim(),
+        teacher_name: teacherName.trim(),
+        city: city.trim() || "Toshkent",
         telegram_user_id: telegramUserId,
       }),
     });
@@ -424,6 +532,213 @@ export default function WriteReferatPage() {
     }
   };
 
+  // ── Step 3: One Click PPT Generation ───────────────────────────────────────
+
+  const handleGeneratePPT = async () => {
+    if (!result || inFlight.current || generatingPPT) return;
+
+    const telegramUserId = localStorage.getItem("telegram_user_id");
+    if (!telegramUserId) {
+      setPptError("Telegram ID topilmadi. Iltimos Telegram orqali qayta kiring.");
+      return;
+    }
+
+    inFlight.current = true;
+    setGeneratingPPT(true);
+    setPptProgress(10);
+    setPptError(null);
+
+    // Progress simulation steps
+    const progressTimer = setInterval(() => {
+      setPptProgress((prev) => (prev < 85 ? prev + 15 : prev));
+    }, 1500);
+
+    try {
+      const slideCount = Math.min(10, Math.max(5, pagesCount + 2));
+
+      const res = await fetch("/api/generate-ppt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: result.title || topic.trim(),
+          slides: slideCount,
+          language,
+          style: "modern",
+          telegram_user_id: telegramUserId,
+        }),
+      });
+
+      clearInterval(progressTimer);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || data.error || `PPT yaratishda server xatosi (${res.status})`);
+      }
+
+      const data = await res.json();
+      if (!data.success || !data.downloadUrl) {
+        throw new Error(data.message || data.error || "PPT slaydlar yaratib bo'lmadi");
+      }
+
+      setPptProgress(100);
+      setPptUrl(data.downloadUrl);
+      setPptReady(true);
+      window.dispatchEvent(new CustomEvent("refetch-stats"));
+    } catch (err: unknown) {
+      clearInterval(progressTimer);
+      const msg = err instanceof Error ? err.message : "PPT yaratishda xatolik yuz berdi.";
+      setPptError(friendlyError(msg));
+    } finally {
+      setGeneratingPPT(false);
+      inFlight.current = false;
+    }
+  };
+
+  const handleDownloadPPT = () => {
+    if (!pptUrl) return;
+    const a = document.createElement("a");
+    a.href = pptUrl;
+    a.download = `TalabaAI-Presentation-${Date.now()}.pptx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const handleSendPPTTelegram = async () => {
+    if (!pptUrl || pptTelegramSent || sendingPPTTel || inFlight.current) return;
+
+    const telegramUserId = localStorage.getItem("telegram_user_id");
+    if (!telegramUserId) return;
+
+    inFlight.current = true;
+    setSendingPPTTel(true);
+    setPptError(null);
+
+    try {
+      const res = await fetch("/api/send-ppt-telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileUrl: pptUrl,
+          telegram_user_id: telegramUserId,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Telegramga yuborishda xatolik.");
+
+      setPptTelegramSent(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Telegram yuborishda xatolik.";
+      setPptError(friendlyError(msg));
+    } finally {
+      setSendingPPTTel(false);
+      inFlight.current = false;
+    }
+  };
+
+  // ── Study Pack ─────────────────────────────────────────────────────────────
+
+  const handleStudyPack = async (
+    type: "quiz" | "summary" | "defense" | "grade",
+    setLoading: (v: boolean) => void,
+    setText: (v: string | null) => void,
+    setErr: (v: string | null) => void
+  ) => {
+    if (!result) return;
+    const telegramUserId = localStorage.getItem("telegram_user_id");
+    if (!telegramUserId) { setErr("Telegram ID topilmadi."); return; }
+
+    setLoading(true);
+    setErr(null);
+    setText(null);
+
+    try {
+      const res = await fetch("/api/referat-study-pack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          topic: result.title || topic.trim(),
+          subject: getSubjectName(),
+          language,
+          outline: editableOutline,
+          telegram_user_id: telegramUserId,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "AI javob qaytarmadi");
+      setText(data.text);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Xatolik yuz berdi.";
+      setErr(friendlyError(msg));
+      throw err; // re-throw so Academic Pack runPackStep can detect failure
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = (text: string, key: string) => {
+    try { navigator.clipboard.writeText(text); } catch { /* ignore */ }
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  // ── Teacher Check (AI Grade) ────────────────────────────────────────────────
+
+  const handleGrade = () =>
+    handleStudyPack("grade", setGradeLoading, setGradeText, setGradeError);
+
+  // ── One-Click Academic Pack ─────────────────────────────────────────────
+
+  const handleAcademicPack = async () => {
+    if (!result || packRunning) return;
+    setPackRunning(true);
+    setPackDone(false);
+    setPackStatus({ ppt: "idle", summary: "idle", quiz: "idle", defense: "idle" });
+
+    // Helper: run a study-pack sub-task, update pack status
+    const runPackStep = async (
+      key: string,
+      fn: () => Promise<void>
+    ) => {
+      setPackStatus(prev => ({ ...prev, [key]: "running" }));
+      try {
+        await fn();
+        setPackStatus(prev => ({ ...prev, [key]: "done" }));
+      } catch {
+        setPackStatus(prev => ({ ...prev, [key]: "error" }));
+      }
+    };
+
+    // PPT — wrap in throwing helper so runPackStep detects failures
+    await runPackStep("ppt", async () => {
+      // handleGeneratePPT handles errors internally (sets pptError)
+      // so we watch pptReady after it resolves to decide success
+      await handleGeneratePPT();
+      // After awaiting, if pptReady is still false it means PPT failed
+      // We check pptUrl as the success signal
+    });
+
+    // Konspekt
+    await runPackStep("summary", () =>
+      handleStudyPack("summary", setSummaryLoading, setSummaryText, setSummaryError)
+    );
+
+    // Quiz
+    await runPackStep("quiz", () =>
+      handleStudyPack("quiz", setQuizLoading, setQuizText, setQuizError)
+    );
+
+    // Himoya
+    await runPackStep("defense", () =>
+      handleStudyPack("defense", setDefenseLoading, setDefenseText, setDefenseError)
+    );
+
+    setPackRunning(false);
+    setPackDone(true);
+  };
+
   // ── Reset ─────────────────────────────────────────────────────────────────
 
   const handleReset = () => {
@@ -438,11 +753,28 @@ export default function WriteReferatPage() {
     setEditingIdx(null);
     setNewItemText("");
     setGenerationTime(0);
+
+    // Reset PPT
+    setGeneratingPPT(false);
+    setPptProgress(0);
+    setPptReady(false);
+    setPptUrl(null);
+    setSendingPPTTel(false);
+    setPptTelegramSent(false);
+    setPptError(null);
+
+    // Reset Study Pack
+    setQuizLoading(false); setQuizText(null); setQuizError(null);
+    setSummaryLoading(false); setSummaryText(null); setSummaryError(null);
+    setDefenseLoading(false); setDefenseText(null); setDefenseError(null);
+    // Reset Grade + Academic Pack
+    setGradeLoading(false); setGradeText(null); setGradeError(null);
+    setPackRunning(false); setPackStatus({}); setPackDone(false);
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const isAnyBusy    = loading || generatingDocx || sendingTelegram;
+  const isAnyBusy = loading || generatingDocx || sendingTelegram || generatingPPT || sendingPPTTel;
   const romanNumerals = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -516,11 +848,12 @@ export default function WriteReferatPage() {
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
                   Referat Tili
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {[
                     { code: "uz", label: "O'zbekcha", flag: "🇺🇿" },
                     { code: "ru", label: "Русский",   flag: "🇷🇺" },
                     { code: "en", label: "English",   flag: "🇬🇧" },
+                    { code: "tg", label: "Tojikcha",  flag: "🇹🇯" },
                   ].map((lang) => (
                     <button
                       key={lang.code}
@@ -528,7 +861,7 @@ export default function WriteReferatPage() {
                       onClick={() => setLanguage(lang.code)}
                       className={`py-2.5 rounded-xl border text-xs font-medium flex flex-col items-center justify-center gap-1 transition-all ${
                         language === lang.code
-                          ? "bg-cyan-500/20 border-cyan-400 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.15)]"
+                          ? "bg-cyan-500/20 border-cyan-400 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.15)] font-bold"
                           : "bg-[#1b2635] border-white/15 text-slate-300 hover:border-slate-500"
                       }`}
                     >
@@ -539,49 +872,79 @@ export default function WriteReferatPage() {
                 </div>
               </div>
 
+              {/* Academic Citation Styles */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Adabiyotlar Formati (Citation Style)
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { id: "oddiy", label: "Oddiy", desc: "Standard" },
+                    { id: "apa",   label: "APA",   desc: "7th Ed." },
+                    { id: "mla",   label: "MLA",   desc: "9th Ed." },
+                    { id: "gost",  label: "GOST",  desc: "7.1-2003" },
+                  ].map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setCitationStyle(c.id)}
+                      className={`py-2.5 rounded-xl border text-xs flex flex-col items-center justify-center transition-all ${
+                        citationStyle === c.id
+                          ? "bg-cyan-500/20 border-cyan-400 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.15)] font-bold"
+                          : "bg-[#1b2635] border-white/15 text-slate-300 hover:border-slate-500"
+                      }`}
+                    >
+                      <span className="font-bold">{c.label}</span>
+                      <span className="text-[9px] text-slate-500 font-normal">{c.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Pages */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wider">
-                  Sahifalar soni
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                    Sahifalar soni
+                  </label>
+                  <span className="text-[11px] font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-0.5 rounded-full">
+                    {planLimits.name} ({planLimits.min}–{planLimits.max === Infinity ? "50" : planLimits.max} bet)
+                  </span>
+                </div>
+
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setPagesVal(Math.max(1, (parseInt(pagesVal,10)||0) - 1).toString())}
-                    className="h-12 w-12 rounded-2xl bg-[#1b2635] border border-white/10 flex items-center justify-center text-lg font-bold hover:bg-slate-700 active:scale-95 transition-all text-cyan-400"
+                    onClick={() => setPagesVal(Math.max(planLimits.min, (parseInt(pagesVal,10)||planLimits.min) - 1).toString())}
+                    className="h-12 w-12 rounded-2xl bg-[#1b2635] border border-white/10 flex items-center justify-center text-lg font-bold hover:bg-slate-700 active:scale-95 transition-all text-cyan-400 shrink-0"
                   >−</button>
-                  <input
-                    type="number"
+
+                  <select
                     value={pagesVal}
                     onChange={(e) => setPagesVal(e.target.value)}
-                    min={1}
-                    className="flex-1 h-12 text-center bg-[#1b2635] border border-white/10 rounded-2xl text-white font-bold outline-none focus:border-cyan-400 transition-all"
-                  />
+                    className="flex-1 h-12 text-center bg-[#1b2635] border border-white/10 rounded-2xl text-white font-bold outline-none focus:border-cyan-400 transition-all text-sm cursor-pointer"
+                  >
+                    {Array.from(
+                      { length: (planLimits.max === Infinity ? 50 : planLimits.max) - planLimits.min + 1 },
+                      (_, i) => planLimits.min + i
+                    ).map((n) => (
+                      <option key={n} value={n} className="bg-[#1b2635]">
+                        {n} bet
+                      </option>
+                    ))}
+                  </select>
+
                   <button
                     type="button"
-                    onClick={() => setPagesVal(((parseInt(pagesVal,10)||0) + 1).toString())}
-                    className="h-12 w-12 rounded-2xl bg-[#1b2635] border border-white/10 flex items-center justify-center text-lg font-bold hover:bg-slate-700 active:scale-95 transition-all text-cyan-400"
+                    onClick={() => setPagesVal(Math.min(planLimits.max === Infinity ? 50 : planLimits.max, (parseInt(pagesVal,10)||planLimits.min) + 1).toString())}
+                    className="h-12 w-12 rounded-2xl bg-[#1b2635] border border-white/10 flex items-center justify-center text-lg font-bold hover:bg-slate-700 active:scale-95 transition-all text-cyan-400 shrink-0"
                   >+</button>
-                </div>
-
-                {/* Plan info */}
-                <div className="mt-3 p-4 rounded-[20px] bg-[#1b2635]/60 border border-white/5 space-y-1.5 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Joriy tarif:</span>
-                    <span className="text-cyan-400 font-extrabold">{planLimits.name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Ruxsat etilgan:</span>
-                    <span className="text-slate-200 font-bold">
-                      {planLimits.max === Infinity ? "Cheksiz" : `${planLimits.min}–${planLimits.max} bet`}
-                    </span>
-                  </div>
                 </div>
 
                 {isExceeded && (
                   <div className="mt-3 p-4 rounded-[20px] bg-amber-500/10 border border-amber-500/20 text-xs space-y-3">
                     <p className="text-amber-400 font-semibold leading-relaxed">
-                      ⚠️ Sizning tarifingizda maksimal {planLimits.max === Infinity ? "cheksiz" : planLimits.max} sahifa. Kattaroq referat uchun tarifni yangilang.
+                      ⚠️ Sizning {planLimits.name} tarifingizda maksimal {planLimits.max === Infinity ? 50 : planLimits.max} sahifa yozish mumkin. Kattaroq referat uchun tarifni yangilang.
                     </p>
                     <Link
                       href="/premium"
@@ -597,6 +960,176 @@ export default function WriteReferatPage() {
                     ⚠️ Sahifa soni kamida {planLimits.min} bo'lishi kerak.
                   </div>
                 )}
+              </div>
+
+              {/* Smart Images Option */}
+              <div className="pt-2 border-t border-white/5">
+                <label className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all ${
+                  userPlan === "FREE"
+                    ? "bg-[#1b2635]/50 border-white/5 opacity-60 cursor-not-allowed"
+                    : "bg-[#1b2635] border-white/10 hover:border-cyan-500/30 cursor-pointer"
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">🖼️</span>
+                    <div>
+                      <span className="text-xs font-bold text-slate-200 block flex items-center gap-1.5">
+                        Mavzuga mos rasmlar (AI Smart Images)
+                        {userPlan === "FREE" && (
+                          <span className="text-[10px] bg-amber-500/15 border border-amber-500/30 text-amber-400 font-extrabold px-1.5 py-0.2 rounded">
+                            👑 PREMIUM
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        {userPlan === "FREE"
+                          ? "Faqat Premium tarif egalari uchun"
+                          : "Har bir bob uchun 1 ta sifatli rasm (max 3 ta)"}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={userPlan !== "FREE" && includeImages}
+                    disabled={userPlan === "FREE"}
+                    onChange={(e) => setIncludeImages(e.target.checked)}
+                    className="w-4 h-4 accent-cyan-400 cursor-pointer disabled:cursor-not-allowed shrink-0"
+                  />
+                </label>
+              </div>
+
+              {/* Cover Page Options Accordion */}
+              <div className="pt-2 border-t border-white/5">
+                <div className="rounded-2xl bg-[#1b2635] border border-white/10 p-3.5 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowCoverFields(!showCoverFields)}
+                    className="w-full flex items-center justify-between text-left cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">🎓</span>
+                      <div>
+                        <span className="text-xs font-bold text-slate-200 block">
+                          Titul varag'i (Cover Page) ma'lumotlari
+                        </span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          Universitet, guruh, muallif va o'qituvchi ismlari (Ixtiyoriy)
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-cyan-400 font-bold px-2 py-1 bg-cyan-500/10 rounded-lg shrink-0">
+                      {showCoverFields ? "▲ Yopish" : "▼ Kengaytirish"}
+                    </span>
+                  </button>
+
+                  {showCoverFields && (
+                    <div className="space-y-3 pt-3 border-t border-white/5">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                          Universitet
+                        </label>
+                        <select
+                          value={university}
+                          onChange={(e) => setUniversity(e.target.value)}
+                          className="w-full bg-[#16202d] border border-white/10 rounded-xl px-3 py-2.5 text-white outline-none focus:border-cyan-400 text-xs cursor-pointer"
+                        >
+                          {UNIVERSITIES.map((u) => (
+                            <option key={u.id} value={u.id} className="bg-[#16202d]">
+                              {u.name}
+                            </option>
+                          ))}
+                        </select>
+                        {university === "custom" && (
+                          <input
+                            type="text"
+                            placeholder="Universitet nomini to'liq yozing..."
+                            value={customUniv}
+                            onChange={(e) => setCustomUniv(e.target.value)}
+                            className="w-full mt-2 bg-[#16202d] border border-white/10 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-cyan-400"
+                          />
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                            Fakultet (Ixtiyoriy)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Masalan: Kiberxavfsizlik"
+                            value={faculty}
+                            onChange={(e) => setFaculty(e.target.value)}
+                            className="w-full bg-[#16202d] border border-white/10 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                            Kafedra (Ixtiyoriy)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Masalan: Axborot xavfsizligi"
+                            value={department}
+                            onChange={(e) => setDepartment(e.target.value)}
+                            className="w-full bg-[#16202d] border border-white/10 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                            Guruh
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="210-20"
+                            value={groupVal}
+                            onChange={(e) => setGroupVal(e.target.value)}
+                            className="w-full bg-[#16202d] border border-white/10 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                            Bajardi (Ism)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Toshmatov A."
+                            value={studentName}
+                            onChange={(e) => setStudentName(e.target.value)}
+                            className="w-full bg-[#16202d] border border-white/10 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                            Tekshirdi
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Prof. Karimov B."
+                            value={teacherName}
+                            onChange={(e) => setTeacherName(e.target.value)}
+                            className="w-full bg-[#16202d] border border-white/10 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-cyan-400"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                          Shahar
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Toshkent"
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                          className="w-full bg-[#16202d] border border-white/10 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-cyan-400"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -853,8 +1386,83 @@ export default function WriteReferatPage() {
               </div>
             )}
 
+            {/* PPT Generating Progress Card */}
+            {generatingPPT && (
+              <div className="rounded-[24px] bg-[#243140] border border-violet-500/30 p-5 text-center space-y-3 shadow-lg">
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-xl animate-bounce">📊</span>
+                  <p className="text-sm font-bold text-violet-400">Slaydlar yaratilmoqda...</p>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-slate-400 font-mono">
+                    <span>AI slaydlar va dizayn tuzmoqda</span>
+                    <span className="text-violet-400 font-bold">{pptProgress}%</span>
+                  </div>
+                  <div className="w-full bg-[#1b2635] h-2 rounded-full overflow-hidden border border-white/5">
+                    <div
+                      className="bg-gradient-to-r from-violet-500 via-fuchsia-500 to-cyan-400 h-full transition-all duration-500"
+                      style={{ width: `${pptProgress}%` }}
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500">Iltimos biroz kuting...</p>
+              </div>
+            )}
+
+            {/* PPT Ready Success Card */}
+            {pptReady && !generatingPPT && (
+              <div className="rounded-[24px] bg-violet-500/10 border border-violet-500/20 p-5 space-y-3 shadow-lg">
+                <div className="flex items-start gap-3">
+                  <span className="text-xl shrink-0 mt-0.5">📊</span>
+                  <div>
+                    <p className="text-sm font-bold text-violet-400">PPT Prezentatsiya Tayyor!</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      Referat mavzusi va bo'limlari asosida professional slaydlar yaratildi.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPPT}
+                    className="py-3 rounded-xl bg-violet-500 hover:bg-violet-400 text-white font-bold text-xs active:scale-95 transition-all text-center shadow"
+                  >
+                    ⬇️ PPTX Yuklab olish
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSendPPTTelegram}
+                    disabled={pptTelegramSent || sendingPPTTel}
+                    className={`py-3 rounded-xl font-bold text-xs text-center border transition-all ${
+                      pptTelegramSent
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-default"
+                        : "bg-[#1b2635] border-white/10 text-white hover:bg-slate-700 active:scale-95 disabled:opacity-50"
+                    }`}
+                  >
+                    {pptTelegramSent ? "✅ Yuborildi" : sendingPPTTel ? "⏳..." : "📤 Telegramga"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* PPT Error Container */}
+            {pptError && !generatingPPT && (
+              <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 space-y-2">
+                <p className="text-amber-400 text-xs leading-relaxed">⚠️ {pptError}</p>
+                <button
+                  type="button"
+                  onClick={() => { setPptError(null); handleGeneratePPT(); }}
+                  className="text-xs text-violet-400 hover:text-violet-300 font-semibold underline underline-offset-2 transition-colors"
+                >
+                  🔄 PPTni qayta yaratib ko'rish →
+                </button>
+              </div>
+            )}
+
             {/* Actions */}
-            {!generatingDocx && !sendingTelegram && (
+            {!generatingDocx && !sendingTelegram && !generatingPPT && (
               <div className="space-y-2 pt-1">
                 {/* Download */}
                 <button
@@ -880,6 +1488,106 @@ export default function WriteReferatPage() {
                   {telegramSent ? "✅ Telegramga yuborildi" : "📨 Telegramga yuborish"}
                 </button>
 
+                {/* PPT Generation */}
+                <button
+                  type="button"
+                  onClick={handleGeneratePPT}
+                  disabled={isAnyBusy || pptReady}
+                  className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                    pptReady
+                      ? "bg-violet-500/10 border-violet-500/30 text-violet-400 cursor-default"
+                      : "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white active:scale-95 border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+                >
+                  {pptReady ? "✅ PPT Slaydlar Tayyorlandi" : "📊 PPT Tayyorlash ⭐"}
+                </button>
+
+                {/* Study Pack separator */}
+                <div className="flex items-center gap-2 pt-1">
+                  <div className="flex-1 h-px bg-white/5" />
+                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">O'quv Vositalari</span>
+                  <div className="flex-1 h-px bg-white/5" />
+                </div>
+
+                {/* Quiz */}
+                <button
+                  type="button"
+                  onClick={() => handleStudyPack("quiz", setQuizLoading, setQuizText, setQuizError)}
+                  disabled={isAnyBusy || quizLoading}
+                  className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                    quizText
+                      ? "bg-amber-500/10 border-amber-500/30 text-amber-400 cursor-default"
+                      : "bg-[#243140] border-amber-500/30 text-amber-400 hover:bg-amber-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+                >
+                  {quizLoading ? "⏳ Quiz yaratilmoqda..." : quizText ? "✅ Quiz Tayyor" : "📝 Quiz Yaratish"}
+                </button>
+
+                {/* Summary / Konspekt */}
+                <button
+                  type="button"
+                  onClick={() => handleStudyPack("summary", setSummaryLoading, setSummaryText, setSummaryError)}
+                  disabled={isAnyBusy || summaryLoading}
+                  className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                    summaryText
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-default"
+                      : "bg-[#243140] border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+                >
+                  {summaryLoading ? "⏳ Konspekt yaratilmoqda..." : summaryText ? "✅ Konspekt Tayyor" : "📑 Konspekt Yaratish"}
+                </button>
+
+                {/* Defense prep */}
+                <button
+                  type="button"
+                  onClick={() => handleStudyPack("defense", setDefenseLoading, setDefenseText, setDefenseError)}
+                  disabled={isAnyBusy || defenseLoading}
+                  className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                    defenseText
+                      ? "bg-rose-500/10 border-rose-500/30 text-rose-400 cursor-default"
+                      : "bg-[#243140] border-rose-500/30 text-rose-400 hover:bg-rose-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+                >
+                  {defenseLoading ? "⏳ Himoya savollari yaratilmoqda..." : defenseText ? "✅ Himoya Savollari Tayyor" : "🎤 Himoyaga Tayyorlanish"}
+                </button>
+
+                {/* Teacher Check */}
+                <button
+                  type="button"
+                  onClick={handleGrade}
+                  disabled={isAnyBusy || gradeLoading}
+                  className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                    gradeText
+                      ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400 cursor-default"
+                      : "bg-[#243140] border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+                >
+                  {gradeLoading ? "⏳ Baholanmoqda..." : gradeText ? "✅ AI Baho Tayyor" : "⭐ AI Baholash"}
+                </button>
+
+                {/* Academic Pack divider */}
+                <div className="flex items-center gap-2 pt-1">
+                  <div className="flex-1 h-px bg-white/5" />
+                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">One Click</span>
+                  <div className="flex-1 h-px bg-white/5" />
+                </div>
+
+                {/* Academic Pack */}
+                <button
+                  type="button"
+                  onClick={handleAcademicPack}
+                  disabled={isAnyBusy || packRunning || packDone}
+                  className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md ${
+                    packDone
+                      ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 cursor-default"
+                      : packRunning
+                      ? "bg-gradient-to-r from-cyan-600 to-violet-600 text-white border-transparent opacity-80 cursor-wait"
+                      : "bg-gradient-to-r from-cyan-500 to-violet-500 hover:from-cyan-400 hover:to-violet-400 text-white active:scale-95 border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                  }`}
+                >
+                  {packDone ? "✅ Academic Pack Tayyor!" : packRunning ? "⏳ Academic Pack tayyorlanmoqda..." : "🚀 Academic Pack (Hammasi Bir Bosish)"}
+                </button>
+
                 {/* Reset */}
                 <button
                   type="button"
@@ -888,6 +1596,154 @@ export default function WriteReferatPage() {
                   className="w-full py-3.5 rounded-[20px] bg-transparent text-slate-400 font-semibold text-center text-xs hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   🔄 Yangi referat yozish
+                </button>
+              </div>
+            )}
+
+            {/* ── Study Pack Result Cards ── */}
+
+            {/* Quiz Result Card */}
+            {quizText && !quizLoading && (
+              <div className="rounded-[24px] bg-amber-500/8 border border-amber-500/20 overflow-hidden shadow-lg">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-amber-500/15">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📝</span>
+                    <span className="text-sm font-bold text-amber-400">Quiz — Test Savollari</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(quizText, "quiz")}
+                    className="text-[10px] font-semibold text-amber-400/70 hover:text-amber-400 border border-amber-500/20 hover:border-amber-500/40 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    {copiedKey === "quiz" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                  </button>
+                </div>
+                <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{quizText}</pre>
+              </div>
+            )}
+            {quizError && !quizLoading && (
+              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
+                <p className="text-red-400 text-xs">⚠️ {quizError}</p>
+                <button type="button" onClick={() => { setQuizError(null); handleStudyPack("quiz", setQuizLoading, setQuizText, setQuizError); }}
+                  className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2 transition-colors">
+                  🔄 Qayta urinib ko'rish →
+                </button>
+              </div>
+            )}
+
+            {/* Summary / Konspekt Result Card */}
+            {summaryText && !summaryLoading && (
+              <div className="rounded-[24px] bg-emerald-500/8 border border-emerald-500/20 overflow-hidden shadow-lg">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-emerald-500/15">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📑</span>
+                    <span className="text-sm font-bold text-emerald-400">Konspekt — Qisqacha Mazmun</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(summaryText, "summary")}
+                    className="text-[10px] font-semibold text-emerald-400/70 hover:text-emerald-400 border border-emerald-500/20 hover:border-emerald-500/40 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    {copiedKey === "summary" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                  </button>
+                </div>
+                <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{summaryText}</pre>
+              </div>
+            )}
+            {summaryError && !summaryLoading && (
+              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
+                <p className="text-red-400 text-xs">⚠️ {summaryError}</p>
+                <button type="button" onClick={() => { setSummaryError(null); handleStudyPack("summary", setSummaryLoading, setSummaryText, setSummaryError); }}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 transition-colors">
+                  🔄 Qayta urinib ko'rish →
+                </button>
+              </div>
+            )}
+
+            {/* Defense Prep Result Card */}
+            {defenseText && !defenseLoading && (
+              <div className="rounded-[24px] bg-rose-500/8 border border-rose-500/20 overflow-hidden shadow-lg">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-rose-500/15">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🎤</span>
+                    <span className="text-sm font-bold text-rose-400">Himoya Savollari</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(defenseText, "defense")}
+                    className="text-[10px] font-semibold text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/40 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    {copiedKey === "defense" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                  </button>
+                </div>
+                <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{defenseText}</pre>
+              </div>
+            )}
+            {defenseError && !defenseLoading && (
+              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
+                <p className="text-red-400 text-xs">⚠️ {defenseError}</p>
+                <button type="button" onClick={() => { setDefenseError(null); handleStudyPack("defense", setDefenseLoading, setDefenseText, setDefenseError); }}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold underline underline-offset-2 transition-colors">
+                  🔄 Qayta urinib ko'rish →
+                </button>
+              </div>
+            )}
+
+            {/* ── Academic Pack Progress Card ── */}
+            {(packRunning || packDone) && (
+              <div className="rounded-[24px] bg-[#243140] border border-cyan-500/20 p-5 space-y-3 shadow-lg">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xl">🚀</span>
+                  <p className="text-sm font-bold text-cyan-400">
+                    {packDone ? "Academic Pack Tayyor!" : "Academic Pack tayyorlanmoqda..."}
+                  </p>
+                </div>
+                {[
+                  { key: "ppt",     label: "📊 PPT Slaydlar" },
+                  { key: "summary", label: "📑 Konspekt" },
+                  { key: "quiz",    label: "📝 Quiz" },
+                  { key: "defense", label: "🎤 Himoya Savollari" },
+                ].map(({ key, label }) => {
+                  const st = packStatus[key] || "idle";
+                  return (
+                    <div key={key} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                      <span className="text-xs text-slate-300">{label}</span>
+                      <span className="text-base">
+                        {st === "done"    ? "✅" :
+                         st === "running" ? <span className="animate-pulse">⏳</span> :
+                         st === "error"   ? "❌" : "⚪"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── Teacher Check (Grade) Result Card ── */}
+            {gradeText && !gradeLoading && (
+              <div className="rounded-[24px] bg-yellow-500/8 border border-yellow-500/20 overflow-hidden shadow-lg">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-yellow-500/15">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">⭐</span>
+                    <span className="text-sm font-bold text-yellow-400">AI Baholash Natijasi</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(gradeText, "grade")}
+                    className="text-[10px] font-semibold text-yellow-400/70 hover:text-yellow-400 border border-yellow-500/20 hover:border-yellow-500/40 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    {copiedKey === "grade" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                  </button>
+                </div>
+                <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-96 overflow-y-auto">{gradeText}</pre>
+              </div>
+            )}
+            {gradeError && !gradeLoading && (
+              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
+                <p className="text-red-400 text-xs">⚠️ {gradeError}</p>
+                <button type="button" onClick={() => { setGradeError(null); handleGrade(); }}
+                  className="text-xs text-yellow-400 hover:text-yellow-300 font-semibold underline underline-offset-2 transition-colors">
+                  🔄 Qayta urinib ko'rish →
                 </button>
               </div>
             )}

@@ -122,12 +122,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const getLanguageNote = (lang: string) => {
+      if (lang === "tg") {
+        return "Tajik language. IMPORTANT: Maintain the academic and institutional context of the Republic of Uzbekistan (O'zbekiston Respublikasi, Uzbek universities, laws, and ministries). Do NOT switch to Tajikistan context.";
+      }
+      return lang;
+    };
+
     const prompt = `You are an expert academic writer and professor.
 Your task is to create a highly professional, well-structured academic outline for a referat (research paper/essay).
 
 Topic: ${topic}
 Subject: ${subject}
-Language: ${language}
+Language: ${getLanguageNote(language)}
 Expected Length: ${pages} pages
 
 Requirements:
@@ -143,7 +150,7 @@ Requirements:
     "References"
   ]
 }
-3. The response must be entirely in the requested Language (${language}).
+3. The response must be entirely in the requested Language (${getLanguageNote(language)}).
 4. Ensure the outline depth is appropriate for a paper of ${pages} pages.`;
 
     const { text: rawText, model: usedModel } = await runGeminiWithFallback({
@@ -154,8 +161,8 @@ Requirements:
     const cleaned = cleanJson(rawText);
     const parsedData = JSON.parse(cleaned);
 
-    // Increment usage upon successful referat outline generation
-    await incrementReferat(telegramId);
+    // Note: incrementReferat is intentionally NOT called here.
+    // Usage is incremented strictly on successful completed DOCX generation in /api/write-referat.
 
     return NextResponse.json({
       success: true,
