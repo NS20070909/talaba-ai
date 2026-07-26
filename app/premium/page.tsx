@@ -292,20 +292,20 @@ export default function PremiumPage() {
 
                   <div className="grid grid-cols-5 gap-1 border-t border-slate-800/60 pt-3 mt-1 text-center">
                     {[
-                      { label: "📸", key: "scan" as const },
-                      { label: "📊", key: "ppt" as const },
-                      { label: "📄", key: "pdf" as const },
-                      { label: "⚡", key: "referat" as const },
-                      { label: "📋", key: "format" as const },
-                    ].map(({ label, key }) => (
+                      { label: "📸", key: "scan"    as const, title: "Scan" },
+                      { label: "📊", key: "ppt"     as const, title: "PPT" },
+                      { label: "📄", key: "pdf"     as const, title: "PDF" },
+                      { label: "✍️", key: "referat" as const, title: "Referat" },
+                      { label: "📋", key: "format"  as const, title: "Format" },
+                    ].map(({ label, key, title }) => (
                       <div key={key}>
-                        <span className="text-[8px] text-slate-500 block font-semibold">{label}</span>
+                        <span className="text-[8px] text-slate-500 block font-semibold" title={title}>{label}</span>
                         <span className="text-[10px] font-bold text-slate-300">{plan.limits[key]}</span>
                       </div>
                     ))}
                   </div>
                   <p className="text-[9px] text-slate-600 text-center mt-1.5">
-                    ⚡ Yozish · 📋 Formatlash (kunlik)
+                    ✍️ AI Referat · 📋 Formatlash (kunlik)
                   </p>
 
                   <ul className="mt-4 space-y-1.5 text-xs text-slate-300 border-t border-slate-800/40 pt-3">
@@ -333,14 +333,16 @@ export default function PremiumPage() {
               </div>
 
               {[
-                ["📸 Bilet Scan", "2 / kuniga", "Ko'proq / Cheksiz"],
-                ["📊 AI Slayd", "2 / kuniga", "Ko'proq / Cheksiz"],
-                ["📄 PDF Tools", "2 / kuniga", "Ko'proq / Cheksiz"],
-                ["⚡ AI Referat yozish", "2 / kuniga (3–4 bet)", "Ko'proq / Cheksiz"],
-                ["📋 OTM Referat formatlash", "2 / kuniga", "Ko'proq / Cheksiz"],
-                ["📏 Maksimal referat beti", "4 bet", "8–30 bet / Cheksiz"],
-                ["⚡ Tezlik", "Oddiy", "Prioritetli tezkor"],
-                ["⭐ Premium nishon", "Yo'q", "Bor ✅"],
+                ["📸 Bilet Scan",            "2 / kuniga",            "Ko'proq / Cheksiz"],
+                ["📊 AI Slayd (PPT)",        "2 / kuniga",            "Ko'proq / Cheksiz"],
+                ["📄 PDF Tools",              "2 / kuniga",            "Ko'proq / Cheksiz"],
+                ["✍️ AI Referat yozish",      "2 / kuniga (3–4 bet)",  "Ko'proq / Cheksiz"],
+                ["📎 DOCX yuklab olish",      "✅ Bor",                 "✅ Bor"],
+                ["📨 Telegramga yuborish",    "✅ Bor",                 "✅ Bor"],
+                ["📋 OTM Referat formatlash", "2 / kuniga",            "Ko'proq / Cheksiz"],
+                ["📏 Maksimal referat beti",  "4 bet",                 "8–30 bet / Cheksiz"],
+                ["⚡ Tezlik",                 "Oddiy",                 "Prioritetli tezkor"],
+                ["⭐ Premium nishon",          "Yo'q",                  "Bor ✅"],
               ].map(([label, free, premium], i, arr) => (
                 <div
                   key={label}

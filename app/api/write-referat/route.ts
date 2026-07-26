@@ -4,6 +4,13 @@ import { guardCheck, canUseReferat, incrementReferat } from "@/lib/limit-checker
 import { getUser } from "@/lib/storage";
 import { PLAN_LIMITS } from "@/lib/limits";
 import { Document, Paragraph, TextRun, Packer, AlignmentType } from "docx";
+import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
+
+const MODEL_CHAIN = [
+  "gemini-2.0-flash",
+  "gemini-flash-latest",
+  "gemini-1.5-flash",
+];
 
 const generateReferatPrompt = (topic: string, requirements: string) => {
   return `Sizga talabalar uchun akademik referat yozishda yordam beradigan katta til modeli topshirildi. Quyidagi talablar asosida ilmiy uslubda, batafsil va tuzilgan referat yozing.
@@ -92,18 +99,23 @@ const generateDocx = async (content: string): Promise<Buffer> => {
 
 export async function POST(req: NextRequest) {
   try {
+    // -------------------------------------------------------------------
+    // STAGE 1: Input Validation
+    // -------------------------------------------------------------------
+    const body = await req.json();
     const {
       topic,
       requirements,
       telegram_user_id,
       pages,
-      size
-    } = await req.json();
+      size,
+      outline,
+      subject,
+      language,
+    } = body;
 
-    if (!topic) {
-      return new NextResponse("Topic is required", {
-        status: 400
-      });
+    if (!topic || typeof topic !== "string" || !topic.trim()) {
+      return new NextResponse("Topic is required", { status: 400 });
     }
 
     const telegramId = Number(telegram_user_id);
@@ -113,28 +125,36 @@ export async function POST(req: NextRequest) {
 
     const guard = await guardCheck(telegramId);
     if (guard.blocked) {
-      return new NextResponse(guard.result?.banned ? "🚫 Siz bloklangansiz" : "Ruxsat etilmagan", {
-        status: 403
-      });
+      return new NextResponse(
+        guard.result?.banned ? "🚫 Siz bloklangansiz" : "Ruxsat etilmagan",
+        { status: 403 }
+      );
     }
 
-    // Backend validation of pages count
-    const requestedPages = pages || size;
+    // -------------------------------------------------------------------
+    // STAGE 2: Request Normalization
+    // -------------------------------------------------------------------
+    const normalizedTopic = topic.trim();
+    const normalizedRequirements = requirements ? String(requirements).trim() : "";
+    const normalizedLanguage = language || "uz";
+    const normalizedSubject = subject || "Erkin mavzu";
+    const requestedPagesRaw = pages || size;
     let requestedMaxPages = 4; // default to FREE
-    if (requestedPages) {
-      if (typeof requestedPages === "string") {
-        if (requestedPages.toLowerCase() === "cheksiz") {
+
+    if (requestedPagesRaw) {
+      if (typeof requestedPagesRaw === "string") {
+        if (requestedPagesRaw.toLowerCase() === "cheksiz") {
           requestedMaxPages = Infinity;
         } else {
-          const parts = requestedPages.split("-");
+          const parts = requestedPagesRaw.split("-");
           const lastPart = parts[parts.length - 1];
           const parsed = parseInt(lastPart.replace("+", ""), 10);
           if (!isNaN(parsed)) {
             requestedMaxPages = parsed;
           }
         }
-      } else if (typeof requestedPages === "number") {
-        requestedMaxPages = requestedPages;
+      } else if (typeof requestedPagesRaw === "number") {
+        requestedMaxPages = requestedPagesRaw;
       }
     }
 
@@ -144,42 +164,189 @@ export async function POST(req: NextRequest) {
     const planMinLimit = limits.referatMinPages ?? 3;
     const planMaxLimit = limits.unlimited ? Infinity : (limits.referatMaxPages ?? 4);
 
-    if (requestedPages && (requestedMaxPages > planMaxLimit || requestedMaxPages < planMinLimit)) {
-      return new NextResponse(`Sizning tarifingizda referat sahifa soni cheklangan. Ruxsat etilgan diapazon: ${planMinLimit}-${planMaxLimit === Infinity ? "Cheksiz" : planMaxLimit} bet. (Tarif: ${planName}).`, {
-        status: 403
-      });
+    if (requestedPagesRaw && (requestedMaxPages > planMaxLimit || requestedMaxPages < planMinLimit)) {
+      return new NextResponse(
+        `Sizning tarifingizda referat sahifa soni cheklangan. Ruxsat etilgan diapazon: ${planMinLimit}-${planMaxLimit === Infinity ? "Cheksiz" : planMaxLimit} bet. (Tarif: ${planName}).`,
+        { status: 403 }
+      );
     }
 
-    // Check referat limit
     const limitCheck = await canUseReferat(telegramId);
     if (!limitCheck.allowed) {
-      return new NextResponse("Sizning referat yaratish limitingiz tugagan. Keyingi oyda yana urinib ko'ring.", {
-        status: 403
-      });
+      return new NextResponse(
+        "Sizning referat yaratish limitingiz tugagan. Keyingi oyda yana urinib ko'ring.",
+        { status: 403 }
+      );
     }
 
-    // Generate prompt for AI model (assuming an AI model function exists elsewhere)
-    const prompt = generateReferatPrompt(topic, requirements || "");
-    // In a real application, you would call your AI model here
-    // For now, we\'ll simulate an AI response based on the prompt structure
-    const aiResponseContent = `## Kirish\nBu referatning asosiy maqsadi...\n\n### 1. Referatning birinchi asosiy qismi\nBu bo\'limda birinchi qism yoritiladi...\n\n### 2. Referatning ikkinchi asosiy qismi\nBu bo\'limda ikkinchi qism yoritiladi...\n\n## Xulosa\nXulosa qilib aytganda...\n\n## Foydalanilgan Adabiyotlar Ro\'yxati\n1. Adabiyot 1.\n2. Adabiyot 2.`;
+    // -------------------------------------------------------------------
+    // STAGE 3: AI Generation — fault-tolerant per-section sequential generation
+    // -------------------------------------------------------------------
+    const apiKey = process.env.REFERAT_GEMINI_API_KEY;
+    if (!apiKey) {
+      return new NextResponse("REFERAT_GEMINI_API_KEY topilmadi", { status: 500 });
+    }
 
-    // Generate DOCX buffer
-    const docxBuffer = await generateDocx(aiResponseContent);
+    const outlineContext = Array.isArray(outline) && outline.length > 0
+      ? `Outline: ${outline.join("; ")}`
+      : "";
+
+    const baseContext = `Topic: ${normalizedTopic}
+Subject: ${normalizedSubject}
+Language: ${normalizedLanguage}
+Expected length: ${requestedMaxPages} pages
+${outlineContext}`;
+
+    const generationStart = Date.now();
+    let successCount = 0;
+    let failCount = 0;
+
+    // Helper: try a section, return empty string on failure (do not throw)
+    const trySection = async (sectionPrompt: string): Promise<string> => {
+      try {
+        const { text } = await runGeminiWithFallback({
+          apiKey,
+          modelChain: MODEL_CHAIN,
+          prompt: sectionPrompt,
+        });
+        const trimmed = text.trim();
+        if (!trimmed) {
+          failCount++;
+          console.warn("[write-referat] Section returned empty text.");
+          return "";
+        }
+        successCount++;
+        return trimmed;
+      } catch (err: any) {
+        failCount++;
+        console.warn(`[write-referat] Section generation failed: ${err?.message || err}`);
+        return "";
+      }
+    };
+
+    // Section 1: Introduction
+    const introText = await trySection(
+      `You are an academic writer. Write the Introduction section of a referat.
+${baseContext}
+Write ONLY the Introduction section. Use the language specified above. Start with the heading "## Kirish" (or its translation if language is not Uzbek). Write 2-4 substantive paragraphs covering relevance, purpose, and objectives of the topic.`
+    );
+
+    // Section 2: Chapter 1
+    const ch1Text = await trySection(
+      `You are an academic writer. Write Chapter 1 (the first main chapter) of a referat.
+${baseContext}
+Write ONLY Chapter 1. Use the language specified above. Start with an appropriate heading for the first main aspect of the topic. Write 3-5 detailed paragraphs covering core concepts, definitions, and foundational information.`
+    );
+
+    // Section 3: Chapter 2
+    const ch2Text = await trySection(
+      `You are an academic writer. Write Chapter 2 (the second main chapter) of a referat.
+${baseContext}
+Write ONLY Chapter 2. Use the language specified above. Start with an appropriate heading for the second main aspect of the topic. Write 3-5 detailed paragraphs covering analysis, comparisons, examples, and relevant data.`
+    );
+
+    // Section 4: Chapter 3
+    const ch3Text = await trySection(
+      `You are an academic writer. Write Chapter 3 (the third main chapter) of a referat.
+${baseContext}
+Write ONLY Chapter 3. Use the language specified above. Start with an appropriate heading for the third main aspect of the topic. Write 3-5 detailed paragraphs covering current problems, solutions, and future perspectives.`
+    );
+
+    // Section 5: Conclusion
+    const conclusionText = await trySection(
+      `You are an academic writer. Write the Conclusion section of a referat.
+${baseContext}
+Write ONLY the Conclusion section. Use the language specified above. Start with the heading "## Xulosa" (or its translation if language is not Uzbek). Summarize the key findings, conclusions, and recommendations in 2-3 paragraphs.`
+    );
+
+    // Section 6: References
+    const referencesText = await trySection(
+      `You are an academic writer. Write the References section of a referat.
+${baseContext}
+Write ONLY the References section. Use the language specified above. Start with the heading "## Foydalanilgan Adabiyotlar" (or its translation if language is not Uzbek). List 5-8 realistic academic references (books, journals, websites) relevant to the topic in a numbered format.`
+    );
+
+    const generationDurationMs = Date.now() - generationStart;
+    console.log(
+      `[write-referat] Generation complete. Sections: ${successCount} succeeded, ${failCount} failed. Duration: ${generationDurationMs}ms`
+    );
+
+    // Abort if too few sections were generated to form a valid document
+    if (successCount < 3) {
+      return new NextResponse(
+        "Referat generatsiyasi muvaffaqiyatsiz tugadi. Iltimos qayta urinib ko'ring.",
+        { status: 500 }
+      );
+    }
+
+    // -------------------------------------------------------------------
+    // STAGE 4: Document Assembly — ordered, validated, normalised
+    // -------------------------------------------------------------------
+
+    // Build title block
+    const titleBlock = `# ${normalizedTopic}`;
+
+    // Build Table of Contents block from outline (if provided)
+    const hasOutline = Array.isArray(outline) && outline.length > 0;
+    const tocBlock = hasOutline
+      ? `## Mundarija\n${(outline as string[]).map((item, i) => `${i + 1}. ${item}`).join("\n")}`
+      : "";
+
+    // Collect non-empty sections in fixed order
+    const orderedSections: string[] = [
+      titleBlock,
+      tocBlock,
+      introText,
+      ch1Text,
+      ch2Text,
+      ch3Text,
+      conclusionText,
+      referencesText,
+    ].filter((s) => s.trim().length > 0);
+
+    // Join with double newline then normalise
+    let assembledContent = orderedSections.join("\n\n");
+
+    // Normalise: collapse 3+ consecutive blank lines to 2
+    assembledContent = assembledContent.replace(/\n{3,}/g, "\n\n");
+    // Normalise: trim trailing whitespace on each line
+    assembledContent = assembledContent
+      .split("\n")
+      .map((l) => l.trimEnd())
+      .join("\n");
+    // Normalise: remove separator-only lines (e.g. "---", "***")
+    assembledContent = assembledContent.replace(/^[-*=]{3,}\s*$/gm, "");
+    // Final trim
+    assembledContent = assembledContent.trim();
+
+    // Guard: reject empty assembled document
+    if (!assembledContent) {
+      return new NextResponse(
+        "Referat hujjati bo'sh. Iltimos qayta urinib ko'ring.",
+        { status: 500 }
+      );
+    }
+
+    // -------------------------------------------------------------------
+    // STAGE 5: DOCX Formatter
+    // -------------------------------------------------------------------
+    const docxBuffer = await generateDocx(assembledContent);
 
     // Increment referat usage after successful generation
     await incrementReferat(telegramId);
 
+    // -------------------------------------------------------------------
+    // STAGE 6: Response
+    // -------------------------------------------------------------------
     return new NextResponse(new Uint8Array(docxBuffer), {
       headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": `attachment; filename="referat_${Date.now()}.docx"`,
       },
     });
-  } catch (error) {
-    console.error("Error generating referat:", error);
-    return new NextResponse("Internal Server Error", {
-      status: 500
-    });
+  } catch (error: any) {
+    console.error("[write-referat] Unhandled error:", error?.message || error);
+    return new NextResponse("Referat yaratishda xatolik yuz berdi.", { status: 500 });
   }
 }
