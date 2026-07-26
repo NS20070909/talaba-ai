@@ -65,12 +65,13 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Telegram error:", error);
 
     return NextResponse.json(
       {
         success: false,
+        error: "Telegramga yuborishda xatolik yuz berdi.",
       },
       {
         status: 500,

@@ -1,18 +1,32 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 /**
- * Checks if an error is a transient error suitable for retrying (Rate Limit 429, Service Unavailable 503, Timeout, Network Error).
+ * Returns true if the error is a quota/rate-limit error (429).
+ * These should NOT be retried — switch to the next model immediately.
  */
-export function isTransientError(error: any): boolean {
+export function isQuotaError(error: any): boolean {
   if (!error) return false;
   const message = (error.message || "").toLowerCase();
   const status = error.status || error.statusCode;
-
-  if (status === 429 || status === 503) return true;
-  if (message.includes("429") || message.includes("503")) return true;
+  if (status === 429) return true;
+  if (message.includes("429")) return true;
   if (message.includes("quota") || message.includes("rate limit") || message.includes("resource_exhausted")) return true;
-  if (message.includes("timeout") || message.includes("econnreset") || message.includes("etimedout") || message.includes("fetch failed")) return true;
+  return false;
+}
 
+/**
+ * Returns true if the error is a transient error worth retrying on the SAME model
+ * (timeout, network reset, 500/503 server errors).
+ * 429 / quota errors are NOT retryable — they need a model switch, not a retry.
+ */
+export function isTransientError(error: any): boolean {
+  if (!error) return false;
+  if (isQuotaError(error)) return false; // quota: skip to next model, don't retry
+  const message = (error.message || "").toLowerCase();
+  const status = error.status || error.statusCode;
+  if (status === 503 || status === 500) return true;
+  if (message.includes("503") || message.includes("500")) return true;
+  if (message.includes("timeout") || message.includes("econnreset") || message.includes("etimedout") || message.includes("fetch failed")) return true;
   return false;
 }
 
@@ -26,13 +40,15 @@ export type GeminiRunnerOptions = {
 
 /**
  * Executes a Gemini prompt across a model fallback chain using a single dedicated API Key.
- * Switches models only on the same API key if a model attempt fails.
+ * - 429 / quota errors: immediately skip to next model (no retry, no delay)
+ * - timeout / network / 500: retry once on the same model, then move to next
+ * - Per-model timeout: 22s (keeps total under Vercel's 60s limit across 3 models)
  */
 export async function runGeminiWithFallback({
   apiKey,
   modelChain,
   prompt,
-  timeoutMs = 30000,
+  timeoutMs = 22000,
   generationConfig,
 }: GeminiRunnerOptions): Promise<{ text: string; model: string }> {
   if (!apiKey) {
@@ -45,7 +61,7 @@ export async function runGeminiWithFallback({
   for (const modelName of modelChain) {
     console.log(`[Gemini Fallback] Trying model: ${modelName}`);
 
-    // Retry loop for transient errors per model (max 2 attempts per model)
+    // Max 2 attempts per model, but ONLY for retryable (non-quota) errors
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const model = genAI.getGenerativeModel({
@@ -69,14 +85,20 @@ export async function runGeminiWithFallback({
         lastError = err;
         console.warn(`[Gemini Fallback] Model ${modelName} attempt ${attempt} failed: ${err?.message || err}`);
 
-        // If it's not a transient error (e.g. invalid prompt/400 bad request), break retry loop and try next model
+        // 429 / quota error: skip to next model immediately, no retry
+        if (isQuotaError(err)) {
+          console.warn(`[Gemini Fallback] Quota/rate-limit on ${modelName}, switching to next model.`);
+          break;
+        }
+
+        // Non-retryable error (bad prompt, 400, etc.): also break to next model
         if (!isTransientError(err)) {
           break;
         }
 
+        // Retryable (timeout/network/500): wait briefly before retry
         if (attempt < 2) {
-          // Wait 500ms before retrying the same model
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
       }
     }

@@ -9,7 +9,7 @@ import { sendFileToTelegram } from "@/app/api/telegram/route";
 import { guardCheck, canUsePPT, incrementPPT } from "@/lib/limit-checker";
 import axios from "axios";
 
-// PEXELS IMAGE
+// PEXELS IMAGE — capped at 4s to stay within Vercel budget
 async function getPexelsImage(
   query: string
 ) {
@@ -30,6 +30,7 @@ async function getPexelsImage(
               process.env
                 .PEXELS_API_KEY!,
           },
+          timeout: 4000, // 4s cap per image to stay within Vercel budget
         }
       );
 
@@ -139,6 +140,11 @@ export async function POST(
       body.language,
     style:
       body.style,
+    // Pass the existing referat outline so PPT uses consistent chapter structure
+    referatOutline:
+      Array.isArray(body.outline) && body.outline.length > 0
+        ? body.outline
+        : undefined,
   });
 
 if (!result.success) {

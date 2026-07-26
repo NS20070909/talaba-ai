@@ -39,6 +39,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("[send-referat-telegram] Error:", error?.message || error);
-    return NextResponse.json({ success: false }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Telegramga yuborishda xatolik yuz berdi." }, { status: 500 });
   }
 }

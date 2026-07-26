@@ -60,6 +60,36 @@ function friendlyError(raw: string): string {
   return raw || "Noma'lum xato yuz berdi. Qayta urinib ko'ring.";
 }
 
+/**
+ * Safe JSON parser — checks response.ok and Content-Type before calling .json().
+ * Prevents the "Unexpected token 'A'" crash when the server returns HTML/plain-text.
+ * Returns { ok: false, error: string } on any problem, or { ok: true, data: T }.
+ */
+async function safeJson<T = any>(res: Response): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+  if (!res.ok) {
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      try {
+        const d = await res.json();
+        return { ok: false, error: d?.error || d?.message || `Server xatosi (${res.status})` };
+      } catch { /* fall through */ }
+    }
+    const text = await res.text().catch(() => "");
+    return { ok: false, error: text ? friendlyError(text) : `Server xatosi (${res.status})` };
+  }
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    const text = await res.text().catch(() => "");
+    return { ok: false, error: text ? friendlyError(text) : "Server javobi JSON formatida emas. AI server vaqtida javob bermadi." };
+  }
+  try {
+    const data = await res.json() as T;
+    return { ok: true, data };
+  } catch {
+    return { ok: false, error: "Server javobi JSON formatida emas." };
+  }
+}
+
 function fmtDuration(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s} soniya`;
@@ -350,8 +380,10 @@ export default function WriteReferatPage() {
 
       setLoadingMessage("Natija tayyorlanmoqda...");
 
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "Serverdan xato javob keldi.");
+      const parsed = await safeJson(res);
+      if (!parsed.ok) throw new Error(parsed.error);
+      const data = parsed.data;
+      if (!data.success) throw new Error(data.error || "Serverdan xato javob keldi.");
 
       setResult({ title: data.title, outline: data.outline, model: data.model });
       setEditableOutline([...data.outline]);
@@ -535,7 +567,7 @@ export default function WriteReferatPage() {
   // ── Step 3: One Click PPT Generation ───────────────────────────────────────
 
   const handleGeneratePPT = async () => {
-    if (!result || inFlight.current || generatingPPT) return;
+    if (!result || generatingPPT) return; // PPT is fully independent — no inFlight check
 
     const telegramUserId = localStorage.getItem("telegram_user_id");
     if (!telegramUserId) {
@@ -543,7 +575,6 @@ export default function WriteReferatPage() {
       return;
     }
 
-    inFlight.current = true;
     setGeneratingPPT(true);
     setPptProgress(10);
     setPptError(null);
@@ -564,6 +595,7 @@ export default function WriteReferatPage() {
           slides: slideCount,
           language,
           style: "modern",
+          outline: editableOutline, // pass existing referat outline for consistent slide structure
           telegram_user_id: telegramUserId,
         }),
       });
@@ -571,11 +603,13 @@ export default function WriteReferatPage() {
       clearInterval(progressTimer);
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || data.error || `PPT yaratishda server xatosi (${res.status})`);
+        const parsed = await safeJson(res);
+        throw new Error(parsed.ok ? "PPT yaratishda server xatosi" : (parsed.error || `PPT yaratishda server xatosi (${res.status})`));
       }
 
-      const data = await res.json();
+      const parsed = await safeJson(res);
+      if (!parsed.ok) throw new Error(parsed.error);
+      const data = parsed.data;
       if (!data.success || !data.downloadUrl) {
         throw new Error(data.message || data.error || "PPT slaydlar yaratib bo'lmadi");
       }
@@ -590,7 +624,7 @@ export default function WriteReferatPage() {
       setPptError(friendlyError(msg));
     } finally {
       setGeneratingPPT(false);
-      inFlight.current = false;
+      // PPT is independent — no inFlight.current reset needed
     }
   };
 
@@ -605,12 +639,12 @@ export default function WriteReferatPage() {
   };
 
   const handleSendPPTTelegram = async () => {
-    if (!pptUrl || pptTelegramSent || sendingPPTTel || inFlight.current) return;
+    // PPT Telegram is fully independent — uses its own sendingPPTTel guard
+    if (!pptUrl || pptTelegramSent || sendingPPTTel) return;
 
     const telegramUserId = localStorage.getItem("telegram_user_id");
     if (!telegramUserId) return;
 
-    inFlight.current = true;
     setSendingPPTTel(true);
     setPptError(null);
 
@@ -633,7 +667,6 @@ export default function WriteReferatPage() {
       setPptError(friendlyError(msg));
     } finally {
       setSendingPPTTel(false);
-      inFlight.current = false;
     }
   };
 
@@ -666,9 +699,10 @@ export default function WriteReferatPage() {
           telegram_user_id: telegramUserId,
         }),
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "AI javob qaytarmadi");
-      setText(data.text);
+      const parsed = await safeJson(res);
+      if (!parsed.ok) throw new Error(parsed.error);
+      if (!parsed.data.success) throw new Error(parsed.data.error || "AI javob qaytarmadi");
+      setText(parsed.data.text);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Xatolik yuz berdi.";
       setErr(friendlyError(msg));
@@ -774,7 +808,9 @@ export default function WriteReferatPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const isAnyBusy = loading || generatingDocx || sendingTelegram || generatingPPT || sendingPPTTel;
+  // isAnyBusy: covers only the DOCX download + DOCX Telegram pair (they share cachedBlob).
+  // PPT, Study Pack, and Academic Pack are fully independent — they manage their own loading states.
+  const isAnyBusy = loading || generatingDocx || sendingTelegram;
   const romanNumerals = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1461,14 +1497,16 @@ export default function WriteReferatPage() {
               </div>
             )}
 
-            {/* Actions */}
-            {!generatingDocx && !sendingTelegram && !generatingPPT && (
+            {/* ── Primary Actions: DOCX + Telegram ── */}
+            {/* Hidden only while DOCX/Telegram is in-flight (they share cachedBlob). */}
+            {/* PPT and Study Pack are always visible — they are fully independent. */}
+            {!generatingDocx && !sendingTelegram && (
               <div className="space-y-2 pt-1">
-                {/* Download */}
+                {/* Download DOCX */}
                 <button
                   type="button"
                   onClick={handleDownloadDocx}
-                  disabled={isAnyBusy}
+                  disabled={generatingDocx || sendingTelegram}
                   className="w-full py-4 rounded-[20px] bg-white text-black font-bold text-center text-sm active:scale-95 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   📥 Word (.docx) yuklab olish
@@ -1478,7 +1516,7 @@ export default function WriteReferatPage() {
                 <button
                   type="button"
                   onClick={handleSendTelegram}
-                  disabled={isAnyBusy || telegramSent}
+                  disabled={generatingDocx || sendingTelegram || telegramSent}
                   className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
                     telegramSent
                       ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-default"
@@ -1488,116 +1526,123 @@ export default function WriteReferatPage() {
                   {telegramSent ? "✅ Telegramga yuborildi" : "📨 Telegramga yuborish"}
                 </button>
 
-                {/* PPT Generation */}
+                {/* PPT — independent from DOCX/Telegram, uses its own generatingPPT guard */}
                 <button
                   type="button"
                   onClick={handleGeneratePPT}
-                  disabled={isAnyBusy || pptReady}
+                  disabled={generatingPPT || pptReady}
                   className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
                     pptReady
                       ? "bg-violet-500/10 border-violet-500/30 text-violet-400 cursor-default"
+                      : generatingPPT
+                      ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white border-transparent opacity-70 cursor-wait"
                       : "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white active:scale-95 border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
                   }`}
                 >
-                  {pptReady ? "✅ PPT Slaydlar Tayyorlandi" : "📊 PPT Tayyorlash ⭐"}
-                </button>
-
-                {/* Study Pack separator */}
-                <div className="flex items-center gap-2 pt-1">
-                  <div className="flex-1 h-px bg-white/5" />
-                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">O'quv Vositalari</span>
-                  <div className="flex-1 h-px bg-white/5" />
-                </div>
-
-                {/* Quiz */}
-                <button
-                  type="button"
-                  onClick={() => handleStudyPack("quiz", setQuizLoading, setQuizText, setQuizError)}
-                  disabled={isAnyBusy || quizLoading}
-                  className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
-                    quizText
-                      ? "bg-amber-500/10 border-amber-500/30 text-amber-400 cursor-default"
-                      : "bg-[#243140] border-amber-500/30 text-amber-400 hover:bg-amber-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  }`}
-                >
-                  {quizLoading ? "⏳ Quiz yaratilmoqda..." : quizText ? "✅ Quiz Tayyor" : "📝 Quiz Yaratish"}
-                </button>
-
-                {/* Summary / Konspekt */}
-                <button
-                  type="button"
-                  onClick={() => handleStudyPack("summary", setSummaryLoading, setSummaryText, setSummaryError)}
-                  disabled={isAnyBusy || summaryLoading}
-                  className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
-                    summaryText
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-default"
-                      : "bg-[#243140] border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  }`}
-                >
-                  {summaryLoading ? "⏳ Konspekt yaratilmoqda..." : summaryText ? "✅ Konspekt Tayyor" : "📑 Konspekt Yaratish"}
-                </button>
-
-                {/* Defense prep */}
-                <button
-                  type="button"
-                  onClick={() => handleStudyPack("defense", setDefenseLoading, setDefenseText, setDefenseError)}
-                  disabled={isAnyBusy || defenseLoading}
-                  className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
-                    defenseText
-                      ? "bg-rose-500/10 border-rose-500/30 text-rose-400 cursor-default"
-                      : "bg-[#243140] border-rose-500/30 text-rose-400 hover:bg-rose-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  }`}
-                >
-                  {defenseLoading ? "⏳ Himoya savollari yaratilmoqda..." : defenseText ? "✅ Himoya Savollari Tayyor" : "🎤 Himoyaga Tayyorlanish"}
-                </button>
-
-                {/* Teacher Check */}
-                <button
-                  type="button"
-                  onClick={handleGrade}
-                  disabled={isAnyBusy || gradeLoading}
-                  className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
-                    gradeText
-                      ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400 cursor-default"
-                      : "bg-[#243140] border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  }`}
-                >
-                  {gradeLoading ? "⏳ Baholanmoqda..." : gradeText ? "✅ AI Baho Tayyor" : "⭐ AI Baholash"}
-                </button>
-
-                {/* Academic Pack divider */}
-                <div className="flex items-center gap-2 pt-1">
-                  <div className="flex-1 h-px bg-white/5" />
-                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">One Click</span>
-                  <div className="flex-1 h-px bg-white/5" />
-                </div>
-
-                {/* Academic Pack */}
-                <button
-                  type="button"
-                  onClick={handleAcademicPack}
-                  disabled={isAnyBusy || packRunning || packDone}
-                  className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md ${
-                    packDone
-                      ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 cursor-default"
-                      : packRunning
-                      ? "bg-gradient-to-r from-cyan-600 to-violet-600 text-white border-transparent opacity-80 cursor-wait"
-                      : "bg-gradient-to-r from-cyan-500 to-violet-500 hover:from-cyan-400 hover:to-violet-400 text-white active:scale-95 border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                  }`}
-                >
-                  {packDone ? "✅ Academic Pack Tayyor!" : packRunning ? "⏳ Academic Pack tayyorlanmoqda..." : "🚀 Academic Pack (Hammasi Bir Bosish)"}
-                </button>
-
-                {/* Reset */}
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  disabled={isAnyBusy}
-                  className="w-full py-3.5 rounded-[20px] bg-transparent text-slate-400 font-semibold text-center text-xs hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  🔄 Yangi referat yozish
+                  {pptReady ? "✅ PPT Slaydlar Tayyorlandi" : generatingPPT ? "⏳ Slaydlar yaratilmoqda..." : "📊 PPT Tayyorlash ⭐"}
                 </button>
               </div>
+            )}
+
+            {/* ── Study Pack — always visible when docxReady ── */}
+            {/* Each button is independent: own loading, own error, own retry. */}
+            <div className="space-y-2 pt-2">
+              {/* O'quv Vositalari separator */}
+              <div className="flex items-center gap-2 pt-1">
+                <div className="flex-1 h-px bg-white/5" />
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">O'quv Vositalari</span>
+                <div className="flex-1 h-px bg-white/5" />
+              </div>
+
+              {/* Quiz — independent */}
+              <button
+                type="button"
+                onClick={() => handleStudyPack("quiz", setQuizLoading, setQuizText, setQuizError)}
+                disabled={quizLoading}
+                className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                  quizText
+                    ? "bg-amber-500/10 border-amber-500/30 text-amber-400 cursor-default"
+                    : "bg-[#243140] border-amber-500/30 text-amber-400 hover:bg-amber-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                }`}
+              >
+                {quizLoading ? "⏳ Quiz yaratilmoqda..." : quizText ? "✅ Quiz Tayyor" : "📝 Quiz Yaratish"}
+              </button>
+
+              {/* Konspekt — independent */}
+              <button
+                type="button"
+                onClick={() => handleStudyPack("summary", setSummaryLoading, setSummaryText, setSummaryError)}
+                disabled={summaryLoading}
+                className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                  summaryText
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-default"
+                    : "bg-[#243140] border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                }`}
+              >
+                {summaryLoading ? "⏳ Konspekt yaratilmoqda..." : summaryText ? "✅ Konspekt Tayyor" : "📑 Konspekt Yaratish"}
+              </button>
+
+              {/* Himoya — independent */}
+              <button
+                type="button"
+                onClick={() => handleStudyPack("defense", setDefenseLoading, setDefenseText, setDefenseError)}
+                disabled={defenseLoading}
+                className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                  defenseText
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-400 cursor-default"
+                    : "bg-[#243140] border-rose-500/30 text-rose-400 hover:bg-rose-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                }`}
+              >
+                {defenseLoading ? "⏳ Himoya savollari yaratilmoqda..." : defenseText ? "✅ Himoya Savollari Tayyor" : "🎤 Himoyaga Tayyorlanish"}
+              </button>
+
+              {/* AI Baholash — independent */}
+              <button
+                type="button"
+                onClick={handleGrade}
+                disabled={gradeLoading}
+                className={`w-full py-3.5 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                  gradeText
+                    ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400 cursor-default"
+                    : "bg-[#243140] border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                }`}
+              >
+                {gradeLoading ? "⏳ Baholanmoqda..." : gradeText ? "✅ AI Baho Tayyor" : "⭐ AI Baholash"}
+              </button>
+
+              {/* One Click separator */}
+              <div className="flex items-center gap-2 pt-1">
+                <div className="flex-1 h-px bg-white/5" />
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">One Click</span>
+                <div className="flex-1 h-px bg-white/5" />
+              </div>
+
+              {/* Academic Pack — independent, sequential inside */}
+              <button
+                type="button"
+                onClick={handleAcademicPack}
+                disabled={packRunning || packDone}
+                className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md ${
+                  packDone
+                    ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 cursor-default"
+                    : packRunning
+                    ? "bg-gradient-to-r from-cyan-600 to-violet-600 text-white border-transparent opacity-80 cursor-wait"
+                    : "bg-gradient-to-r from-cyan-500 to-violet-500 hover:from-cyan-400 hover:to-violet-400 text-white active:scale-95 border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                }`}
+              >
+                {packDone ? "✅ Academic Pack Tayyor!" : packRunning ? "⏳ Academic Pack tayyorlanmoqda..." : "🚀 Academic Pack (Hammasi Bir Bosish)"}
+              </button>
+            </div>
+
+            {/* Reset — available once DOCX/Telegram and Academic Pack complete */}
+            {!generatingDocx && !sendingTelegram && !packRunning && (
+              <button
+                type="button"
+                onClick={handleReset}
+                className="w-full py-3.5 rounded-[20px] bg-transparent text-slate-400 font-semibold text-center text-xs hover:text-white transition-colors"
+              >
+                🔄 Yangi referat yozish
+              </button>
             )}
 
             {/* ── Study Pack Result Cards ── */}

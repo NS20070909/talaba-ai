@@ -7,6 +7,7 @@ type GenerateOutlineParams = {
   slides: number;
   language: string;
   style: string;
+  referatOutline?: string[]; // Optional: pass existing referat chapters for consistent slide structure
 };
 
 import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
@@ -223,7 +224,10 @@ ${data.language}
 
 STYLE:
 ${data.style}
-
+${data.referatOutline && data.referatOutline.length > 0 ? `
+CHAPTER STRUCTURE (follow this topic structure for slides):
+${data.referatOutline.map((ch, i) => `${i + 1}. ${ch}`).join('\r\n')}
+` : ''}
 Create a WORLD-CLASS premium presentation.
 
 STRICT REQUIREMENTS:
