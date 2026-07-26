@@ -6,9 +6,12 @@ import { Document, Paragraph, TextRun, ImageRun, Packer, AlignmentType, Table, T
 import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
 
 const MODEL_CHAIN = [
-  "gemini-2.0-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
   "gemini-flash-latest",
-  "gemini-1.5-flash",
 ];
 
 export interface CoverData {
@@ -29,6 +32,25 @@ async function fetchPexelsImage(keyword: string, captionText: string): Promise<{
     const apiKey = process.env.PEXELS_API_KEY;
     if (!apiKey || !keyword.trim()) return null;
 
+    // Semantic English domain query mapping for Pexels relevance
+    const lower = keyword.toLowerCase();
+    let queryBoost = "";
+    if (lower.includes("kiber") || lower.includes("cyber") || lower.includes("xavfsiz")) {
+      queryBoost = "cybersecurity server network technology";
+    } else if (lower.includes("tarix") || lower.includes("history")) {
+      queryBoost = "history architecture museum heritage";
+    } else if (lower.includes("iqtisod") || lower.includes("econ")) {
+      queryBoost = "economy business finance analytics";
+    } else if (lower.includes("matematik") || lower.includes("math")) {
+      queryBoost = "mathematics science formula geometry";
+    } else if (lower.includes("ekolog") || lower.includes("envir")) {
+      queryBoost = "ecology ecosystem nature forest";
+    } else if (lower.includes("intellekt") || lower.includes("ai") || lower.includes("robot")) {
+      queryBoost = "artificial intelligence technology network";
+    } else if (lower.includes("falsafa") || lower.includes("philo")) {
+      queryBoost = "philosophy library ancient books statue";
+    }
+
     const cleanKeyword = keyword
       .replace(/[^a-zA-Z0-9\s]/g, " ")
       .trim()
@@ -37,13 +59,13 @@ async function fetchPexelsImage(keyword: string, captionText: string): Promise<{
       .slice(0, 3)
       .join(" ");
 
-    const query = cleanKeyword || keyword.substring(0, 20);
+    const query = queryBoost || cleanKeyword || keyword.substring(0, 20);
 
     const res = await fetch(
       `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=3&orientation=landscape`,
       {
         headers: { Authorization: apiKey },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(4000),
       }
     );
 
@@ -55,7 +77,7 @@ async function fetchPexelsImage(keyword: string, captionText: string): Promise<{
     const imgUrl = photo.src?.medium || photo.src?.large || photo.src?.original;
     if (!imgUrl) return null;
 
-    const imgRes = await fetch(imgUrl, { signal: AbortSignal.timeout(5000) });
+    const imgRes = await fetch(imgUrl, { signal: AbortSignal.timeout(4000) });
     if (!imgRes.ok) return null;
 
     const arrayBuffer = await imgRes.arrayBuffer();
@@ -612,41 +634,6 @@ ${outlineContext}`;
       }
     };
 
-    // Section 1: Introduction
-    const introText = await trySection(
-      `You are an academic writer. Write the Introduction section of a referat.
-${baseContext}
-Write ONLY the Introduction section. Use the language specified above. Start with the heading "## Kirish" (or its translation if language is not Uzbek). Write 2-4 substantive paragraphs covering relevance, purpose, and objectives of the topic.`
-    );
-
-    // Section 2: Chapter 1
-    let ch1Text = await trySection(
-      `You are an academic writer. Write Chapter 1 (the first main chapter) of a referat.
-${baseContext}
-Write ONLY Chapter 1. Use the language specified above. Start with an appropriate heading for the first main aspect of the topic. Write 3-5 detailed paragraphs covering core concepts, definitions, and foundational information.`
-    );
-
-    // Section 3: Chapter 2
-    let ch2Text = await trySection(
-      `You are an academic writer. Write Chapter 2 (the second main chapter) of a referat.
-${baseContext}
-Write ONLY Chapter 2. Use the language specified above. Start with an appropriate heading for the second main aspect of the topic. Write 3-5 detailed paragraphs covering analysis, comparisons, examples, and relevant data.`
-    );
-
-    // Section 4: Chapter 3
-    let ch3Text = await trySection(
-      `You are an academic writer. Write Chapter 3 (the third main chapter) of a referat.
-${baseContext}
-Write ONLY Chapter 3. Use the language specified above. Start with an appropriate heading for the third main aspect of the topic. Write 3-5 detailed paragraphs covering current problems, solutions, and future perspectives.`
-    );
-
-    // Section 5: Conclusion
-    const conclusionText = await trySection(
-      `You are an academic writer. Write the Conclusion section of a referat.
-${baseContext}
-Write ONLY the Conclusion section. Use the language specified above. Start with the heading "## Xulosa" (or its translation if language is not Uzbek). Summarize the key findings, conclusions, and recommendations in 2-3 paragraphs.`
-    );
-
     // Citation style instruction for Section 6
     let citationInstruction = "List 5-8 realistic academic references in standard numbered format.";
     if (selectedCitationStyle === "apa") {
@@ -657,13 +644,51 @@ Write ONLY the Conclusion section. Use the language specified above. Start with 
       citationInstruction = "Format all 5-8 academic references strictly following GOST 7.1-2003 bibliographic citation standard.";
     }
 
-    // Section 6: References
-    const referencesText = await trySection(
-      `You are an academic writer. Write the References section of a referat.
+    // Generate all core sections concurrently for maximum performance (reduces execution time by ~80%)
+    const [
+      introText,
+      rawCh1Text,
+      rawCh2Text,
+      rawCh3Text,
+      conclusionText,
+      referencesText,
+    ] = await Promise.all([
+      trySection(
+        `You are an academic writer. Write the Introduction section of a referat.
+${baseContext}
+Write ONLY the Introduction section. Use the language specified above. Start with the heading "## Kirish" (or its translation if language is not Uzbek). Write 2-4 substantive paragraphs covering relevance, purpose, and objectives of the topic.`
+      ),
+      trySection(
+        `You are an academic writer. Write Chapter 1 (the first main chapter) of a referat.
+${baseContext}
+Write ONLY Chapter 1. Use the language specified above. Start with an appropriate heading for the first main aspect of the topic. Write 3-5 detailed paragraphs covering core concepts, definitions, and foundational information.`
+      ),
+      trySection(
+        `You are an academic writer. Write Chapter 2 (the second main chapter) of a referat.
+${baseContext}
+Write ONLY Chapter 2. Use the language specified above. Start with an appropriate heading for the second main aspect of the topic. Write 3-5 detailed paragraphs covering analysis, comparisons, examples, and relevant data.`
+      ),
+      trySection(
+        `You are an academic writer. Write Chapter 3 (the third main chapter) of a referat.
+${baseContext}
+Write ONLY Chapter 3. Use the language specified above. Start with an appropriate heading for the third main aspect of the topic. Write 3-5 detailed paragraphs covering current problems, solutions, and future perspectives.`
+      ),
+      trySection(
+        `You are an academic writer. Write the Conclusion section of a referat.
+${baseContext}
+Write ONLY the Conclusion section. Use the language specified above. Start with the heading "## Xulosa" (or its translation if language is not Uzbek). Summarize the key findings, conclusions, and recommendations in 2-3 paragraphs.`
+      ),
+      trySection(
+        `You are an academic writer. Write the References section of a referat.
 ${baseContext}
 Write ONLY the References section. Use the language specified above. Start with the heading "## Foydalanilgan Adabiyotlar" (or its translation if language is not Uzbek).
 ${citationInstruction}`
-    );
+      ),
+    ]);
+
+    let ch1Text = rawCh1Text;
+    let ch2Text = rawCh2Text;
+    let ch3Text = rawCh3Text;
 
     // Section 7: Data Tables (fault-tolerant — kept outside trySection to avoid
     // inflating the successCount threshold which is only for sections 1-6)

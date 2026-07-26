@@ -238,6 +238,7 @@ export default function WriteReferatPage() {
   const [packRunning, setPackRunning] = useState(false);
   const [packStatus,  setPackStatus]  = useState<Record<string, PackStep>>({});
   const [packDone,    setPackDone]    = useState(false);
+  const [packActiveTab, setPackActiveTab] = useState<"ppt" | "summary" | "quiz" | "defense">("ppt");
 
   // Error
   const [error, setError] = useState<string | null>(null);
@@ -803,7 +804,7 @@ export default function WriteReferatPage() {
     setDefenseLoading(false); setDefenseText(null); setDefenseError(null);
     // Reset Grade + Academic Pack
     setGradeLoading(false); setGradeText(null); setGradeError(null);
-    setPackRunning(false); setPackStatus({}); setPackDone(false);
+    setPackRunning(false); setPackStatus({}); setPackDone(false); setPackActiveTab("ppt");
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -1647,120 +1648,224 @@ export default function WriteReferatPage() {
 
             {/* ── Study Pack Result Cards ── */}
 
-            {/* Quiz Result Card */}
-            {quizText && !quizLoading && (
-              <div className="rounded-[24px] bg-amber-500/8 border border-amber-500/20 overflow-hidden shadow-lg">
-                <div className="flex items-center justify-between px-5 py-3 border-b border-amber-500/15">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">📝</span>
-                    <span className="text-sm font-bold text-amber-400">Quiz — Test Savollari</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(quizText, "quiz")}
-                    className="text-[10px] font-semibold text-amber-400/70 hover:text-amber-400 border border-amber-500/20 hover:border-amber-500/40 px-2.5 py-1 rounded-lg transition-colors"
-                  >
-                    {copiedKey === "quiz" ? "✓ Nusxa olindi" : "📋 Nusxa"}
-                  </button>
-                </div>
-                <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{quizText}</pre>
-              </div>
-            )}
-            {quizError && !quizLoading && (
-              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
-                <p className="text-red-400 text-xs">⚠️ {quizError}</p>
-                <button type="button" onClick={() => { setQuizError(null); handleStudyPack("quiz", setQuizLoading, setQuizText, setQuizError); }}
-                  className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2 transition-colors">
-                  🔄 Qayta urinib ko'rish →
-                </button>
-              </div>
-            )}
-
-            {/* Summary / Konspekt Result Card */}
-            {summaryText && !summaryLoading && (
-              <div className="rounded-[24px] bg-emerald-500/8 border border-emerald-500/20 overflow-hidden shadow-lg">
-                <div className="flex items-center justify-between px-5 py-3 border-b border-emerald-500/15">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">📑</span>
-                    <span className="text-sm font-bold text-emerald-400">Konspekt — Qisqacha Mazmun</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(summaryText, "summary")}
-                    className="text-[10px] font-semibold text-emerald-400/70 hover:text-emerald-400 border border-emerald-500/20 hover:border-emerald-500/40 px-2.5 py-1 rounded-lg transition-colors"
-                  >
-                    {copiedKey === "summary" ? "✓ Nusxa olindi" : "📋 Nusxa"}
-                  </button>
-                </div>
-                <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{summaryText}</pre>
-              </div>
-            )}
-            {summaryError && !summaryLoading && (
-              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
-                <p className="text-red-400 text-xs">⚠️ {summaryError}</p>
-                <button type="button" onClick={() => { setSummaryError(null); handleStudyPack("summary", setSummaryLoading, setSummaryText, setSummaryError); }}
-                  className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 transition-colors">
-                  🔄 Qayta urinib ko'rish →
-                </button>
-              </div>
-            )}
-
-            {/* Defense Prep Result Card */}
-            {defenseText && !defenseLoading && (
-              <div className="rounded-[24px] bg-rose-500/8 border border-rose-500/20 overflow-hidden shadow-lg">
-                <div className="flex items-center justify-between px-5 py-3 border-b border-rose-500/15">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🎤</span>
-                    <span className="text-sm font-bold text-rose-400">Himoya Savollari</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(defenseText, "defense")}
-                    className="text-[10px] font-semibold text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/40 px-2.5 py-1 rounded-lg transition-colors"
-                  >
-                    {copiedKey === "defense" ? "✓ Nusxa olindi" : "📋 Nusxa"}
-                  </button>
-                </div>
-                <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{defenseText}</pre>
-              </div>
-            )}
-            {defenseError && !defenseLoading && (
-              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
-                <p className="text-red-400 text-xs">⚠️ {defenseError}</p>
-                <button type="button" onClick={() => { setDefenseError(null); handleStudyPack("defense", setDefenseLoading, setDefenseText, setDefenseError); }}
-                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold underline underline-offset-2 transition-colors">
-                  🔄 Qayta urinib ko'rish →
-                </button>
-              </div>
-            )}
-
-            {/* ── Academic Pack Progress Card ── */}
-            {(packRunning || packDone) && (
-              <div className="rounded-[24px] bg-[#243140] border border-cyan-500/20 p-5 space-y-3 shadow-lg">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl">🚀</span>
-                  <p className="text-sm font-bold text-cyan-400">
-                    {packDone ? "Academic Pack Tayyor!" : "Academic Pack tayyorlanmoqda..."}
-                  </p>
-                </div>
-                {[
-                  { key: "ppt",     label: "📊 PPT Slaydlar" },
-                  { key: "summary", label: "📑 Konspekt" },
-                  { key: "quiz",    label: "📝 Quiz" },
-                  { key: "defense", label: "🎤 Himoya Savollari" },
-                ].map(({ key, label }) => {
-                  const st = packStatus[key] || "idle";
-                  return (
-                    <div key={key} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
-                      <span className="text-xs text-slate-300">{label}</span>
-                      <span className="text-base">
-                        {st === "done"    ? "✅" :
-                         st === "running" ? <span className="animate-pulse">⏳</span> :
-                         st === "error"   ? "❌" : "⚪"}
-                      </span>
+            {/* ── Individual Study Pack Result Cards (Only shown when NOT running Academic Pack) ── */}
+            {!packRunning && !packDone && (
+              <>
+                {/* Quiz Result Card */}
+                {quizText && !quizLoading && (
+                  <div className="rounded-[24px] bg-amber-500/8 border border-amber-500/20 overflow-hidden shadow-lg">
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-amber-500/15">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">📝</span>
+                        <span className="text-sm font-bold text-amber-400">Quiz — Test Savollari</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(quizText, "quiz")}
+                        className="text-[10px] font-semibold text-amber-400/70 hover:text-amber-400 border border-amber-500/20 hover:border-amber-500/40 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        {copiedKey === "quiz" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                      </button>
                     </div>
-                  );
-                })}
+                    <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{quizText}</pre>
+                  </div>
+                )}
+                {quizError && !quizLoading && (
+                  <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
+                    <p className="text-red-400 text-xs">⚠️ {quizError}</p>
+                    <button type="button" onClick={() => { setQuizError(null); handleStudyPack("quiz", setQuizLoading, setQuizText, setQuizError); }}
+                      className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2 transition-colors">
+                      🔄 Qayta urinib ko'rish →
+                    </button>
+                  </div>
+                )}
+
+                {/* Summary / Konspekt Result Card */}
+                {summaryText && !summaryLoading && (
+                  <div className="rounded-[24px] bg-emerald-500/8 border border-emerald-500/20 overflow-hidden shadow-lg">
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-emerald-500/15">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">📑</span>
+                        <span className="text-sm font-bold text-emerald-400">Konspekt — Qisqacha Mazmun</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(summaryText, "summary")}
+                        className="text-[10px] font-semibold text-emerald-400/70 hover:text-emerald-400 border border-emerald-500/20 hover:border-emerald-500/40 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        {copiedKey === "summary" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                      </button>
+                    </div>
+                    <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{summaryText}</pre>
+                  </div>
+                )}
+                {summaryError && !summaryLoading && (
+                  <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
+                    <p className="text-red-400 text-xs">⚠️ {summaryError}</p>
+                    <button type="button" onClick={() => { setSummaryError(null); handleStudyPack("summary", setSummaryLoading, setSummaryText, setSummaryError); }}
+                      className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold underline underline-offset-2 transition-colors">
+                      🔄 Qayta urinib ko'rish →
+                    </button>
+                  </div>
+                )}
+
+                {/* Defense Prep Result Card */}
+                {defenseText && !defenseLoading && (
+                  <div className="rounded-[24px] bg-rose-500/8 border border-rose-500/20 overflow-hidden shadow-lg">
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-rose-500/15">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🎤</span>
+                        <span className="text-sm font-bold text-rose-400">Himoya Savollari</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(defenseText, "defense")}
+                        className="text-[10px] font-semibold text-rose-400/70 hover:text-rose-400 border border-rose-500/20 hover:border-rose-500/40 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        {copiedKey === "defense" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                      </button>
+                    </div>
+                    <pre className="px-5 py-4 text-xs text-slate-300 whitespace-pre-wrap leading-relaxed font-sans max-h-80 overflow-y-auto">{defenseText}</pre>
+                  </div>
+                )}
+                {defenseError && !defenseLoading && (
+                  <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
+                    <p className="text-red-400 text-xs">⚠️ {defenseError}</p>
+                    <button type="button" onClick={() => { setDefenseError(null); handleStudyPack("defense", setDefenseLoading, setDefenseText, setDefenseError); }}
+                      className="text-xs text-rose-400 hover:text-rose-300 font-semibold underline underline-offset-2 transition-colors">
+                      🔄 Qayta urinib ko'rish →
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── Academic Pack Packaged Card (Progress & Consolidated Result) ── */}
+            {(packRunning || packDone) && (
+              <div className="rounded-[24px] bg-[#243140] border border-cyan-500/20 p-5 space-y-4 shadow-lg">
+                <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                  <span className="text-xl">🚀</span>
+                  <div>
+                    <p className="text-sm font-bold text-cyan-400">
+                      {packDone ? "Academic Pack Natijalari Jamlamasi" : "Academic Pack tayyorlanmoqda..."}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      {packDone ? "Barcha akademik materiallar muvaffaqiyatli tayyorlandi." : "Ketma-ket ravishda barcha materiallar yaratilmoqda."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Checklist status */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { key: "ppt",     label: "📊 PPT Slaydlar" },
+                    { key: "summary", label: "📑 Konspekt" },
+                    { key: "quiz",    label: "📝 Quiz" },
+                    { key: "defense", label: "🎤 Himoya Savollari" },
+                  ].map(({ key, label }) => {
+                    const st = packStatus[key] || "idle";
+                    return (
+                      <div key={key} className="flex items-center justify-between p-2 rounded-xl bg-[#1b2635] border border-white/5">
+                        <span className="text-xs text-slate-300 font-medium">{label}</span>
+                        <span className="text-sm">
+                          {st === "done"    ? "✅" :
+                           st === "running" ? <span className="animate-pulse">⏳</span> :
+                           st === "error"   ? "❌" : "⚪"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Tab Navigation when pack completes */}
+                {packDone && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex rounded-xl bg-[#1b2635] p-1 border border-white/5">
+                      {[
+                        { id: "ppt",     label: "📊 Slaydlar" },
+                        { id: "summary", label: "📑 Konspekt" },
+                        { id: "quiz",    label: "📝 Quiz" },
+                        { id: "defense", label: "🎤 Himoya" },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setPackActiveTab(tab.id as any)}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors text-center ${
+                            packActiveTab === tab.id
+                              ? "bg-cyan-500 text-black shadow"
+                              : "text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Consolidated Tab View */}
+                    <div className="rounded-xl bg-[#1b2635] border border-white/5 p-4 space-y-3">
+                      {packActiveTab === "ppt" && (
+                        <div className="space-y-3">
+                          <p className="text-xs font-bold text-violet-400">📊 PPT Prezentatsiya</p>
+                          {pptUrl ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              <button type="button" onClick={handleDownloadPPT} className="py-2.5 rounded-xl bg-violet-500 hover:bg-violet-400 text-white font-bold text-xs text-center shadow">
+                                ⬇️ PPTX Yuklash
+                              </button>
+                              <button type="button" onClick={handleSendPPTTelegram} disabled={pptTelegramSent || sendingPPTTel} className="py-2.5 rounded-xl bg-[#243140] border border-white/10 text-white font-bold text-xs text-center">
+                                {pptTelegramSent ? "✅ Yuborildi" : sendingPPTTel ? "⏳..." : "📤 Telegramga"}
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400">PPT yaratilishi tugallanmagan</p>
+                          )}
+                        </div>
+                      )}
+
+                      {packActiveTab === "summary" && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-emerald-400">📑 Referat Konspekti</p>
+                            {summaryText && (
+                              <button type="button" onClick={() => handleCopy(summaryText, "summary")} className="text-[10px] text-emerald-400 underline">
+                                {copiedKey === "summary" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                              </button>
+                            )}
+                          </div>
+                          <pre className="text-xs text-slate-300 whitespace-pre-wrap font-sans max-h-72 overflow-y-auto leading-relaxed">{summaryText || "Konspekt mavjud emas"}</pre>
+                        </div>
+                      )}
+
+                      {packActiveTab === "quiz" && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-amber-400">📝 Quiz Test Savollari</p>
+                            {quizText && (
+                              <button type="button" onClick={() => handleCopy(quizText, "quiz")} className="text-[10px] text-amber-400 underline">
+                                {copiedKey === "quiz" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                              </button>
+                            )}
+                          </div>
+                          <pre className="text-xs text-slate-300 whitespace-pre-wrap font-sans max-h-72 overflow-y-auto leading-relaxed">{quizText || "Quiz mavjud emas"}</pre>
+                        </div>
+                      )}
+
+                      {packActiveTab === "defense" && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-rose-400">🎤 Himoya Savollari & Javoblar</p>
+                            {defenseText && (
+                              <button type="button" onClick={() => handleCopy(defenseText, "defense")} className="text-[10px] text-rose-400 underline">
+                                {copiedKey === "defense" ? "✓ Nusxa olindi" : "📋 Nusxa"}
+                              </button>
+                            )}
+                          </div>
+                          <pre className="text-xs text-slate-300 whitespace-pre-wrap font-sans max-h-72 overflow-y-auto leading-relaxed">{defenseText || "Himoya savollari mavjud emas"}</pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
