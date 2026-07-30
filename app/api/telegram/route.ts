@@ -586,31 +586,21 @@ async function renderAdminsMenu(ctx: any) {
 async function renderSettingsMenu(ctx: any) {
   try {
     const settings = await getSystemSettings();
-    let text = `⚙️ <b>Settings Management System V2</b>\n\n`;
+    let text = `⚙️ <b>Settings Management Panel</b>\n\n`;
 
-    text += `🤖 <b>Bot Sozlamalari:</b>\n`;
-    text += `• Bot nomi: ${settings.bot_name || "Talaba AI Bot"}\n`;
-    text += `• Bot username: @${settings.bot_username || "talaba_ai_bot"}\n`;
-    text += `• Support: @${settings.support_username || "Narkabilov_S_07"}\n`;
-    text += `• Texnik tanaffus (Maintenance): ${settings.maintenance_mode ? "🔴 YOQILGAN" : "🟢 O'CHIRILGAN"}\n\n`;
-
-    text += `💳 <b>To'lov Rekvizitlari:</b>\n`;
-    text += `• Karta egasi: ${settings.card_holder || "Sirojiddin Narkabilov"}\n`;
-    text += `• Karta raqami: <code>${settings.card_number || "8600 0000 0000 0000"}</code>\n\n`;
-
-    text += `🤖 <b>AI Model & Tizim:</b>\n`;
-    text += `• Model: ${settings.default_ai_model || "gemini-1.5-flash"}\n`;
-    text += `• Vaqt mintaqasi: ${settings.timezone || "Asia/Tashkent"}\n`;
-    text += `• Max fayl hajmi: ${settings.file_upload_limit_mb || 20} MB\n`;
+    text += `💳 <b>Karta Egasi:</b> ${settings.card_holder || "Sirojiddin Narkabilov"}\n`;
+    text += `💳 <b>Karta Raqami:</b> <code>${settings.card_number || "8600 0000 0000 0000"}</code>\n`;
+    text += `🛠 <b>Maintenance Mode:</b> ${settings.maintenance_mode ? "🔴 YOQILGAN" : "🟢 O'CHIRILGAN"}\n\n`;
+    text += `Boshqarish uchun pastdagi tugmalardan foydalaning:`;
 
     const keyboard = {
       inline_keyboard: [
         [
-          { text: "💳 Karta Raqamini O'zgartirish", callback_data: "admin:sett:edit_card" },
-          { text: "🛠 Maintenance Toggle", callback_data: "admin:sett:toggle_maint" }
+          { text: "💳 Edit Card Holder", callback_data: "admin:sett:edit_holder" },
+          { text: "💳 Edit Card Number", callback_data: "admin:sett:edit_card" }
         ],
         [
-          { text: "🤖 AI Modelni O'zgartirish", callback_data: "admin:sett:edit_model" }
+          { text: "🛠 Maintenance Toggle", callback_data: "admin:sett:toggle_maint" }
         ],
         [
           { text: "⬅️ Back to Panel", callback_data: "admin:main" }
@@ -988,14 +978,14 @@ bot.action("admin:sett:edit_card", async (ctx) => {
   await ctx.answerCbQuery();
 });
 
-bot.action("admin:sett:edit_model", async (ctx) => {
+bot.action("admin:sett:edit_holder", async (ctx) => {
   const userId = ctx.from?.id || 0;
   if (!isOwner(userId)) {
-    await ctx.answerCbQuery("❌ Faqat Owner AI modelni o'zgartirishi mumkin!", { show_alert: true });
+    await ctx.answerCbQuery("❌ Faqat Owner karta egasi ismini o'zgartirishi mumkin!", { show_alert: true });
     return;
   }
-  await setBotState(userId, "owner:waiting_for_edit_model");
-  await ctx.replyWithHTML("🤖 <b>AI Modelni O'zgartirish</b>\n\nYangi AI model nomini kiriting (masalan: <code>gemini-1.5-pro</code> yoki <code>gemini-1.5-flash</code>):");
+  await setBotState(userId, "owner:waiting_for_edit_holder");
+  await ctx.replyWithHTML("💳 <b>Karta Egasini O'zgartirish</b>\n\nYangi karta egasining Ismi va Familiyasini kiriting (masalan: <code>Sirojiddin Narkabilov</code>):");
   await ctx.answerCbQuery();
 });
 
@@ -2333,25 +2323,25 @@ bot.on("message", async (ctx, next) => {
     return;
   }
 
-  if (state === "owner:waiting_for_edit_model") {
+  if (state === "owner:waiting_for_edit_holder") {
     await deleteBotState(userId);
     if (!isOwner(userId)) return next();
-    const newModel = text.trim();
-    if (!newModel) {
-      await ctx.reply("❌ Model nomi bo'sh bo'lishi mumkin emas.");
+    const newHolder = text.trim();
+    if (!newHolder) {
+      await ctx.reply("❌ Karta egasi ismi bo'sh bo'lishi mumkin emas.");
       return;
     }
     try {
-      await updateSystemSetting("default_ai_model", newModel, "ai", userId);
+      await updateSystemSetting("card_holder", newHolder, "payment", userId);
       await recordAuditLog({
         adminId: userId,
         action: "SETTINGS_UPDATED",
-        target: "default_ai_model",
-        description: `Updated default AI model to ${newModel}`,
+        target: "card_holder",
+        description: `Updated payment card holder to ${newHolder}`,
       });
-      await ctx.replyWithHTML(`✅ <b>Default AI Model yangilandi:</b> <code>${newModel}</code>`);
+      await ctx.replyWithHTML(`✅ <b>Karta egasi ismi muvaffaqiyatli yangilandi:</b> ${newHolder}`);
     } catch (err: any) {
-      await ctx.reply(`❌ AI Model saqlashda xatolik: ${err.message}`);
+      await ctx.reply(`❌ Karta egasi ismini saqlashda xatolik: ${err.message}`);
     }
     return;
   }

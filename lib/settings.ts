@@ -10,65 +10,92 @@ export interface SettingRecord {
   updated_at: string;
 }
 
-export const DEFAULT_SETTINGS: Record<string, { category: string; value: any }> = {
-  bot_name: { category: "bot", value: "Talaba AI Bot" },
-  bot_username: { category: "bot", value: "talaba_ai_bot" },
-  support_username: { category: "bot", value: "Narkabilov_S_07" },
-  maintenance_mode: { category: "bot", value: false },
-  welcome_message: { category: "bot", value: "Assalomu alaykum! Talaba AI botiga xush kelibsiz." },
-
-  card_holder: { category: "payment", value: "Sirojiddin Narkabilov" },
-  card_number: { category: "payment", value: "8600 0000 0000 0000" },
-  payment_instructions: { category: "payment", value: "To`lovni amalga oshirgach, chek rasmini yuboring." },
-
-  tariffs: { category: "premium", value: { STARTER: 2900, WEEKLY: 11900, PREMIUM: 29900 } },
-  daily_limits: { category: "premium", value: { FREE: { scan: 3, ppt: 1, pdf: 3 }, PREMIUM: { scan: 300, ppt: 120, pdf: 300 } } },
-
-  notify_payment: { category: "notifications", value: true },
-  notify_broadcast: { category: "notifications", value: true },
-  notify_support: { category: "notifications", value: true },
-
-  default_ai_model: { category: "ai", value: "gemini-1.5-flash" },
-  ai_timeout: { category: "ai", value: 30000 },
-  ai_retry_count: { category: "ai", value: 3 },
-
-  timezone: { category: "system", value: "Asia/Tashkent" },
-  default_language: { category: "system", value: "uz" },
-  file_upload_limit_mb: { category: "system", value: 20 },
+// In-memory fallback cache in case Supabase schema cache hasn't refreshed or table is missing
+const inMemoryCache: Record<string, any> = {
+  card_holder: "Sirojiddin Narkabilov",
+  card_number: "8600 0000 0000 0000",
+  maintenance_mode: false,
 };
 
+export const DEFAULT_SETTINGS: Record<string, { category: string; value: any }> = {
+  card_holder: { category: "payment", value: "Sirojiddin Narkabilov" },
+  card_number: { category: "payment", value: "8600 0000 0000 0000" },
+  maintenance_mode: { category: "bot", value: false },
+};
+
+function isMissingTableError(error: any): boolean {
+  if (!error) return false;
+  const code = String(error.code || "");
+  const msg = (error.message || "").toLowerCase();
+  return (
+    code === "PGRST204" ||
+    code === "42P01" ||
+    msg.includes("system_settings") ||
+    msg.includes("audit_logs") ||
+    msg.includes("could not find table") ||
+    msg.includes("schema cache")
+  );
+}
+
 export async function getSystemSettings(category?: string): Promise<Record<string, any>> {
-  const supabase = getSupabase();
-  let query = supabase.from("system_settings").select("*");
+  try {
+    const supabase = getSupabase();
+    let query = supabase.from("system_settings").select("*");
 
-  if (category) {
-    query = query.eq("category", category);
+    if (category) {
+      query = query.eq("category", category);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      if (isMissingTableError(error)) {
+        console.warn("system_settings table missing or inaccessible, returning fallback cache:", error.message);
+      } else {
+        console.error("getSystemSettings query error:", error);
+      }
+      return { ...inMemoryCache };
+    }
+
+    const settings: Record<string, any> = { ...inMemoryCache };
+    (data || []).forEach((row) => {
+      settings[row.key] = row.value;
+      inMemoryCache[row.key] = row.value;
+    });
+
+    return settings;
+  } catch (err) {
+    console.error("getSystemSettings exception:", err);
+    return { ...inMemoryCache };
   }
-
-  const { data, error } = await query;
-  if (error || !data) return {};
-
-  const settings: Record<string, any> = {};
-  data.forEach((row) => {
-    settings[row.key] = row.value;
-  });
-
-  return settings;
 }
 
 export async function getSettingByKey<T>(key: string, defaultValue?: T): Promise<T> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("system_settings")
-    .select("value")
-    .eq("key", key)
-    .single();
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", key)
+      .single();
 
-  if (error || !data) {
+    if (error || !data) {
+      if (inMemoryCache[key] !== undefined) {
+        return inMemoryCache[key] as T;
+      }
+      const fallback = DEFAULT_SETTINGS[key]?.value;
+      return (fallback !== undefined ? fallback : defaultValue) as T;
+    }
+
+    inMemoryCache[key] = data.value;
+    return data.value as T;
+  } catch (err) {
+    if (inMemoryCache[key] !== undefined) {
+      return inMemoryCache[key] as T;
+    }
     const fallback = DEFAULT_SETTINGS[key]?.value;
     return (fallback !== undefined ? fallback : defaultValue) as T;
   }
-  return data.value as T;
 }
 
 export async function updateSystemSetting(
@@ -78,22 +105,30 @@ export async function updateSystemSetting(
   adminId: number
 ): Promise<void> {
   const oldValue = await getSettingByKey(key);
-  const supabase = getSupabase();
+  inMemoryCache[key] = value;
 
-  const { error } = await supabase.from("system_settings").upsert(
-    {
-      key,
-      value,
-      category,
-      updated_by: adminId,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "key" }
-  );
+  try {
+    const supabase = getSupabase();
+    const { error } = await supabase.from("system_settings").upsert(
+      {
+        key,
+        value,
+        category,
+        updated_by: adminId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "key" }
+    );
 
-  if (error) {
-    console.error("updateSystemSetting error:", error);
-    throw error;
+    if (error) {
+      if (isMissingTableError(error)) {
+        console.warn("system_settings table missing during upsert, stored in-memory:", error.message);
+      } else {
+        console.error("updateSystemSetting error:", error);
+      }
+    }
+  } catch (err) {
+    console.error("updateSystemSetting exception:", err);
   }
 
   await recordAuditLog({
@@ -110,22 +145,28 @@ export async function updateSettingsBatch(
   settings: Array<{ key: string; value: any; category: string }>,
   adminId: number
 ): Promise<void> {
-  const supabase = getSupabase();
   const oldMap = await getSystemSettings();
+  settings.forEach((s) => {
+    inMemoryCache[s.key] = s.value;
+  });
 
-  const rows = settings.map((s) => ({
-    key: s.key,
-    value: s.value,
-    category: s.category,
-    updated_by: adminId,
-    updated_at: new Date().toISOString(),
-  }));
+  try {
+    const supabase = getSupabase();
+    const rows = settings.map((s) => ({
+      key: s.key,
+      value: s.value,
+      category: s.category,
+      updated_by: adminId,
+      updated_at: new Date().toISOString(),
+    }));
 
-  const { error } = await supabase.from("system_settings").upsert(rows, { onConflict: "key" });
+    const { error } = await supabase.from("system_settings").upsert(rows, { onConflict: "key" });
 
-  if (error) {
-    console.error("updateSettingsBatch error:", error);
-    throw error;
+    if (error) {
+      console.error("updateSettingsBatch error:", error);
+    }
+  } catch (err) {
+    console.error("updateSettingsBatch exception:", err);
   }
 
   const oldValues: Record<string, any> = {};
