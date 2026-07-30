@@ -70,10 +70,13 @@ export async function getFullUserProfile(telegramId: number): Promise<UserProfil
 
   if (error || !user) return null;
 
-  const [ticketRes, payRes] = await Promise.all([
+  const [ticketRes, payRes, usageRes] = await Promise.all([
     supabase.from("support_tickets").select("id", { count: "exact" }).eq("telegram_id", telegramId),
     supabase.from("payments").select("id", { count: "exact" }).eq("telegram_id", telegramId),
+    supabase.from("usage_stats").select("*").eq("telegram_id", telegramId).maybeSingle(),
   ]);
+
+  const usage = usageRes.data || {};
 
   return {
     telegram_id: Number(user.telegram_id),
@@ -91,11 +94,11 @@ export async function getFullUserProfile(telegramId: number): Promise<UserProfil
     is_muted: !!user.is_muted,
     mute_reason: user.mute_reason || null,
     broadcast_enabled: user.broadcast_enabled !== false,
-    scan_used: user.scan_used || 0,
-    ppt_used: user.ppt_used || 0,
-    pdf_used: user.pdf_used || 0,
-    referat_used_today: user.referat_used_today || 0,
-    translation_used_today: user.translation_used_today || 0,
+    scan_used: usage.scan_used_today || 0,
+    ppt_used: usage.ppt_used_today || 0,
+    pdf_used: usage.pdf_used_today || 0,
+    referat_used_today: usage.referat_used_today || 0,
+    translation_used_today: usage.translation_used_today || 0,
     support_ticket_count: ticketRes.count || 0,
     payments_count: payRes.count || 0,
   };
@@ -138,30 +141,41 @@ export async function getFilteredUsers(
 
   if (error || !data) return { users: [], total: 0 };
 
-  const profiles: UserProfile[] = data.map((u) => ({
-    telegram_id: Number(u.telegram_id),
-    username: u.username || null,
-    first_name: u.first_name || "User",
-    last_name: u.last_name || null,
-    language: u.language || "uz",
-    plan: u.plan || "FREE",
-    premium_until: u.premium_until || null,
-    created_at: u.created_at,
-    updated_at: u.updated_at || u.created_at,
-    last_seen: u.last_seen || u.updated_at || u.created_at,
-    is_banned: !!u.is_banned,
-    ban_reason: u.ban_reason || null,
-    is_muted: !!u.is_muted,
-    mute_reason: u.mute_reason || null,
-    broadcast_enabled: u.broadcast_enabled !== false,
-    scan_used: u.scan_used || 0,
-    ppt_used: u.ppt_used || 0,
-    pdf_used: u.pdf_used || 0,
-    referat_used_today: u.referat_used_today || 0,
-    translation_used_today: u.translation_used_today || 0,
-    support_ticket_count: 0,
-    payments_count: 0,
-  }));
+  const telegramIds = data.map((u) => Number(u.telegram_id));
+  const { data: usageList } = telegramIds.length > 0
+    ? await supabase.from("usage_stats").select("*").in("telegram_id", telegramIds)
+    : { data: [] };
+
+  const usageMap = new Map<number, any>();
+  (usageList || []).forEach((r: any) => usageMap.set(Number(r.telegram_id), r));
+
+  const profiles: UserProfile[] = data.map((u) => {
+    const usage = usageMap.get(Number(u.telegram_id)) || {};
+    return {
+      telegram_id: Number(u.telegram_id),
+      username: u.username || null,
+      first_name: u.first_name || "User",
+      last_name: u.last_name || null,
+      language: u.language || "uz",
+      plan: u.plan || "FREE",
+      premium_until: u.premium_until || null,
+      created_at: u.created_at,
+      updated_at: u.updated_at || u.created_at,
+      last_seen: u.last_seen || u.updated_at || u.created_at,
+      is_banned: !!u.is_banned,
+      ban_reason: u.ban_reason || null,
+      is_muted: !!u.is_muted,
+      mute_reason: u.mute_reason || null,
+      broadcast_enabled: u.broadcast_enabled !== false,
+      scan_used: usage.scan_used_today || 0,
+      ppt_used: usage.ppt_used_today || 0,
+      pdf_used: usage.pdf_used_today || 0,
+      referat_used_today: usage.referat_used_today || 0,
+      translation_used_today: usage.translation_used_today || 0,
+      support_ticket_count: 0,
+      payments_count: 0,
+    };
+  });
 
   return { users: profiles, total: count || profiles.length };
 }
@@ -185,30 +199,41 @@ export async function searchUsersV2(query: string): Promise<UserProfile[]> {
   const { data } = await builder.limit(20);
   if (!data) return [];
 
-  return data.map((u) => ({
-    telegram_id: Number(u.telegram_id),
-    username: u.username || null,
-    first_name: u.first_name || "User",
-    last_name: u.last_name || null,
-    language: u.language || "uz",
-    plan: u.plan || "FREE",
-    premium_until: u.premium_until || null,
-    created_at: u.created_at,
-    updated_at: u.updated_at || u.created_at,
-    last_seen: u.last_seen || u.updated_at || u.created_at,
-    is_banned: !!u.is_banned,
-    ban_reason: u.ban_reason || null,
-    is_muted: !!u.is_muted,
-    mute_reason: u.mute_reason || null,
-    broadcast_enabled: u.broadcast_enabled !== false,
-    scan_used: u.scan_used || 0,
-    ppt_used: u.ppt_used || 0,
-    pdf_used: u.pdf_used || 0,
-    referat_used_today: u.referat_used_today || 0,
-    translation_used_today: u.translation_used_today || 0,
-    support_ticket_count: 0,
-    payments_count: 0,
-  }));
+  const telegramIds = data.map((u) => Number(u.telegram_id));
+  const { data: usageList } = telegramIds.length > 0
+    ? await supabase.from("usage_stats").select("*").in("telegram_id", telegramIds)
+    : { data: [] };
+
+  const usageMap = new Map<number, any>();
+  (usageList || []).forEach((r: any) => usageMap.set(Number(r.telegram_id), r));
+
+  return data.map((u) => {
+    const usage = usageMap.get(Number(u.telegram_id)) || {};
+    return {
+      telegram_id: Number(u.telegram_id),
+      username: u.username || null,
+      first_name: u.first_name || "User",
+      last_name: u.last_name || null,
+      language: u.language || "uz",
+      plan: u.plan || "FREE",
+      premium_until: u.premium_until || null,
+      created_at: u.created_at,
+      updated_at: u.updated_at || u.created_at,
+      last_seen: u.last_seen || u.updated_at || u.created_at,
+      is_banned: !!u.is_banned,
+      ban_reason: u.ban_reason || null,
+      is_muted: !!u.is_muted,
+      mute_reason: u.mute_reason || null,
+      broadcast_enabled: u.broadcast_enabled !== false,
+      scan_used: usage.scan_used_today || 0,
+      ppt_used: usage.ppt_used_today || 0,
+      pdf_used: usage.pdf_used_today || 0,
+      referat_used_today: usage.referat_used_today || 0,
+      translation_used_today: usage.translation_used_today || 0,
+      support_ticket_count: 0,
+      payments_count: 0,
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
