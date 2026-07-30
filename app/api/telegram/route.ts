@@ -11,6 +11,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://talaba-ai-chi.vercel
 import { getPaymentsStats, getRecentPayments, getPaymentById, updatePaymentStatus, getInboxPayments, getPaymentAnalytics, exportPaymentsCSV, searchPayments } from "@/lib/payment";
 import { saveGroupChat, removeGroupChat, saveChannelChat, removeChannelChat, getBroadcastRecipients, createBroadcastRecord, getBroadcastHistory, getBroadcastById, executeBroadcast, retryFailedBroadcast, BroadcastTarget } from "@/lib/broadcast";
 import { createTicket, addMessageToTicket, getTicketById, getTicketByNumber, getUserTickets, getAdminTickets, getTicketMessages, updateTicketStatus, updateTicketPriority, searchTickets, getSupportStats, CATEGORY_LABELS, PRIORITY_LABELS, STATUS_LABELS, TicketCategory, TicketPriority, TicketStatus } from "@/lib/support";
+import { getFullUserProfile, getFilteredUsers, searchUsersV2, managePremiumV2, banUserV2, unbanUserV2, muteUserV2, unmuteUserV2, addUserNote, getUserNotes, getUserStatsV2, exportUsersCSV } from "@/lib/user-management";
 import { bot } from "@/lib/bot";
 import { getSupabase } from "@/lib/supabase";
 
@@ -64,6 +65,7 @@ export async function sendFileToTelegram(
 }
 
 // USER STATE IS STORED IN DATABASE (bot_states table)
+const BOT_USERNAME = process.env.NEXT_PUBLIC_BOT_USERNAME || "talaba_ai_bot";
 
 // START
 bot.start(async (ctx) => {
@@ -83,6 +85,27 @@ bot.start(async (ctx) => {
       console.error("Error creating user on start:", err);
     }
   }
+
+  const chatType = (ctx.chat?.type as string) || "private";
+  if (chatType === "channel") return; // Do not send start menu in channels
+
+  if (chatType === "group" || chatType === "supergroup") {
+    await ctx.replyWithHTML(
+      `📚 <b>Talaba AI Bot</b>\n\n` +
+      `Ushbu bot shaxsiy chatda to'liq imkoniyatlar bilan ishlaydi.\n\n` +
+      `👇 Botni ochish uchun quyidagi tugmani bosing:`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🚀 Open Bot (Private Chat)", url: `https://t.me/${BOT_USERNAME}?start=open` }],
+            [{ text: "✈️ Telegram Support", url: "https://t.me/Narkabilov_S_07" }]
+          ]
+        }
+      }
+    );
+    return;
+  }
+
   await ctx.replyWithHTML(
     `🎓 <b>Talaba AI</b>\n\n` +
     `Assalomu alaykum, <b>${ctx.from?.first_name || "Talaba"}</b>! 👋\n\n` +
@@ -95,62 +118,56 @@ bot.start(async (ctx) => {
     `• ℹ️ /about — Platforma haqida\n\n` +
     `Boshlash uchun quyidagi tugmalardan birini bosing 👇`,
     {
-     reply_markup: {
-  inline_keyboard: [
-    [
-      {
-        text: "🚀 Talaba AI ochish",
-        web_app: {
-          url: `${APP_URL}`,
-        },
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "🚀 Talaba AI ochish",
+              web_app: { url: `${APP_URL}` },
+            },
+          ],
+          [
+            {
+              text: "📸 Bilet Scan",
+              web_app: { url: `${APP_URL}?tab=scan&userId=${userId}` },
+            },
+          ],
+        ],
       },
-    ],
-    [
-      {
-        text: "📸 Bilet Scan",
-        web_app: {
-          url: `${APP_URL}?tab=scan&userId=${userId}`,
-        },
-      },
-    ],
-  ],
-},
     }
   );
 });
 
 // TALABA AI
-bot.command(
-  "talabaai",
-  async (ctx) => {
-    await ctx.reply(
-      `
-🎓 Talaba AI
+bot.command("talabaai", async (ctx) => {
+  const chatType = (ctx.chat?.type as string) || "private";
+  if (chatType === "channel") return;
 
-AI Student Assistant 🚀
-
-Mini App ni ochish uchun
-pastdagi tugmani bosing 👇
-`,
+  if (chatType === "group" || chatType === "supergroup") {
+    await ctx.replyWithHTML(
+      `🎓 <b>Talaba AI Assistant</b>\n\nMini App faqat shaxsiy muloqotda ochiladi. Botni ishga tushirish uchun pastdagi tugmani bosing 👇`,
       {
         reply_markup: {
           inline_keyboard: [
-            [
-              {
-                text:
-                  "🚀 Open Talaba AI",
-                web_app: {
-                  url:
-                    `${APP_URL}`,
-                },
-              },
-            ],
-          ],
-        },
+            [{ text: "🚀 Open Talaba AI", url: `https://t.me/${BOT_USERNAME}?start=open` }]
+          ]
+        }
       }
     );
+    return;
   }
-);
+
+  await ctx.reply(
+    `🎓 Talaba AI\n\nAI Student Assistant 🚀\n\nMini App ni ochish uchun pastdagi tugmani bosing 👇`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🚀 Open Talaba AI", web_app: { url: `${APP_URL}` } }]
+        ]
+      }
+    }
+  );
+});
 
 // HELP
 bot.command("help", async (ctx) => {
@@ -163,16 +180,24 @@ bot.command("support", async (ctx) => {
 });
 
 async function renderUserSupportMenu(ctx: any) {
+  const chatType = (ctx.chat?.type as string) || "private";
+  if (chatType === "channel") return;
+
   const text = `🆘 <b>Talaba AI — Yordam Markazi (Support Center V2)</b>\n\n` +
     `Muammo yoki taklifingiz bormi? Murojaat yuborish uchun pastdagi tugmalardan birini tanlang:`;
 
-  const keyboard = {
-    inline_keyboard: [
-      [{ text: "➕ Yangi Murojaat Yaratish", callback_data: "user:supp:new" }],
-      [{ text: "📋 Mening Murojaatlarim", callback_data: "user:supp:my_tickets" }],
-      [{ text: "🚀 Platformani ochish", web_app: { url: `${APP_URL}` } }]
-    ]
-  };
+  const inlineKeyboard = chatType === "group" || chatType === "supergroup"
+    ? [
+        [{ text: "➕ Yangi Murojaat Yaratish", url: `https://t.me/${BOT_USERNAME}?start=support` }],
+        [{ text: "🚀 Open Bot", url: `https://t.me/${BOT_USERNAME}?start=open` }]
+      ]
+    : [
+        [{ text: "➕ Yangi Murojaat Yaratish", callback_data: "user:supp:new" }],
+        [{ text: "📋 Mening Murojaatlarim", callback_data: "user:supp:my_tickets" }],
+        [{ text: "🚀 Platformani ochish", web_app: { url: `${APP_URL}` } }]
+      ];
+
+  const keyboard = { inline_keyboard: inlineKeyboard };
 
   if (ctx.callbackQuery) {
     await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
@@ -182,141 +207,128 @@ async function renderUserSupportMenu(ctx: any) {
 }
 
 // ABOUT
-bot.command(
-  "about",
-  async (ctx) => {
-    await ctx.replyWithHTML(
-      `🎓 <b>Talaba AI</b>\n\n` +
-      `🤖 <i>AI platform for students.</i>\n\n` +
-      `⚡ <b>Texnologiyalar (Technology stack):</b>\n` +
-      `• Gemini AI\n` +
-      `• Next.js\n` +
-      `• Supabase\n` +
-      `• Vercel\n` +
-      `• Telegram Bot\n\n` +
-      `📁 <b>Versiya:</b> MVP v1.0`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: "📷 Instagram",
-                url: "https://instagram.com/iits_nkb",
-              },
-              {
-                text: "✈️ Telegram",
-                url: "https://t.me/Narkabilov_S_07",
-              },
-            ],
-          ],
-        },
+bot.command("about", async (ctx) => {
+  await ctx.replyWithHTML(
+    `🎓 <b>Talaba AI</b>\n\n` +
+    `🤖 <i>AI platform for students.</i>\n\n` +
+    `⚡ <b>Texnologiyalar (Technology stack):</b>\n` +
+    `• Gemini AI\n` +
+    `• Next.js\n` +
+    `• Supabase\n` +
+    `• Vercel\n` +
+    `• Telegram Bot\n\n` +
+    `📁 <b>Versiya:</b> MVP v1.0`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "📷 Instagram", url: "https://instagram.com/iits_nkb" },
+            { text: "✈️ Telegram", url: "https://t.me/Narkabilov_S_07" }
+          ]
+        ]
       }
-    );
-  }
-);
+    }
+  );
+});
 
 // PREMIUM
-bot.command(
-  "premium",
-  async (ctx) => {
-    await ctx.replyWithHTML(
-      `👑 <b>Talaba AI Premium Tariflari</b>\n\n` +
-      `Ehtiyojingizga mos tarifni tanlang va barcha imkoniyatlardan to'liq foydalaning:\n\n` +
-      `🟢 <b>Starter</b> — 2 900 so'm\n` +
-      `📅 1 kun\n` +
-      `📸 Scan: 5\n` +
-      `📊 PPT: 3\n` +
-      `📄 PDF: 5\n\n` +
-      `🔵 <b>Weekly</b> — 11 900 so'm\n` +
-      `📅 7 kun\n` +
-      `📸 Scan: 50\n` +
-      `📊 PPT: 20\n` +
-      `📄 PDF: 50\n\n` +
-      `🟣 <b>Premium ⭐</b> — 29 900 so'm\n` +
-      `📅 30 kun\n` +
-      `📸 Scan: 300\n` +
-      `📊 PPT: 120\n` +
-      `📄 PDF: 300\n\n` +
-      `🟠 <b>Pro 🔥</b> — 69 900 so'm\n` +
-      `📅 90 kun\n` +
-      `📸 Scan: 1200\n` +
-      `📊 PPT: 500\n` +
-      `📄 PDF: 1200\n\n` +
-      `👑 <b>Elite</b> — 199 900 so'm\n` +
-      `📅 365 kun\n` +
-      `📸 Scan: 6000\n` +
-      `📊 PPT: 2500\n` +
-      `📄 PDF: 6000\n\n` +
-      `👇 Tariflarni faollashtirish va sotib olish uchun pastdagi tugmani bosing:`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: "🚀 Tariflarni ochish",
-                web_app: {
-                  url: `${APP_URL}/premium`,
-                },
-              },
-            ],
-          ],
-        },
-      }
-    );
-  }
-);
+bot.command("premium", async (ctx) => {
+  await ctx.replyWithHTML(
+    `👑 <b>Talaba AI Premium Tariflari</b>\n\n` +
+    `Ehtiyojingizga mos tarifni tanlang va barcha imkoniyatlardan to'liq foydalaning:\n\n` +
+    `🟢 <b>Starter</b> — 2 900 so'm (1 kun)\n` +
+    `🔵 <b>Weekly</b> — 11 900 so'm (7 kun)\n` +
+    `🟣 <b>Premium ⭐</b> — 29 900 so'm (30 kun)\n\n` +
+    `To'lov qilish va tariflarni ko'rish uchun /talabaai buyrug'ini bosing.`
+  );
+});
 
 // SCAN
-bot.command(
-  "scan",
-  async (ctx) => {
-    const userId =
-      ctx.from.id;
+bot.command("scan", async (ctx) => {
+  const userId = ctx.from.id;
+  const chatType = (ctx.chat?.type as string) || "private";
+  if (chatType === "channel") return;
 
-    await ctx.reply(
-      `
-📸 Bilet Scan
-
-Bilet Scan ochish uchun
-pastdagi tugmani bosing 👇
-`,
+  if (chatType === "group" || chatType === "supergroup") {
+    await ctx.replyWithHTML(
+      `📸 <b>Bilet Scan</b>\n\nBilet Scan faqat shaxsiy muloqotda ishlaydi. Botni ochish uchun pastdagi tugmani bosing 👇`,
       {
         reply_markup: {
           inline_keyboard: [
-            [
-              {
-                text:
-                  "📸 Open Bilet Scan",
-                web_app: {
-                  url:
-                    `${APP_URL}?tab=scan&userId=${userId}`,
-                },
-              },
-            ],
-          ],
-        },
+            [{ text: "📸 Open Bilet Scan", url: `https://t.me/${BOT_USERNAME}?start=scan` }]
+          ]
+        }
       }
     );
+    return;
   }
-);
+
+  await ctx.reply(
+    `📸 Bilet Scan\n\nBilet Scan ochish uchun pastdagi tugmani bosing 👇`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📸 Open Bilet Scan", web_app: { url: `${APP_URL}?tab=scan&userId=${userId}` } }]
+        ]
+      }
+    }
+  );
+});
 
 // CHAT MEMBER & GROUP/CHANNEL TRACKER
 bot.on("my_chat_member", async (ctx) => {
   try {
     const chat = ctx.chat;
     const newStatus = ctx.myChatMember?.new_chat_member?.status;
+    const fromUser = ctx.myChatMember?.from;
+
+    const addedBy = fromUser
+      ? `${fromUser.first_name || ""} ${fromUser.last_name || ""} (${fromUser.username ? `@${fromUser.username}` : `ID: ${fromUser.id}`})`.trim()
+      : "Noma'lum";
+
+    const chatAny = chat as any;
+    const usernameStr = chatAny.username ? `@${chatAny.username}` : "yo'q";
+    const titleStr = chatAny.title || "Noma'lum Chat";
 
     if (chat.type === "group" || chat.type === "supergroup") {
       if (newStatus === "member" || newStatus === "administrator") {
-        await saveGroupChat(chat.id, chat.title || "Group", chat.type);
+        await saveGroupChat(chat.id, titleStr, chat.type);
+        // Item 4: Notify Owner on new group addition
+        const addMsg = `➕ <b>Bot yangi guruhga qo'shildi!</b>\n\n` +
+          `📌 <b>Title:</b> ${titleStr}\n` +
+          `🆔 <b>Chat ID:</b> <code>${chat.id}</code>\n` +
+          `📛 <b>Username:</b> ${usernameStr}\n` +
+          `👥 <b>Type:</b> ${chat.type}\n` +
+          `👤 <b>Qo'shgan a'zo:</b> ${addedBy}`;
+        await bot.telegram.sendMessage(6630030492, addMsg, { parse_mode: "HTML" });
       } else if (newStatus === "left" || newStatus === "kicked") {
         await removeGroupChat(chat.id);
+        // Item 5: Notify Owner on group removal
+        const removeMsg = `➖ <b>Bot guruhdan olib tashlandi</b>\n\n` +
+          `📌 <b>Title:</b> ${titleStr}\n` +
+          `🆔 <b>Chat ID:</b> <code>${chat.id}</code>\n` +
+          `👥 <b>Type:</b> ${chat.type}`;
+        await bot.telegram.sendMessage(6630030492, removeMsg, { parse_mode: "HTML" });
       }
     } else if (chat.type === "channel") {
       if (newStatus === "member" || newStatus === "administrator") {
-        await saveChannelChat(chat.id, chat.title || "Channel", chat.username);
+        await saveChannelChat(chat.id, titleStr, chat.username);
+        // Item 4: Notify Owner on new channel addition
+        const addMsg = `➕ <b>Bot yangi kanalga qo'shildi!</b>\n\n` +
+          `📌 <b>Title:</b> ${titleStr}\n` +
+          `🆔 <b>Chat ID:</b> <code>${chat.id}</code>\n` +
+          `📛 <b>Username:</b> ${usernameStr}\n` +
+          `👥 <b>Type:</b> Channel\n` +
+          `👤 <b>Qo'shgan a'zo:</b> ${addedBy}`;
+        await bot.telegram.sendMessage(6630030492, addMsg, { parse_mode: "HTML" });
       } else if (newStatus === "left" || newStatus === "kicked") {
         await removeChannelChat(chat.id);
+        // Item 5: Notify Owner on channel removal
+        const removeMsg = `➖ <b>Bot kanaldan olib tashlandi</b>\n\n` +
+          `📌 <b>Title:</b> ${titleStr}\n` +
+          `🆔 <b>Chat ID:</b> <code>${chat.id}</code>\n` +
+          `👥 <b>Type:</b> Channel`;
+        await bot.telegram.sendMessage(6630030492, removeMsg, { parse_mode: "HTML" });
       }
     }
   } catch (err) {
@@ -409,7 +421,8 @@ async function renderMainPanel(ctx: any) {
           { text: "💰 Payments", callback_data: "admin:payments" }
         ],
         [
-          { text: "🎫 Support Center", callback_data: "admin:support" }
+          { text: "🎫 Support Center", callback_data: "admin:support" },
+          { text: "👤 User Management V2", callback_data: "admin:users" }
         ]
       ]
     };
@@ -421,6 +434,51 @@ async function renderMainPanel(ctx: any) {
     }
   } catch (error) {
     console.error("renderMainPanel error:", error);
+  }
+}
+
+async function renderUserManagementMenu(ctx: any) {
+  try {
+    const stats = await getUserStatsV2();
+    const text = `👤 <b>User Management System V2</b>\n\n` +
+      `📊 <b>Foydalanuvchilar Statistikasi:</b>\n` +
+      `• 👥 Jami foydalanuvchilar: <b>${stats.total_users}</b>\n` +
+      `• ⚡ Faol (Active): ${stats.active_users}\n` +
+      `• 💤 Inaktiv: ${stats.inactive_users}\n` +
+      `• ⭐ Premium: ${stats.premium_users}\n` +
+      `• 🆕 Bugun qo'shilgan: ${stats.new_users_today}\n` +
+      `• 🚫 Banned: ${stats.banned_users}\n` +
+      `• 🔇 Muted: ${stats.muted_users}\n\n` +
+      `Boshqarish uchun bo'limni tanlang:`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "👥 Barchasi", callback_data: "admin:usr:filter:ALL" },
+          { text: "⭐ Premium", callback_data: "admin:usr:filter:PREMIUM" }
+        ],
+        [
+          { text: "🚫 Banned", callback_data: "admin:usr:filter:BANNED" },
+          { text: "🔇 Muted", callback_data: "admin:usr:filter:MUTED" }
+        ],
+        [
+          { text: "🔍 Qidirish", callback_data: "admin:usr:search_input" },
+          { text: "📥 Export CSV", callback_data: "admin:usr:export_csv" }
+        ],
+        [
+          { text: "⬅️ Back to Panel", callback_data: "admin:main" }
+        ]
+      ]
+    };
+
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    } else {
+      await ctx.replyWithHTML(text, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("renderUserManagementMenu error:", err);
+    await ctx.reply("❌ User Management menyusini yuklashda xatolik");
   }
 }
 
@@ -633,11 +691,14 @@ async function renderPaymentsMenu(ctx: any) {
     }
 
     keyboard.inline_keyboard.push([
-      { text: "🔍 Payment Qidirish", callback_data: "admin:pay:search_input" },
-      { text: "📊 Analytics", callback_data: "admin:pay:analytics_view" }
+      { text: "📜 Payment History", callback_data: "admin:pay:history_view" },
+      { text: "🔍 Payment Qidirish", callback_data: "admin:pay:search_input" }
     ]);
     keyboard.inline_keyboard.push([
-      { text: "📥 Export CSV", callback_data: "admin:pay:export_csv" },
+      { text: "📊 Analytics", callback_data: "admin:pay:analytics_view" },
+      { text: "📥 Export CSV", callback_data: "admin:pay:export_csv" }
+    ]);
+    keyboard.inline_keyboard.push([
       { text: "⬅️ Back to Panel", callback_data: "admin:main" }
     ]);
 
@@ -661,6 +722,43 @@ async function renderPaymentsMenu(ctx: any) {
 bot.action("admin:main", async (ctx) => {
   if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderMainPanel(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:pay:history_view", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  try {
+    const history = await getRecentPayments(25);
+    if (history.length === 0) {
+      await ctx.reply("📜 Hozircha to'lovlar tarixi mavjud emas.");
+    } else {
+      let msg = `📜 <b>Payment History (Oxirgi ${history.length} ta to'lov):</b>\n\n`;
+      const keyboard = { inline_keyboard: [] as any[] };
+
+      for (let i = 0; i < history.length; i++) {
+        const p = history[i];
+        const user = await getUser(p.telegram_id);
+        const firstName = user?.firstName || "Unknown";
+        const date = new Date(p.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+
+        msg += `${i + 1}. <b>${p.plan}</b> - ${p.amount.toLocaleString("uz-UZ")} UZS\n`;
+        msg += `👤 User: ${firstName} (<code>${p.telegram_id}</code>)\n`;
+        msg += `📊 Status: <b>${p.status}</b> | 📅 ${date}\n\n`;
+
+        if (p.proof_url) {
+          keyboard.inline_keyboard.push([
+            { text: `📸 View Proof #${i + 1}`, callback_data: `admin:pay:view:${p.id}` }
+          ]);
+        }
+      }
+
+      keyboard.inline_keyboard.push([{ text: "⬅️ Payments Menu ga qaytish", callback_data: "admin:payments" }]);
+      await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("Payment history error:", err);
+    await ctx.reply("❌ To'lovlar tarixini yuklashda xatolik.");
+  }
   await ctx.answerCbQuery();
 });
 
@@ -786,6 +884,15 @@ bot.action(/admin:bc:cancel:(.+)/, async (ctx) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 bot.action("user:supp:new", async (ctx) => {
+  const userId = ctx.from?.id;
+  if (userId) {
+    const profile = await getFullUserProfile(userId);
+    if (profile?.is_muted) {
+      await ctx.answerCbQuery("🔇 Hisobingiz vaqtincha cheklangan (Muted). Murojaat yarata olmaysiz.", { show_alert: true });
+      return;
+    }
+  }
+
   const text = `📁 <b>Murojaat kategoriyasini tanlang:</b>\n\n` +
     `Ehtiyojingizga mos bo'limni tanlang:`;
 
@@ -925,8 +1032,8 @@ bot.action(/admin:supp:list:(.+)/, async (ctx) => {
 
         keyboard.inline_keyboard.push([
           { text: `💬 Javob #${t.ticket_number}`, callback_data: `admin:supp:reply:${t.id}` },
-          { text: `⏳ Progress`, callback_data: `admin:supp:status:${t.id}:IN_PROGRESS` },
-          { text: `🔒 Close`, callback_data: `admin:supp:status:${t.id}:CLOSED` }
+          { text: `⏳ Progress`, callback_data: `ad:sp:st:${t.id}:IP` },
+          { text: `🔒 Close`, callback_data: `ad:sp:st:${t.id}:CL` }
         ]);
       }
 
@@ -954,10 +1061,19 @@ bot.action(/admin:supp:reply:(.+)/, async (ctx) => {
   await ctx.answerCbQuery();
 });
 
-bot.action(/admin:supp:status:(.+):(.+)/, async (ctx) => {
+bot.action(/ad:sp:st:(.+):(.+)/, async (ctx) => {
   if (!(await isAdmin(ctx.from?.id || 0))) return;
   const ticketId = ctx.match[1];
-  const status = ctx.match[2] as TicketStatus;
+  const shortCode = ctx.match[2];
+
+  const statusMap: Record<string, TicketStatus> = {
+    IP: "IN_PROGRESS",
+    CL: "CLOSED",
+    OP: "OPEN",
+    WU: "WAITING_USER",
+    RS: "RESOLVED",
+  };
+  const status = statusMap[shortCode] || (shortCode as TicketStatus);
 
   try {
     const updated = await updateTicketStatus(ticketId, status);
@@ -986,33 +1102,207 @@ bot.action("admin:supp:search_input", async (ctx) => {
   await ctx.answerCbQuery();
 });
 
-bot.action("admin:supp:stats_view", async (ctx) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// USER MANAGEMENT CALLBACKS
+// ─────────────────────────────────────────────────────────────────────────────
+
+bot.action("admin:users", async (ctx) => {
   if (!(await isAdmin(ctx.from?.id || 0))) return;
+  await renderUserManagementMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:filter:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const filter = ctx.match[1];
   try {
-    const stats = await getSupportStats();
-    let text = `📊 <b>Support Statistics & Analytics</b>\n\n`;
-    text += `🎫 <b>Jami ticketlar:</b> ${stats.total_tickets}\n`;
-    text += `📬 Open: ${stats.open}\n`;
-    text += `⏳ In Progress: ${stats.in_progress}\n`;
-    text += `⌛ Waiting User: ${stats.waiting_user}\n`;
-    text += `✅ Resolved: ${stats.resolved}\n`;
-    text += `🔒 Closed: ${stats.closed}\n\n`;
-    text += `⚡ <b>O'rtacha birinchi javob vaqti:</b> ${stats.avg_response_minutes} minut\n`;
-    text += `⏱ <b>O'rtacha hal etish vaqti:</b> ${stats.avg_resolution_hours} soat\n\n`;
+    const { users, total } = await getFilteredUsers(filter, 10, 0);
+    if (users.length === 0) {
+      await ctx.replyWithHTML(`📋 <b>${filter}</b> filtriga mos foydalanuvchilar topilmadi.`);
+    } else {
+      let msg = `👤 <b>Foydalanuvchilar Ro'yxati (${filter} - Total: ${total}):</b>\n\n`;
+      const keyboard = { inline_keyboard: [] as any[] };
 
-    text += `📁 <b>Kategoriyalar bo'yicha:</b>\n`;
-    Object.entries(stats.category_counts).forEach(([cat, count]) => {
-      const label = CATEGORY_LABELS[cat as TicketCategory] || cat;
-      text += `  • ${label}: ${count} ta\n`;
-    });
+      for (let i = 0; i < users.length; i++) {
+        const u = users[i];
+        const usernameStr = u.username ? `@${u.username}` : "—";
+        const banStr = u.is_banned ? "🚫 BANNED" : u.is_muted ? "🔇 MUTED" : "✅ ACTIVE";
 
-    const keyboard = {
-      inline_keyboard: [[{ text: "⬅️ Support Menu ga qaytish", callback_data: "admin:support" }]]
-    };
-    await ctx.replyWithHTML(text, { reply_markup: keyboard });
+        msg += `${i + 1}. <b>${u.first_name}</b> (${usernameStr})\n`;
+        msg += `🆔 ID: <code>${u.telegram_id}</code> | Plan: <b>${u.plan}</b> | ${banStr}\n\n`;
+
+        keyboard.inline_keyboard.push([
+          { text: `👤 Profile (#${i + 1})`, callback_data: `admin:usr:profile:${u.telegram_id}` }
+        ]);
+      }
+
+      keyboard.inline_keyboard.push([{ text: "⬅️ User Management Menu", callback_data: "admin:users" }]);
+      await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+    }
   } catch (err) {
     console.error(err);
-    await ctx.reply("❌ Statistics yuklashda xatolik");
+    await ctx.reply("❌ Ro'yxatni yuklashda xatolik.");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:profile:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const targetId = Number(ctx.match[1]);
+  try {
+    const p = await getFullUserProfile(targetId);
+    if (!p) {
+      await ctx.reply("❌ Foydalanuvchi topilmadi.");
+      await ctx.answerCbQuery();
+      return;
+    }
+
+    const notes = await getUserNotes(targetId);
+    const usernameStr = p.username ? `@${p.username}` : "yo'q";
+    const untilStr = p.premium_until ? new Date(p.premium_until).toLocaleDateString("uz-UZ") : "—";
+    const regStr = new Date(p.created_at).toLocaleDateString("uz-UZ");
+
+    let msg = `👤 <b>Foydalanuvchi Profili V2</b>\n\n` +
+      `🆔 <b>Telegram ID:</b> <code>${p.telegram_id}</code>\n` +
+      `👤 <b>Ism:</b> ${p.first_name} ${p.last_name || ""}\n` +
+      `📛 <b>Username:</b> ${usernameStr}\n` +
+      `🌐 <b>Til:</b> ${p.language}\n\n` +
+      `💎 <b>Plan:</b> ${p.plan}\n` +
+      `📅 <b>Premium muddati:</b> ${untilStr}\n` +
+      `🗓 <b>Ro'yxatdan o'tgan:</b> ${regStr}\n\n` +
+      `📊 <b>Statistika va Faollik:</b>\n` +
+      `• 📸 Scan: ${p.scan_used} | 📊 PPT: ${p.ppt_used} | 📄 PDF: ${p.pdf_used}\n` +
+      `• 🎫 Support Ticketlar: ${p.support_ticket_count} ta\n` +
+      `• 💰 To'lovlar: ${p.payments_count} ta\n` +
+      `• 📝 Admin Note lar: ${notes.length} ta\n\n` +
+      `STATUS: ${p.is_banned ? `🚫 BANNED (${p.ban_reason})` : p.is_muted ? `🔇 MUTED (${p.mute_reason})` : "✅ Clear"}`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "⭐ Premium berish (30 kun)", callback_data: `admin:usr:give_prem:${p.telegram_id}` },
+          { text: "❌ Premium olib tashlash", callback_data: `admin:usr:rem_prem:${p.telegram_id}` }
+        ],
+        [
+          p.is_banned
+            ? { text: "✅ Unban qilish", callback_data: `admin:usr:unban:${p.telegram_id}` }
+            : { text: "🚫 Ban qilish", callback_data: `admin:usr:ban:${p.telegram_id}` },
+          p.is_muted
+            ? { text: "🔊 Unmute qilish", callback_data: `admin:usr:unmute:${p.telegram_id}` }
+            : { text: "🔇 Mute qilish", callback_data: `admin:usr:mute:${p.telegram_id}` }
+        ],
+        [
+          { text: "📝 Note qo'shish", callback_data: `admin:usr:note:${p.telegram_id}` }
+        ],
+        [
+          { text: "⬅️ User Management Menu", callback_data: "admin:users" }
+        ]
+      ]
+    };
+
+    await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+  } catch (err) {
+    console.error(err);
+    await ctx.reply("❌ Profilni yuklashda xatolik.");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:give_prem:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const targetId = Number(ctx.match[1]);
+  try {
+    await managePremiumV2({
+      telegramId: targetId,
+      adminId: ctx.from!.id,
+      action: "GIVE",
+      plan: "STUDENT",
+      days: 30,
+    });
+    await ctx.replyWithHTML(`✅ <code>${targetId}</code> ga 30 kunlik <b>STUDENT</b> Premium berildi!`);
+  } catch (err: any) {
+    await ctx.reply(`❌ Xatolik: ${err.message}`);
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:rem_prem:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const targetId = Number(ctx.match[1]);
+  try {
+    await managePremiumV2({
+      telegramId: targetId,
+      adminId: ctx.from!.id,
+      action: "REMOVE",
+      plan: "FREE",
+    });
+    await ctx.replyWithHTML(`✅ <code>${targetId}</code> ning Premium statusi bekor qilindi (FREE).`);
+  } catch (err: any) {
+    await ctx.reply(`❌ Xatolik: ${err.message}`);
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:ban:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const targetId = Number(ctx.match[1]);
+  await setBotState(ctx.from!.id, `owner:waiting_for_ban_reason_${targetId}`);
+  await ctx.replyWithHTML(`🚫 <code>${targetId}</code> ni ban qilish uchun sababni kiriting:`);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:unban:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const targetId = Number(ctx.match[1]);
+  await unbanUserV2(targetId);
+  await ctx.replyWithHTML(`✅ <code>${targetId}</code> bandan chiqarildi.`);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:mute:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const targetId = Number(ctx.match[1]);
+  await setBotState(ctx.from!.id, `owner:waiting_for_mute_reason_${targetId}`);
+  await ctx.replyWithHTML(`🔇 <code>${targetId}</code> ni mute qilish uchun sababni kiriting:`);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:unmute:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const targetId = Number(ctx.match[1]);
+  await unmuteUserV2(targetId);
+  await ctx.replyWithHTML(`🔊 <code>${targetId}</code> unmuted qilindi.`);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:usr:note:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const targetId = Number(ctx.match[1]);
+  await setBotState(ctx.from!.id, `owner:waiting_for_user_note_${targetId}`);
+  await ctx.replyWithHTML(`📝 <code>${targetId}</code> uchun ichki admin note kiriting:`);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:usr:search_input", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  await setBotState(ctx.from!.id, "owner:waiting_for_user_search");
+  await ctx.reply("🔍 Foydalanuvchi qidirish uchun parametr kiriting:\n(Telegram ID, Username, Ism, Familiya yoki Plan)");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:usr:export_csv", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  try {
+    await ctx.reply("⏳ Users CSV fayli tayyorlanmoqda...");
+    const csvData = await exportUsersCSV();
+    const buffer = Buffer.from(csvData, "utf-8");
+    await ctx.replyWithDocument(
+      { source: buffer, filename: `users_export_${Date.now()}.csv` },
+      { caption: "📊 <b>Talaba AI — Foydalanuvchilar Ro'yxati (CSV)</b>", parse_mode: "HTML" }
+    );
+  } catch (err) {
+    console.error(err);
+    await ctx.reply("❌ Export CSV yuklashda xatolik.");
   }
   await ctx.answerCbQuery();
 });
@@ -1460,8 +1750,8 @@ bot.on("message", async (ctx, next) => {
           inline_keyboard: [
             [{ text: "💬 Javob berish", callback_data: `admin:supp:reply:${result.ticket.id}` }],
             [
-              { text: "⏳ In Progress", callback_data: `admin:supp:status:${result.ticket.id}:IN_PROGRESS` },
-              { text: "🔒 Close", callback_data: `admin:supp:status:${result.ticket.id}:CLOSED` }
+              { text: "⏳ In Progress", callback_data: `ad:sp:st:${result.ticket.id}:IP` },
+              { text: "🔒 Close", callback_data: `ad:sp:st:${result.ticket.id}:CL` }
             ]
           ]
         };
@@ -1619,11 +1909,93 @@ bot.on("message", async (ctx, next) => {
 
           keyboard.inline_keyboard.push([
             { text: `💬 Javob #${t.ticket_number}`, callback_data: `admin:supp:reply:${t.id}` },
-            { text: `🔒 Close`, callback_data: `admin:supp:status:${t.id}:CLOSED` }
+            { text: `🔒 Close`, callback_data: `ad:sp:st:${t.id}:CL` }
           ]);
         }
 
         keyboard.inline_keyboard.push([{ text: "⬅️ Support Menu", callback_data: "admin:support" }]);
+        await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+      }
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Qidiruvda xatolik.");
+    }
+    return;
+  }
+
+  // Admin User Ban Reason state
+  if (state.startsWith("owner:waiting_for_ban_reason_")) {
+    await deleteBotState(userId);
+    if (!(await isAdmin(userId))) return next();
+    const targetId = Number(state.replace("owner:waiting_for_ban_reason_", ""));
+
+    try {
+      await banUserV2(targetId, text.trim() || "Admin qarori bo'yicha");
+      await ctx.replyWithHTML(`🚫 <code>${targetId}</code> bloklandi.\n<b>Sabab:</b> ${text.trim() || "Ko'rsatilmadi"}`);
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Ban qilishda xatolik.");
+    }
+    return;
+  }
+
+  // Admin User Mute Reason state
+  if (state.startsWith("owner:waiting_for_mute_reason_")) {
+    await deleteBotState(userId);
+    if (!(await isAdmin(userId))) return next();
+    const targetId = Number(state.replace("owner:waiting_for_mute_reason_", ""));
+
+    try {
+      await muteUserV2(targetId, text.trim() || "Admin qarori bo'yicha");
+      await ctx.replyWithHTML(`🔇 <code>${targetId}</code> cheklandi (Muted).\n<b>Sabab:</b> ${text.trim() || "Ko'rsatilmadi"}`);
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Mute qilishda xatolik.");
+    }
+    return;
+  }
+
+  // Admin User Note state
+  if (state.startsWith("owner:waiting_for_user_note_")) {
+    await deleteBotState(userId);
+    if (!(await isAdmin(userId))) return next();
+    const targetId = Number(state.replace("owner:waiting_for_user_note_", ""));
+
+    try {
+      await addUserNote(targetId, userId, text.trim());
+      await ctx.replyWithHTML(`📝 <code>${targetId}</code> uchun ichki note saqlandi.`);
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Note saqlashda xatolik.");
+    }
+    return;
+  }
+
+  // Admin User Search state
+  if (state === "owner:waiting_for_user_search") {
+    await deleteBotState(userId);
+    if (!(await isAdmin(userId))) return next();
+
+    try {
+      const results = await searchUsersV2(text.trim());
+      if (results.length === 0) {
+        await ctx.replyWithHTML(`❌ Hech qanday foydalanuvchi topilmadi: "<code>${text.trim()}</code>"`);
+      } else {
+        let msg = `🔍 <b>Foydalanuvchi qidiruv natijalari (${results.length} ta):</b>\n\n`;
+        const keyboard = { inline_keyboard: [] as any[] };
+
+        for (let i = 0; i < Math.min(results.length, 10); i++) {
+          const u = results[i];
+          const usernameStr = u.username ? `@${u.username}` : "—";
+          msg += `${i + 1}. <b>${u.first_name}</b> (${usernameStr})\n`;
+          msg += `🆔 ID: <code>${u.telegram_id}</code> | Plan: <b>${u.plan}</b>\n\n`;
+
+          keyboard.inline_keyboard.push([
+            { text: `👤 Profile #${i + 1}`, callback_data: `admin:usr:profile:${u.telegram_id}` }
+          ]);
+        }
+
+        keyboard.inline_keyboard.push([{ text: "⬅️ User Management Menu", callback_data: "admin:users" }]);
         await ctx.replyWithHTML(msg, { reply_markup: keyboard });
       }
     } catch (err) {

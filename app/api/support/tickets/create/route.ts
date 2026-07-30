@@ -39,8 +39,8 @@ export async function POST(req: Request) {
         inline_keyboard: [
           [{ text: "💬 Javob berish", callback_data: `admin:supp:reply:${result.ticket.id}` }],
           [
-            { text: "⏳ In Progress", callback_data: `admin:supp:status:${result.ticket.id}:IN_PROGRESS` },
-            { text: "🔒 Yopish", callback_data: `admin:supp:status:${result.ticket.id}:CLOSED` }
+            { text: "⏳ In Progress", callback_data: `ad:sp:st:${result.ticket.id}:IP` },
+            { text: "🔒 Yopish", callback_data: `ad:sp:st:${result.ticket.id}:CL` }
           ]
         ]
       };
