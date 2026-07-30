@@ -8,7 +8,9 @@ import { getUser, createUser, getBotState, setBotState, deleteBotState } from "@
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://talaba-ai-chi.vercel.app";
 
-import { getPaymentsStats, getRecentPayments, getPaymentById, updatePaymentStatus } from "@/lib/payment";
+import { getPaymentsStats, getRecentPayments, getPaymentById, updatePaymentStatus, getInboxPayments, getPaymentAnalytics, exportPaymentsCSV, searchPayments } from "@/lib/payment";
+import { saveGroupChat, removeGroupChat, saveChannelChat, removeChannelChat, getBroadcastRecipients, createBroadcastRecord, getBroadcastHistory, getBroadcastById, executeBroadcast, retryFailedBroadcast, BroadcastTarget } from "@/lib/broadcast";
+import { createTicket, addMessageToTicket, getTicketById, getTicketByNumber, getUserTickets, getAdminTickets, getTicketMessages, updateTicketStatus, updateTicketPriority, searchTickets, getSupportStats, CATEGORY_LABELS, PRIORITY_LABELS, STATUS_LABELS, TicketCategory, TicketPriority, TicketStatus } from "@/lib/support";
 import { bot } from "@/lib/bot";
 import { getSupabase } from "@/lib/supabase";
 
@@ -151,40 +153,33 @@ pastdagi tugmani bosing 👇
 );
 
 // HELP
-bot.command(
-  "help",
-  async (ctx) => {
-    await ctx.replyWithHTML(
-      `🆘 <b>Talaba AI — Yordam Markazi</b>\n\n` +
-      `<b>Buyruqlar:</b>\n` +
-      `• <code>/start</code> — Botni ishga tushirish\n` +
-      `• <code>/talabaai</code> — Mini App\n` +
-      `• <code>/scan</code> — Bilet Scan\n` +
-      `• <code>/about</code> — Platforma haqida\n\n` +
-      `🛠 <b>Imkoniyatlar:</b>\n` +
-      `• 📄 <b>PDF Tools</b>\n` +
-      `• 📊 <b>AI Slayd</b>\n` +
-      `• 📸 <b>Bilet Scan</b>\n` +
-      `• 🤖 <b>AI Assistant</b>\n\n` +
-      `📞 <b>Qo'llab-quvvatlash (Support):</b>\n` +
-      `Telegram: @Narkabilov_S_07`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: "🚀 Platformani ochish",
-                web_app: {
-                  url: `${APP_URL}`,
-                },
-              },
-            ],
-          ],
-        },
-      }
-    );
+bot.command("help", async (ctx) => {
+  await renderUserSupportMenu(ctx);
+});
+
+// SUPPORT
+bot.command("support", async (ctx) => {
+  await renderUserSupportMenu(ctx);
+});
+
+async function renderUserSupportMenu(ctx: any) {
+  const text = `🆘 <b>Talaba AI — Yordam Markazi (Support Center V2)</b>\n\n` +
+    `Muammo yoki taklifingiz bormi? Murojaat yuborish uchun pastdagi tugmalardan birini tanlang:`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: "➕ Yangi Murojaat Yaratish", callback_data: "user:supp:new" }],
+      [{ text: "📋 Mening Murojaatlarim", callback_data: "user:supp:my_tickets" }],
+      [{ text: "🚀 Platformani ochish", web_app: { url: `${APP_URL}` } }]
+    ]
+  };
+
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+  } else {
+    await ctx.replyWithHTML(text, { reply_markup: keyboard });
   }
-);
+}
 
 // ABOUT
 bot.command(
@@ -305,6 +300,30 @@ pastdagi tugmani bosing 👇
   }
 );
 
+// CHAT MEMBER & GROUP/CHANNEL TRACKER
+bot.on("my_chat_member", async (ctx) => {
+  try {
+    const chat = ctx.chat;
+    const newStatus = ctx.myChatMember?.new_chat_member?.status;
+
+    if (chat.type === "group" || chat.type === "supergroup") {
+      if (newStatus === "member" || newStatus === "administrator") {
+        await saveGroupChat(chat.id, chat.title || "Group", chat.type);
+      } else if (newStatus === "left" || newStatus === "kicked") {
+        await removeGroupChat(chat.id);
+      }
+    } else if (chat.type === "channel") {
+      if (newStatus === "member" || newStatus === "administrator") {
+        await saveChannelChat(chat.id, chat.title || "Channel", chat.username);
+      } else if (newStatus === "left" || newStatus === "kicked") {
+        await removeChannelChat(chat.id);
+      }
+    }
+  } catch (err) {
+    console.error("my_chat_member tracking error:", err);
+  }
+});
+
 // PHOTO HANDLER
 bot.on(
   "photo",
@@ -388,6 +407,9 @@ async function renderMainPanel(ctx: any) {
         [
           { text: "👑 Premium Users", callback_data: "admin:premium:list" },
           { text: "💰 Payments", callback_data: "admin:payments" }
+        ],
+        [
+          { text: "🎫 Support Center", callback_data: "admin:support" }
         ]
       ]
     };
@@ -399,6 +421,50 @@ async function renderMainPanel(ctx: any) {
     }
   } catch (error) {
     console.error("renderMainPanel error:", error);
+  }
+}
+
+async function renderAdminSupportMenu(ctx: any) {
+  try {
+    const stats = await getSupportStats();
+    const text = `🎫 <b>Support Center V2 (Admin Panel)</b>\n\n` +
+      `📊 <b>Statistika:</b>\n` +
+      `• 📬 Open: ${stats.open}\n` +
+      `• ⏳ In Progress: ${stats.in_progress}\n` +
+      `• ⌛ Waiting User: ${stats.waiting_user}\n` +
+      `• ✅ Resolved: ${stats.resolved}\n` +
+      `• 🔒 Closed: ${stats.closed}\n` +
+      `• ⚡ O'rtacha javob vaqti: ${stats.avg_response_minutes} min\n\n` +
+      `Ko'rish uchun statusni tanlang:`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: `📬 Open (${stats.open})`, callback_data: "admin:supp:list:OPEN" },
+          { text: `⏳ In Progress (${stats.in_progress})`, callback_data: "admin:supp:list:IN_PROGRESS" }
+        ],
+        [
+          { text: `⌛ Waiting User (${stats.waiting_user})`, callback_data: "admin:supp:list:WAITING_USER" },
+          { text: `✅ Resolved (${stats.resolved})`, callback_data: "admin:supp:list:RESOLVED" }
+        ],
+        [
+          { text: `🔍 Qidirish`, callback_data: "admin:supp:search_input" },
+          { text: `📊 Full Stats`, callback_data: "admin:supp:stats_view" }
+        ],
+        [
+          { text: "⬅️ Back to Panel", callback_data: "admin:main" }
+        ]
+      ]
+    };
+
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    } else {
+      await ctx.replyWithHTML(text, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("renderAdminSupportMenu error:", err);
+    await ctx.reply("❌ Support menyusini yuklashda xatolik");
   }
 }
 
@@ -449,14 +515,38 @@ async function renderBanMenu(ctx: any) {
 }
 
 async function renderBroadcastMenu(ctx: any) {
-  const text = `📢 <b>Broadcast Center</b>\n\nSend messages to all users.`;
+  const text = `📢 <b>Broadcast Center V2</b>\n\n` +
+    `Xabarni kimlarga yubormoqchisiz? Maqsadli auditoriyani tanlang:\n\n` +
+    `👤 <b>Users</b> — Barcha foydalanuvchilar\n` +
+    `💎 <b>Premium Users</b> — Faqat Premium foydalanuvchilar\n` +
+    `👥 <b>Groups</b> — Bot qo'shilgan guruhlar\n` +
+    `📣 <b>Channels</b> — Bot qo'shilgan kanallar\n` +
+    `🌍 <b>Everyone</b> — Barcha manbalarga (Users + Groups + Channels)`;
+
   const keyboard = {
     inline_keyboard: [
-      [{ text: "💬 Start Broadcast", callback_data: "admin:broadcast:start" }],
-      [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+      [
+        { text: "👤 Users", callback_data: "admin:bc:target:USERS" },
+        { text: "💎 Premium", callback_data: "admin:bc:target:PREMIUM" }
+      ],
+      [
+        { text: "👥 Groups", callback_data: "admin:bc:target:GROUPS" },
+        { text: "📣 Channels", callback_data: "admin:bc:target:CHANNELS" }
+      ],
+      [
+        { text: "🌍 Everyone (Barchasi)", callback_data: "admin:bc:target:EVERYONE" }
+      ],
+      [
+        { text: "📋 Broadcast History & Retry", callback_data: "admin:bc:history" },
+        { text: "⬅️ Back to Panel", callback_data: "admin:main" }
+      ]
     ]
   };
-  await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+  if (ctx.callbackQuery) {
+    await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+  } else {
+    await ctx.replyWithHTML(text, { reply_markup: keyboard });
+  }
 }
 
 async function renderSearchMenu(ctx: any) {
@@ -499,65 +589,60 @@ async function renderStatsMenu(ctx: any) {
 async function renderPaymentsMenu(ctx: any) {
   try {
     const stats = await getPaymentsStats();
-    const recent = await getRecentPayments(20);
+    const inbox = await getInboxPayments(50);
 
-    let text = `💰 <b>Payments Dashboard</b>\n\n`;
+    let text = `💰 <b>Payment Inbox (Faqat ko'rib chiqilishi kerak bo'lganlar)</b>\n\n`;
     text += `📈 <b>Statistika:</b>\n`;
     text += `⏳ Pending: ${stats.pending}\n`;
+    text += `📸 Proof Uploaded: ${stats.proof_uploaded}\n`;
     text += `✅ Paid: ${stats.paid}\n`;
-    text += `❌ Failed: ${stats.failed}\n\n`;
-    
-    text += `📋 <b>Oxirgi 20 ta to'lov:</b>\n`;
+    text += `❌ Failed: ${stats.failed}\n`;
+    text += `⏰ Expired: ${stats.expired}\n`;
+    text += `💵 Total Revenue: ${stats.total_revenue.toLocaleString("uz-UZ")} UZS\n\n`;
+
+    text += `📥 <b>Inbox (${inbox.length} ta kutilayotgan to'lov):</b>\n\n`;
     const keyboard = {
       inline_keyboard: [] as any[]
     };
 
-    if (recent.length === 0) {
-      text += `<i>Hozircha to'lovlar yo'q.</i>\n`;
+    if (inbox.length === 0) {
+      text += `<i>Hozircha kutilayotgan to'lovlar yo'q. Allaqachon tasdiqlangan va rad etilganlar Inbox dan o'chiriladi.</i>\n`;
     } else {
-      for (let i = 0; i < recent.length; i++) {
-        const p = recent[i];
+      for (let i = 0; i < inbox.length; i++) {
+        const p = inbox[i];
         const date = new Date(p.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
         const user = await getUser(p.telegram_id);
         const firstName = user?.firstName || "Unknown";
         const username = user?.username ? `@${user.username}` : "yo'q";
         const proofDate = p.proof_uploaded_at ? new Date(p.proof_uploaded_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" }) : "yo'q";
 
-        let auditStr = "";
-        if (p.confirmed_at) {
-          const confDate = new Date(p.confirmed_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
-          auditStr += `\n📅 Tasdiqlangan vaqt: ${confDate}`;
-        }
-        if (p.confirmed_by) {
-          auditStr += `\n👤 Tasdiqladi (Admin ID): <code>${p.confirmed_by}</code>`;
-        }
-
-        text += `${i + 1}. <b>${p.plan}</b> - ${p.amount} UZS\n`;
+        text += `${i + 1}. <b>${p.plan}</b> - ${p.amount.toLocaleString("uz-UZ")} UZS\n`;
         text += `👤 Ism: ${firstName}\n📛 Username: ${username}\n🆔 Telegram ID: <code>${p.telegram_id}</code>\n`;
-        text += `📦 Tarif: ${p.plan}\n💵 Summa: ${p.amount} UZS\n`;
-        text += `📅 Payment yaratilgan vaqt: ${date}\n📸 Proof yuklangan vaqt: ${proofDate}\n📊 Status: <i>${p.status}</i>${auditStr}\n\n`;
+        text += `📦 Tarif: ${p.plan}\n💵 Summa: ${p.amount.toLocaleString("uz-UZ")} UZS\n`;
+        text += `📅 Yaratilgan: ${date}\n📸 Chek yuklangan: ${proofDate}\n📊 Status: <b>${p.status}</b>\n\n`;
 
         const row: any[] = [];
         if (p.proof_url) {
           row.push({ text: `📸 View Proof #${i + 1}`, callback_data: `admin:pay:view:${p.id}` });
         }
-        if (row.length > 0) {
-          keyboard.inline_keyboard.push(row);
-        }
-
-        if (p.status === "pending") {
-          keyboard.inline_keyboard.push([
-            { text: `✅ Confirm #${i + 1}`, callback_data: `admin:pay:confirm:${p.id}` },
-            { text: `❌ Reject #${i + 1}`, callback_data: `admin:pay:reject:${p.id}` }
-          ]);
-        }
+        row.push({ text: `✅ Confirm #${i + 1}`, callback_data: `admin:pay:confirm:${p.id}` });
+        row.push({ text: `❌ Reject #${i + 1}`, callback_data: `admin:pay:reject:${p.id}` });
+        
+        keyboard.inline_keyboard.push(row);
       }
     }
 
-    keyboard.inline_keyboard.push([{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]);
+    keyboard.inline_keyboard.push([
+      { text: "🔍 Payment Qidirish", callback_data: "admin:pay:search_input" },
+      { text: "📊 Analytics", callback_data: "admin:pay:analytics_view" }
+    ]);
+    keyboard.inline_keyboard.push([
+      { text: "📥 Export CSV", callback_data: "admin:pay:export_csv" },
+      { text: "⬅️ Back to Panel", callback_data: "admin:main" }
+    ]);
 
     const cbMessage = ctx.callbackQuery?.message as any;
-    if (cbMessage?.text && cbMessage.text.includes("Payments Dashboard")) {
+    if (cbMessage?.text && cbMessage.text.includes("Payment Inbox")) {
       await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
     } else {
       if (ctx.callbackQuery) {
@@ -591,6 +676,347 @@ bot.action("admin:broadcast", async (ctx) => {
   await ctx.answerCbQuery();
 });
 
+bot.action(/admin:bc:target:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const target = ctx.match[1] as BroadcastTarget;
+  await setBotState(ctx.from!.id, `owner:waiting_for_bc_${target}`);
+
+  const recipients = await getBroadcastRecipients(target);
+  await ctx.replyWithHTML(
+    `📢 <b>${target}</b> uchun xabar yuborish\n\n` +
+    `📊 <b>Target auditoriya soni:</b> ${recipients.length} ta recipient\n\n` +
+    `Iltimos, yubormoqchi bo'lgan xabaringizni kiriting (HTML formatini qo'llab-quvvatlaydi):`
+  );
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:bc:history", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  try {
+    const history = await getBroadcastHistory(15);
+    if (history.length === 0) {
+      await ctx.reply("📋 Hozircha Broadcast tarixi yo'q.");
+    } else {
+      let msg = `📋 <b>Broadcast History & Stats (${history.length} ta):</b>\n\n`;
+      const keyboard = { inline_keyboard: [] as any[] };
+
+      history.forEach((bc, idx) => {
+        const total = bc.total_recipients || 0;
+        const rate = total > 0 ? Math.round((bc.delivered_count / total) * 100) : 0;
+        const dateStr = bc.created_at ? new Date(bc.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" }) : "—";
+
+        msg += `${idx + 1}. 🎯 <b>Target:</b> ${bc.target_type} | 📊 <b>Status:</b> ${bc.status}\n`;
+        msg += `👥 Audience: ${total} | ✅ Success: ${bc.delivered_count} (${rate}%) | ❌ Failed: ${bc.failed_count}\n`;
+        msg += `📅 Vaqt: ${dateStr}\n\n`;
+
+        if (bc.failed_count > 0) {
+          keyboard.inline_keyboard.push([
+            { text: `🔄 Retry Failed #${idx + 1} (${bc.failed_count} ta)`, callback_data: `admin:bc:retry:${bc.id}` }
+          ]);
+        }
+      });
+
+      keyboard.inline_keyboard.push([{ text: "⬅️ Broadcast Menu ga qaytish", callback_data: "admin:broadcast" }]);
+      await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("Broadcast history error:", err);
+    await ctx.reply("❌ History yuklashda xatolik");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:bc:confirm:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const broadcastId = ctx.match[1];
+  try {
+    await ctx.reply("📢 Broadcast yuborilmoqda...");
+    const result = await executeBroadcast(broadcastId);
+    const total = result.total_recipients || 0;
+    const rate = total > 0 ? Math.round((result.delivered_count / total) * 100) : 0;
+
+    await ctx.replyWithHTML(
+      `📢 <b>Broadcast yakunlandi!</b>\n\n` +
+      `🎯 <b>Target:</b> ${result.target_type}\n` +
+      `👥 <b>Recipients:</b> ${result.total_recipients}\n` +
+      `✅ <b>Delivered:</b> ${result.delivered_count} (${rate}%)\n` +
+      `❌ <b>Failed:</b> ${result.failed_count}`,
+      {
+        reply_markup: result.failed_count > 0 ? {
+          inline_keyboard: [
+            [{ text: `🔄 Omadsizlarga qayta yuborish (${result.failed_count} ta)`, callback_data: `admin:bc:retry:${result.id}` }]
+          ]
+        } : undefined
+      }
+    );
+  } catch (err) {
+    console.error(err);
+    await ctx.reply("❌ Broadcast yuborishda xatolik yuz berdi.");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:bc:schedule:1h:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const broadcastId = ctx.match[1];
+  try {
+    const supabase = getSupabase();
+    const scheduledTime = new Date(Date.now() + 3600 * 1000).toISOString();
+    await supabase.from("broadcasts").update({ status: "scheduled", scheduled_at: scheduledTime }).eq("id", broadcastId);
+
+    await ctx.replyWithHTML(
+      `⏰ <b>Broadcast 1 soatdan keyinga rejalashtirildi!</b>\n\n` +
+      `📅 Rejalashtirilgan vaqt: ${new Date(scheduledTime).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" })}`
+    );
+  } catch (err) {
+    console.error(err);
+    await ctx.reply("❌ Rejalashtirishda xatolik.");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:bc:cancel:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  await ctx.reply("❌ Broadcast bekor qilindi.");
+  await ctx.answerCbQuery();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER SUPPORT CALLBACKS
+// ─────────────────────────────────────────────────────────────────────────────
+
+bot.action("user:supp:new", async (ctx) => {
+  const text = `📁 <b>Murojaat kategoriyasini tanlang:</b>\n\n` +
+    `Ehtiyojingizga mos bo'limni tanlang:`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "💳 Payment", callback_data: "user:supp:cat:PAYMENT" },
+        { text: "⭐ Premium", callback_data: "user:supp:cat:PREMIUM" }
+      ],
+      [
+        { text: "🤖 AI Problems", callback_data: "user:supp:cat:AI_PROBLEMS" },
+        { text: "⚙ Technical Problem", callback_data: "user:supp:cat:TECHNICAL" }
+      ],
+      [
+        { text: "🐞 Bug Report", callback_data: "user:supp:cat:BUG_REPORT" },
+        { text: "💡 Suggestion", callback_data: "user:supp:cat:SUGGESTION" }
+      ],
+      [
+        { text: "📦 Other", callback_data: "user:supp:cat:OTHER" }
+      ],
+      [
+        { text: "⬅️ Yordam menyusiga qaytish", callback_data: "user:supp:menu" }
+      ]
+    ]
+  };
+
+  await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+  await ctx.answerCbQuery();
+});
+
+bot.action("user:supp:menu", async (ctx) => {
+  await renderUserSupportMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/user:supp:cat:(.+)/, async (ctx) => {
+  const category = ctx.match[1] as TicketCategory;
+  await setBotState(ctx.from!.id, `user:waiting_for_supp_msg_${category}`);
+
+  const catLabel = CATEGORY_LABELS[category] || category;
+  await ctx.replyWithHTML(
+    `📁 Kategoriya: <b>${catLabel}</b>\n\n` +
+    `Iltimos, murojaatingiz matnini batafsil yozing.\n` +
+    `<i>(Rasm yoki hujjat biriktirmoqchi bo'lsangiz, uni rasm/fayl ko'rinishida yuborishingiz mumkin)</i>`
+  );
+  await ctx.answerCbQuery();
+});
+
+bot.action("user:supp:my_tickets", async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  try {
+    const tickets = await getUserTickets(userId);
+    if (tickets.length === 0) {
+      await ctx.replyWithHTML(`📋 Sizda hozircha murojaatlar yo'q.`);
+    } else {
+      let msg = `📋 <b>Sizning murojaatlaringiz (${tickets.length} ta):</b>\n\n`;
+      const keyboard = { inline_keyboard: [] as any[] };
+
+      for (let i = 0; i < Math.min(tickets.length, 10); i++) {
+        const t = tickets[i];
+        const catLabel = CATEGORY_LABELS[t.category] || t.category;
+        const statLabel = STATUS_LABELS[t.status] || t.status;
+        const dateStr = new Date(t.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+
+        msg += `${i + 1}. 🎫 <b>Ticket #${t.ticket_number}</b>\n`;
+        msg += `📁 Kategoriya: ${catLabel}\n`;
+        msg += `📊 Status: <b>${statLabel}</b> | 📅 ${dateStr}\n`;
+        msg += `💬 <b>Subject:</b> ${t.subject || "—"}\n\n`;
+
+        if (t.status !== "CLOSED") {
+          keyboard.inline_keyboard.push([
+            { text: `💬 Javob yozish (#${t.ticket_number})`, callback_data: `user:supp:reply:${t.id}` }
+          ]);
+        }
+      }
+
+      keyboard.inline_keyboard.push([{ text: "⬅️ Yordam menyusiga qaytish", callback_data: "user:supp:menu" }]);
+      await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("getUserTickets error:", err);
+    await ctx.reply("❌ Murojaatlarni yuklashda xatolik.");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/user:supp:reply:(.+)/, async (ctx) => {
+  const ticketId = ctx.match[1];
+  const ticket = await getTicketById(ticketId);
+  if (!ticket) {
+    await ctx.answerCbQuery("❌ Murojaat topilmadi", { show_alert: true });
+    return;
+  }
+
+  await setBotState(ctx.from!.id, `user:waiting_for_supp_reply_${ticketId}`);
+  await ctx.replyWithHTML(`💬 <b>Ticket #${ticket.ticket_number}</b> ga javobingizni kiriting:`);
+  await ctx.answerCbQuery();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN SUPPORT CALLBACKS
+// ─────────────────────────────────────────────────────────────────────────────
+
+bot.action("admin:support", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  await renderAdminSupportMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:supp:list:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const status = ctx.match[1] as TicketStatus;
+
+  try {
+    const tickets = await getAdminTickets(status);
+    if (tickets.length === 0) {
+      await ctx.replyWithHTML(`📋 <b>${status}</b> statusli murojaatlar yo'q.`);
+    } else {
+      let msg = `🎫 <b>Support Tickets (${status}):</b>\n\n`;
+      const keyboard = { inline_keyboard: [] as any[] };
+
+      for (let i = 0; i < Math.min(tickets.length, 10); i++) {
+        const t = tickets[i];
+        const user = await getUser(t.telegram_id);
+        const firstName = user?.firstName || "Unknown";
+        const catLabel = CATEGORY_LABELS[t.category] || t.category;
+        const prioLabel = PRIORITY_LABELS[t.priority] || t.priority;
+        const dateStr = new Date(t.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+
+        msg += `${i + 1}. 🎫 <b>Ticket #${t.ticket_number}</b>\n`;
+        msg += `👤 User: ${firstName} (<code>${t.telegram_id}</code>)\n`;
+        msg += `📁 Kategoriya: ${catLabel} | 🚩 Prioritet: ${prioLabel}\n`;
+        msg += `📅 Vaqt: ${dateStr}\n`;
+        msg += `💬 Subject: ${t.subject || "—"}\n\n`;
+
+        keyboard.inline_keyboard.push([
+          { text: `💬 Javob #${t.ticket_number}`, callback_data: `admin:supp:reply:${t.id}` },
+          { text: `⏳ Progress`, callback_data: `admin:supp:status:${t.id}:IN_PROGRESS` },
+          { text: `🔒 Close`, callback_data: `admin:supp:status:${t.id}:CLOSED` }
+        ]);
+      }
+
+      keyboard.inline_keyboard.push([{ text: "⬅️ Support Menu ga qaytish", callback_data: "admin:support" }]);
+      await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("Admin ticket list error:", err);
+    await ctx.reply("❌ Xatolik yuz berdi.");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:supp:reply:(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const ticketId = ctx.match[1];
+  const ticket = await getTicketById(ticketId);
+  if (!ticket) {
+    await ctx.answerCbQuery("❌ Ticket topilmadi", { show_alert: true });
+    return;
+  }
+
+  await setBotState(ctx.from!.id, `owner:waiting_for_supp_reply_${ticketId}`);
+  await ctx.replyWithHTML(`💬 <b>Ticket #${ticket.ticket_number}</b> uchun foydalanuvchiga yuboriladigan javobingizni kiriting:`);
+  await ctx.answerCbQuery();
+});
+
+bot.action(/admin:supp:status:(.+):(.+)/, async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  const ticketId = ctx.match[1];
+  const status = ctx.match[2] as TicketStatus;
+
+  try {
+    const updated = await updateTicketStatus(ticketId, status);
+    if (updated) {
+      await ctx.answerCbQuery(`✅ Status updated to ${status}`, { show_alert: true });
+      try {
+        await bot.telegram.sendMessage(
+          updated.telegram_id,
+          `ℹ️ <b>Murojaatingiz holati o'zgardi (#${updated.ticket_number})</b>\n\nYangi status: <b>${STATUS_LABELS[updated.status] || updated.status}</b>`,
+          { parse_mode: "HTML" }
+        );
+      } catch (notifyErr) {
+        console.error("User status change notify error:", notifyErr);
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    await ctx.answerCbQuery("❌ Statusni o'zgartirishda xatolik.");
+  }
+});
+
+bot.action("admin:supp:search_input", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  await setBotState(ctx.from!.id, "owner:waiting_for_supp_search");
+  await ctx.reply("🔍 Support Ticket qidirish uchun parametr kiriting:\n(Ticket #1001, Telegram ID, Username, Category, Priority yoki Status)");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:supp:stats_view", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  try {
+    const stats = await getSupportStats();
+    let text = `📊 <b>Support Statistics & Analytics</b>\n\n`;
+    text += `🎫 <b>Jami ticketlar:</b> ${stats.total_tickets}\n`;
+    text += `📬 Open: ${stats.open}\n`;
+    text += `⏳ In Progress: ${stats.in_progress}\n`;
+    text += `⌛ Waiting User: ${stats.waiting_user}\n`;
+    text += `✅ Resolved: ${stats.resolved}\n`;
+    text += `🔒 Closed: ${stats.closed}\n\n`;
+    text += `⚡ <b>O'rtacha birinchi javob vaqti:</b> ${stats.avg_response_minutes} minut\n`;
+    text += `⏱ <b>O'rtacha hal etish vaqti:</b> ${stats.avg_resolution_hours} soat\n\n`;
+
+    text += `📁 <b>Kategoriyalar bo'yicha:</b>\n`;
+    Object.entries(stats.category_counts).forEach(([cat, count]) => {
+      const label = CATEGORY_LABELS[cat as TicketCategory] || cat;
+      text += `  • ${label}: ${count} ta\n`;
+    });
+
+    const keyboard = {
+      inline_keyboard: [[{ text: "⬅️ Support Menu ga qaytish", callback_data: "admin:support" }]]
+    };
+    await ctx.replyWithHTML(text, { reply_markup: keyboard });
+  } catch (err) {
+    console.error(err);
+    await ctx.reply("❌ Statistics yuklashda xatolik");
+  }
+  await ctx.answerCbQuery();
+});
+
 bot.action("admin:admins", async (ctx) => {
   if (!isOwner(ctx.from?.id || 0)) return;
   await renderAdminsMenu(ctx);
@@ -621,6 +1047,59 @@ bot.action("admin:payments", async (ctx) => {
   await ctx.answerCbQuery();
 });
 
+bot.action("admin:pay:search_input", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  await setBotState(ctx.from!.id, "owner:waiting_for_pay_search");
+  await ctx.reply("🔍 Payment qidirish uchun parametr kiriting:\n(Telegram ID, Username, Full Name, Payment ID, Plan yoki Status)");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:pay:analytics_view", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  try {
+    const analytics = await getPaymentAnalytics();
+    let text = `📊 <b>Payment Analytics Dashboard</b>\n\n`;
+    text += `💰 <b>Jami tushum (Total Revenue):</b> ${analytics.total_revenue.toLocaleString("uz-UZ")} UZS\n`;
+    text += `📅 <b>Bugungi tushum:</b> ${analytics.today_revenue.toLocaleString("uz-UZ")} UZS\n`;
+    text += `🗓 <b>Shu haftalik tushum:</b> ${analytics.week_revenue.toLocaleString("uz-UZ")} UZS\n`;
+    text += `📆 <b>Shu oylik tushum:</b> ${analytics.month_revenue.toLocaleString("uz-UZ")} UZS\n\n`;
+
+    text += `📦 <b>Planlar bo'yicha sotuvlar:</b>\n`;
+    Object.entries(analytics.plan_counts).forEach(([plan, count]) => {
+      text += `  • ${plan}: ${count} ta\n`;
+    });
+
+    text += `\n📊 <b>Statuslar bo'yicha bo'linish:</b>\n`;
+    Object.entries(analytics.status_counts).forEach(([st, count]) => {
+      text += `  • ${st}: ${count} ta\n`;
+    });
+
+    const keyboard = {
+      inline_keyboard: [[{ text: "⬅️ Payments Inbox ga qaytish", callback_data: "admin:payments" }]]
+    };
+    await ctx.replyWithHTML(text, { reply_markup: keyboard });
+  } catch (err) {
+    console.error("Analytics error:", err);
+    await ctx.reply("❌ Analytics yuklashda xatolik yuz berdi");
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:pay:export_csv", async (ctx) => {
+  if (!(await isAdmin(ctx.from?.id || 0))) return;
+  try {
+    const csvContent = await exportPaymentsCSV();
+    const buffer = Buffer.from(csvContent, "utf-8");
+    await bot.telegram.sendDocument(ctx.from!.id, Input.fromBuffer(buffer, "payments_export.csv"), {
+      caption: "📥 Barcha to'lovlar CSV eksport fayli tayyor."
+    });
+  } catch (err) {
+    console.error("Export CSV error:", err);
+    await ctx.reply("❌ CSV eksport qilishda xatolik yuz berdi");
+  }
+  await ctx.answerCbQuery();
+});
+
 bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
   if (!(await isAdmin(ctx.from?.id || 0))) return;
   const paymentId = ctx.match[1];
@@ -632,7 +1111,7 @@ bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
       return;
     }
 
-    const updated = await updatePaymentStatus(paymentId, "paid", ctx.from.id);
+    const updated = await updatePaymentStatus(paymentId, "PAID", ctx.from.id);
     if (!updated) {
       await ctx.answerCbQuery("Bu to'lov allaqachon ko'rib chiqilgan", { show_alert: true });
       return;
@@ -642,7 +1121,7 @@ bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
     if (isValidPaidPlan(payment.plan)) {
       premiumUntil = await givePremium(payment.telegram_id, payment.plan);
     }
-    await ctx.answerCbQuery("✅ Payment confirmed", { show_alert: true });
+    await ctx.answerCbQuery("✅ Payment confirmed & activated!", { show_alert: true });
 
     // Notify user about successful activation
     try {
@@ -665,10 +1144,10 @@ bot.action(/admin:pay:confirm:(.+)/, async (ctx) => {
       console.error("User confirm notification error:", notifyErr);
     }
     
-    // Auto update the message text if it was a notification
+    // Auto update the message text or refresh Inbox
     const cbMsg = ctx.callbackQuery?.message as any;
-    if (cbMsg?.text && !cbMsg.text.includes("Payments Dashboard")) {
-       await ctx.editMessageText(cbMsg.text + "\n\n✅ <b>Tasdiqlandi</b>", { reply_markup: { inline_keyboard: [] }});
+    if (cbMsg?.text && !cbMsg.text.includes("Payment Inbox")) {
+       await ctx.editMessageText(cbMsg.text + "\n\n✅ <b>Tasdiqlandi (PAID)</b>", { reply_markup: { inline_keyboard: [] }});
     } else {
        await renderPaymentsMenu(ctx);
     }
@@ -689,7 +1168,7 @@ bot.action(/admin:pay:reject:(.+)/, async (ctx) => {
       return;
     }
 
-    const updated = await updatePaymentStatus(paymentId, "failed", ctx.from.id);
+    const updated = await updatePaymentStatus(paymentId, "FAILED", ctx.from.id);
     if (!updated) {
       await ctx.answerCbQuery("Bu to'lov allaqachon ko'rib chiqilgan", { show_alert: true });
       return;
@@ -709,8 +1188,8 @@ bot.action(/admin:pay:reject:(.+)/, async (ctx) => {
     }
     
     const cbMsg = ctx.callbackQuery?.message as any;
-    if (cbMsg?.text && !cbMsg.text.includes("Payments Dashboard")) {
-       await ctx.editMessageText(cbMsg.text + "\n\n❌ <b>Rad etildi</b>", { reply_markup: { inline_keyboard: [] }});
+    if (cbMsg?.text && !cbMsg.text.includes("Payment Inbox")) {
+       await ctx.editMessageText(cbMsg.text + "\n\n❌ <b>Rad etildi (FAILED)</b>", { reply_markup: { inline_keyboard: [] }});
     } else {
        await renderPaymentsMenu(ctx);
     }
@@ -913,18 +1392,249 @@ bot.action("admin:ban:list", async (ctx) => {
 
 bot.on("message", async (ctx, next) => {
   const userId = ctx.from?.id;
-  if (!userId || !(await isAdmin(userId))) {
-    return next();
-  }
+  if (!userId) return next();
 
   const state = await getBotState(userId);
-  if (!state || !state.startsWith("owner:")) {
+  if (!state) return next();
+
+  const msgObj = ctx.message as any;
+  const text = msgObj.text || msgObj.caption || "";
+  if (text.startsWith("/")) {
+    await deleteBotState(userId);
     return next();
   }
 
-  const text = (ctx.message as any).text || "";
-  if (text.startsWith("/")) {
+  // Extract attachment photo or document if provided
+  let fileId: string | undefined = undefined;
+  let fileType: string | undefined = undefined;
+
+  if (msgObj.photo && msgObj.photo.length > 0) {
+    fileId = msgObj.photo[msgObj.photo.length - 1].file_id;
+    fileType = "photo";
+  } else if (msgObj.document) {
+    fileId = msgObj.document.file_id;
+    fileType = "document";
+  }
+
+  // User Support Ticket Creation state
+  if (state.startsWith("user:waiting_for_supp_msg_")) {
     await deleteBotState(userId);
+    const category = state.replace("user:waiting_for_supp_msg_", "") as TicketCategory;
+    const msgText = text.trim() || (fileId ? "[Fayl biriktirildi]" : "Murojaat");
+
+    try {
+      const result = await createTicket({
+        telegram_id: userId,
+        category: category,
+        message_text: msgText,
+        telegram_file_id: fileId,
+        telegram_file_type: fileType,
+      });
+
+      await ctx.replyWithHTML(
+        `✅ <b>Murojaatingiz qabul qilindi (#${result.ticket.ticket_number})</b>\n\n` +
+        `Tez orada mutaxassislarimiz javob berishadi. Rahmat!`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "📋 Mening Murojaatlarim", callback_data: "user:supp:my_tickets" }]
+            ]
+          }
+        }
+      );
+
+      // Notify Owner / Admin
+      try {
+        const user = await getUser(userId);
+        const firstName = user?.firstName || ctx.from?.first_name || "Unknown";
+        const username = user?.username || ctx.from?.username ? `@${user?.username || ctx.from?.username}` : "yo'q";
+
+        const alertMsg = `🆘 <b>Yangi Murojaat (#${result.ticket.ticket_number})</b>\n\n` +
+          `👤 Ism: ${firstName}\n` +
+          `📛 Username: ${username}\n` +
+          `🆔 Telegram ID: <code>${userId}</code>\n\n` +
+          `📁 Kategoriya: <b>${result.ticket.category}</b>\n` +
+          `💬 <b>Xabar:</b>\n${msgText}`;
+
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: "💬 Javob berish", callback_data: `admin:supp:reply:${result.ticket.id}` }],
+            [
+              { text: "⏳ In Progress", callback_data: `admin:supp:status:${result.ticket.id}:IN_PROGRESS` },
+              { text: "🔒 Close", callback_data: `admin:supp:status:${result.ticket.id}:CLOSED` }
+            ]
+          ]
+        };
+
+        if (fileId) {
+          if (fileType === "photo") {
+            await bot.telegram.sendPhoto(6630030492, fileId, { caption: alertMsg, parse_mode: "HTML", reply_markup: keyboard });
+          } else {
+            await bot.telegram.sendDocument(6630030492, fileId, { caption: alertMsg, parse_mode: "HTML", reply_markup: keyboard });
+          }
+        } else {
+          await bot.telegram.sendMessage(6630030492, alertMsg, { parse_mode: "HTML", reply_markup: keyboard });
+        }
+      } catch (adminAlertErr) {
+        console.error("Admin support alert error:", adminAlertErr);
+      }
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Murojaat yaratishda xatolik yuz berdi.");
+    }
+    return;
+  }
+
+  // User Support Ticket Reply state
+  if (state.startsWith("user:waiting_for_supp_reply_")) {
+    await deleteBotState(userId);
+    const ticketId = state.replace("user:waiting_for_supp_reply_", "");
+    const msgText = text.trim() || (fileId ? "[Fayl biriktirildi]" : "Javob");
+
+    try {
+      const ticket = await getTicketById(ticketId);
+      if (!ticket) {
+        await ctx.reply("❌ Ticket topilmadi.");
+        return;
+      }
+
+      await addMessageToTicket({
+        ticket_id: ticketId,
+        sender_id: userId,
+        sender_type: "USER",
+        message_text: msgText,
+        telegram_file_id: fileId,
+        telegram_file_type: fileType,
+      });
+
+      await ctx.replyWithHTML(`✅ <b>Ticket #${ticket.ticket_number}</b> ga javobingiz yetkazildi.`);
+
+      // Notify Owner / Admin
+      try {
+        const alertMsg = `💬 <b>Foydalanuvchi javob yozdi (#${ticket.ticket_number})</b>\n\n` +
+          `👤 ID: <code>${userId}</code>\n` +
+          `💬 <b>Javob:</b>\n${msgText}`;
+
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: "💬 Javob berish", callback_data: `admin:supp:reply:${ticket.id}` }]
+          ]
+        };
+
+        if (fileId) {
+          if (fileType === "photo") {
+            await bot.telegram.sendPhoto(6630030492, fileId, { caption: alertMsg, parse_mode: "HTML", reply_markup: keyboard });
+          } else {
+            await bot.telegram.sendDocument(6630030492, fileId, { caption: alertMsg, parse_mode: "HTML", reply_markup: keyboard });
+          }
+        } else {
+          await bot.telegram.sendMessage(6630030492, alertMsg, { parse_mode: "HTML", reply_markup: keyboard });
+        }
+      } catch (adminNotifyErr) {
+        console.error("Admin notify error:", adminNotifyErr);
+      }
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Javob yuborishda xatolik.");
+    }
+    return;
+  }
+
+  // Admin Support Ticket Reply state
+  if (state.startsWith("owner:waiting_for_supp_reply_")) {
+    await deleteBotState(userId);
+    if (!(await isAdmin(userId))) return next();
+
+    const ticketId = state.replace("owner:waiting_for_supp_reply_", "");
+    const msgText = text.trim() || (fileId ? "[Fayl biriktirildi]" : "Admin javobi");
+
+    try {
+      const ticket = await getTicketById(ticketId);
+      if (!ticket) {
+        await ctx.reply("❌ Ticket topilmadi.");
+        return;
+      }
+
+      await addMessageToTicket({
+        ticket_id: ticketId,
+        sender_id: userId,
+        sender_type: "ADMIN",
+        message_text: msgText,
+        telegram_file_id: fileId,
+        telegram_file_type: fileType,
+      });
+
+      await ctx.replyWithHTML(`✅ <b>Ticket #${ticket.ticket_number}</b> uchun javobingiz foydalanuvchiga yuborildi.`);
+
+      // Notify User
+      try {
+        const userMsg = `💬 <b>Admin Javobi (#${ticket.ticket_number})</b>\n\n${msgText}`;
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: "✍️ Javob qaytarish", callback_data: `user:supp:reply:${ticket.id}` }]
+          ]
+        };
+
+        if (fileId) {
+          if (fileType === "photo") {
+            await bot.telegram.sendPhoto(ticket.telegram_id, fileId, { caption: userMsg, parse_mode: "HTML", reply_markup: keyboard });
+          } else {
+            await bot.telegram.sendDocument(ticket.telegram_id, fileId, { caption: userMsg, parse_mode: "HTML", reply_markup: keyboard });
+          }
+        } else {
+          await bot.telegram.sendMessage(ticket.telegram_id, userMsg, { parse_mode: "HTML", reply_markup: keyboard });
+        }
+      } catch (userNotifyErr) {
+        console.error("User notify error:", userNotifyErr);
+      }
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Admin javobini yuborishda xatolik.");
+    }
+    return;
+  }
+
+  // Admin Support Search state
+  if (state === "owner:waiting_for_supp_search") {
+    await deleteBotState(userId);
+    if (!(await isAdmin(userId))) return next();
+
+    try {
+      const results = await searchTickets(text.trim());
+      if (results.length === 0) {
+        await ctx.replyWithHTML(`❌ Hech qanday ticket topilmadi: "<code>${text.trim()}</code>"`);
+      } else {
+        let msg = `🔍 <b>Support qidiruv natijalari (${results.length} ta):</b>\n\n`;
+        const keyboard = { inline_keyboard: [] as any[] };
+
+        for (let i = 0; i < Math.min(results.length, 10); i++) {
+          const t = results[i];
+          const user = await getUser(t.telegram_id);
+          const firstName = user?.firstName || "Unknown";
+
+          msg += `${i + 1}. 🎫 <b>Ticket #${t.ticket_number}</b>\n`;
+          msg += `👤 User: ${firstName} (<code>${t.telegram_id}</code>)\n`;
+          msg += `📁 Kategoriya: ${CATEGORY_LABELS[t.category] || t.category}\n`;
+          msg += `📊 Status: <b>${STATUS_LABELS[t.status] || t.status}</b>\n\n`;
+
+          keyboard.inline_keyboard.push([
+            { text: `💬 Javob #${t.ticket_number}`, callback_data: `admin:supp:reply:${t.id}` },
+            { text: `🔒 Close`, callback_data: `admin:supp:status:${t.id}:CLOSED` }
+          ]);
+        }
+
+        keyboard.inline_keyboard.push([{ text: "⬅️ Support Menu", callback_data: "admin:support" }]);
+        await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+      }
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Qidiruvda xatolik.");
+    }
+    return;
+  }
+
+  // Check admin authorization for legacy admin state handlers below
+  if (!state.startsWith("owner:")) {
     return next();
   }
 
@@ -932,7 +1642,40 @@ bot.on("message", async (ctx, next) => {
   await deleteBotState(userId);
 
   try {
-    if (state === "owner:waiting_for_search") {
+    if (state === "owner:waiting_for_pay_search") {
+      const results = await searchPayments(text.trim());
+      if (results.length === 0) {
+        await ctx.replyWithHTML(`❌ Hech qanday to'lov topilmadi: "<code>${text.trim()}</code>"`);
+      } else {
+        let msg = `🔍 <b>To'lov qidiruvi natijalari (${results.length} ta):</b>\n\n`;
+        const keyboard = { inline_keyboard: [] as any[] };
+
+        for (let i = 0; i < Math.min(results.length, 10); i++) {
+          const p = results[i];
+          const user = await getUser(p.telegram_id);
+          const firstName = user?.firstName || "Unknown";
+          const date = new Date(p.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+
+          msg += `${i + 1}. <b>${p.plan}</b> - ${p.amount.toLocaleString("uz-UZ")} UZS\n`;
+          msg += `👤 Ism: ${firstName} (<code>${p.telegram_id}</code>)\n`;
+          msg += `🆔 Payment ID: <code>${p.id}</code>\n`;
+          msg += `📊 Status: <b>${p.status}</b> | 📅 ${date}\n\n`;
+
+          const row: any[] = [];
+          if (p.proof_url) {
+            row.push({ text: `📸 Proof #${i + 1}`, callback_data: `admin:pay:view:${p.id}` });
+          }
+          if (p.status === "PENDING" || p.status === "PROOF_UPLOADED") {
+            row.push({ text: `✅ Confirm #${i + 1}`, callback_data: `admin:pay:confirm:${p.id}` });
+            row.push({ text: `❌ Reject #${i + 1}`, callback_data: `admin:pay:reject:${p.id}` });
+          }
+          if (row.length > 0) keyboard.inline_keyboard.push(row);
+        }
+
+        keyboard.inline_keyboard.push([{ text: "⬅️ Payments Inbox", callback_data: "admin:payments" }]);
+        await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+      }
+    } else if (state === "owner:waiting_for_search") {
       const targetId = Number(text.trim());
       if (isNaN(targetId) || targetId <= 0) {
         await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
@@ -967,39 +1710,31 @@ bot.on("message", async (ctx, next) => {
           await ctx.replyWithHTML(message);
         }
       }
-    } else if (state === "owner:waiting_for_broadcast") {
+    } else if (state.startsWith("owner:waiting_for_bc_")) {
+      const targetType = state.replace("owner:waiting_for_bc_", "") as BroadcastTarget;
       if (!text || text.trim().length === 0) {
         await ctx.reply("❌ Xabar bo'sh bo'lishi mumkin emas.");
       } else {
-        const broadcastMsg = text.trim();
-        await ctx.reply("📢 Broadcast boshlanmoqda...");
+        const broadcast = await createBroadcastRecord({
+          sender_id: userId,
+          target_type: targetType,
+          message_text: text.trim(),
+        });
 
-        const userIds = await getAllUserIds();
-        let delivered = 0;
-        let failed = 0;
+        const previewHeader = `👁 <b>BROADCAST PREVIEW</b>\n` +
+          `🎯 Target: <b>${targetType}</b>\n` +
+          `👥 Recipients: <b>${broadcast.total_recipients} ta</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━\n\n`;
 
-        for (const uid of userIds) {
-          try {
-            await bot.telegram.sendMessage(uid, broadcastMsg);
-            delivered++;
-          } catch (err: any) {
-            failed++;
-            if (err?.code === 429 || err?.response?.error_code === 429 || err?.parameters?.retry_after) {
-              const retryAfter = (err?.parameters?.retry_after || 1) * 1000;
-              await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfter, 3000)));
-            }
-          }
-          // Throttle sending rate to ~20-25 messages/sec
-          await new Promise((resolve) => setTimeout(resolve, 40));
-        }
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: "🚀 Hozir yuborish", callback_data: `admin:bc:confirm:${broadcast.id}` }],
+            [{ text: "⏰ 1 soatdan keyin yuborish", callback_data: `admin:bc:schedule:1h:${broadcast.id}` }],
+            [{ text: "❌ Bekor qilish", callback_data: `admin:bc:cancel:${broadcast.id}` }]
+          ]
+        };
 
-        await ctx.replyWithHTML(
-          `📢 <b>Broadcast yakunlandi</b>\n\n` +
-          `✅ <b>Yetkazildi:</b> ${delivered}\n` +
-          `❌ <b>Yuborilmadi:</b> ${failed}\n` +
-          `👥 <b>Jami:</b> ${userIds.length}`
-        );
-        await deleteBotState(userId);
+        await ctx.replyWithHTML(previewHeader + text.trim(), { reply_markup: keyboard });
       }
     } else if (state === "owner:waiting_for_add_admin") {
       if (!isOwner(userId)) {

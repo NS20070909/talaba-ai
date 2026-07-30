@@ -2,10 +2,6 @@ import { NextResponse } from "next/server";
 import { createPayment } from "@/lib/payment";
 import { getSupabase } from "@/lib/supabase";
 
-// NOTE: Admin Telegram notification is intentionally NOT sent here.
-// It fires only in /api/payments/upload-proof, after the user submits proof of payment.
-// This prevents the duplicate-notification bug (admin receiving 2 messages per payment).
-
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -15,14 +11,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // Check for existing pending payment for the same user and plan
     const supabase = getSupabase();
     const { data: existing } = await supabase
       .from("payments")
       .select("*")
       .eq("telegram_id", Number(telegram_id))
       .eq("plan", plan)
-      .eq("status", "pending")
+      .in("status", ["PENDING", "pending"])
       .maybeSingle();
 
     if (existing) {
@@ -36,7 +31,7 @@ export async function POST(req: Request) {
       amount: Number(amount),
       provider: "manual",
       plan: plan,
-      status: "pending",
+      status: "PENDING",
       transaction_id: transaction_id,
     });
 

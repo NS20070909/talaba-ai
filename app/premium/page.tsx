@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { useDropzone } from "react-dropzone";
 
 export type PlanPeriod = "FREE" | "DAY" | "WEEK" | "MONTH" | "QUARTER" | "YEAR";
 
@@ -27,6 +26,9 @@ export interface PricingPlan {
   glowClass: string;
   scaleClass: string;
 }
+
+const CARD_NUMBER = "8600 0000 0000 0000";
+const CARD_HOLDER = "TALABA AI PLATFORMA";
 
 const PRICING_PLANS: PricingPlan[] = [
   {
@@ -147,76 +149,64 @@ const PRICING_PLANS: PricingPlan[] = [
   },
 ];
 
-
 export default function PremiumPage() {
   const [selectedPlan, setSelectedPlan] = useState<PlanPeriod>("MONTH");
   const [showUpgradeToast, setShowUpgradeToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [createdPaymentId, setCreatedPaymentId] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [modalStep, setModalStep] = useState<"CARD_INFO" | "UPLOAD_PROOF">("CARD_INFO");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const handlePurchase = async () => {
+  const activePlanDetails = PRICING_PLANS.find((plan) => plan.id === selectedPlan);
+
+  const openPurchaseModal = () => {
     const telegramIdStr = localStorage.getItem("telegram_user_id");
     if (!telegramIdStr) {
       alert("Foydalanuvchi identifikatori topilmadi. Iltimos, Telegram orqali qayta kiring.");
       return;
     }
-    const telegramId = parseInt(telegramIdStr, 10);
-    const activePlan = PRICING_PLANS.find((plan) => plan.id === selectedPlan);
-    if (!activePlan) return;
+    setModalStep("CARD_INFO");
+    setSelectedFile(null);
+    setShowModal(true);
+  };
 
-    try {
-      const res = await fetch("/api/payments/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          telegram_id: telegramId,
-          amount: activePlan.rawPrice,
-          plan: activePlan.id,
-        }),
-      });
-
-      if (!res.ok) throw new Error("To'lov so'rovi xatosi");
-
-      const data = await res.json();
-      if (data.success && data.payment?.id) {
-        setCreatedPaymentId(data.payment.id);
-        setShowUploadModal(true);
-      }
-    } catch (error) {
-      console.error(error);
-      alert("Xatolik yuz berdi. Qayta urinib ko'ring.");
-    }
+  const copyCardNumber = () => {
+    navigator.clipboard.writeText(CARD_NUMBER.replace(/\s+/g, ""));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
   };
 
   const handleUploadProof = async () => {
-    if (!createdPaymentId || !selectedFile) return;
+    const telegramIdStr = localStorage.getItem("telegram_user_id");
+    if (!telegramIdStr || !selectedFile || !activePlanDetails) return;
 
     setUploading(true);
     try {
       const formData = new FormData();
-      formData.append("payment_id", createdPaymentId);
+      formData.append("telegram_id", telegramIdStr);
+      formData.append("plan", activePlanDetails.id);
+      formData.append("amount", String(activePlanDetails.rawPrice));
       formData.append("image", selectedFile);
 
       const res = await fetch("/api/payments/upload-proof", { method: "POST", body: formData });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "Fayl yuklashda xatolik");
 
-      setShowUploadModal(false);
-      setToastMessage("✅ Chek yuborildi\n⏳ Admin tasdiqlashini kuting");
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Chek yuklashda xatolik yuz berdi");
+      }
+
+      setShowModal(false);
+      setToastMessage("✅ Chek yuborildi!\n⏳ Admin tasdiqlashini kuting");
       setShowUpgradeToast(true);
       setTimeout(() => setShowUpgradeToast(false), 5000);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Xatolik yuz berdi. Qayta urinib ko'ring.";
-      alert(message);
+    } catch (error: any) {
+      alert(error?.message || "Xatolik yuz berdi. Qayta urinib ko'ring.");
     } finally {
       setUploading(false);
     }
   };
-
-  const activePlanDetails = PRICING_PLANS.find((plan) => plan.id === selectedPlan);
 
   return (
     <>
@@ -248,7 +238,6 @@ export default function PremiumPage() {
               Kunlik cheklovlardan xalos bo'ling va ta'limda AI kuchidan to'liq foydalaning.
             </p>
           </div>
-
 
           <div className="space-y-4">
             {PRICING_PLANS.map((plan) => {
@@ -304,9 +293,6 @@ export default function PremiumPage() {
                       </div>
                     ))}
                   </div>
-                  <p className="text-[9px] text-slate-600 text-center mt-1.5">
-                    ✍️ AI Referat · 📋 Formatlash (kunlik)
-                  </p>
 
                   <ul className="mt-4 space-y-1.5 text-xs text-slate-300 border-t border-slate-800/40 pt-3">
                     {plan.features.map((feat, idx) => (
@@ -319,41 +305,6 @@ export default function PremiumPage() {
                 </div>
               );
             })}
-          </div>
-
-          <div className="mt-10 bg-[#101622]/60 rounded-3xl border border-slate-800 p-5 shadow-[0_0_20px_rgba(0,0,0,0.3)]">
-            <h3 className="text-base font-extrabold text-center mb-4 text-cyan-400 flex items-center justify-center gap-1.5">
-              <span>⚖️</span> FREE vs PREMIUM solishtirish
-            </h3>
-            <div className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-3 font-bold border-b border-slate-800 pb-2 text-slate-500">
-                <div>Imkoniyat</div>
-                <div className="text-center">FREE</div>
-                <div className="text-right text-purple-400">PREMIUM</div>
-              </div>
-
-              {[
-                ["📸 Bilet Scan",            "2 / kuniga",            "Ko'proq / Cheksiz"],
-                ["📊 AI Slayd (PPT)",        "2 / kuniga",            "Ko'proq / Cheksiz"],
-                ["📄 PDF Tools",              "2 / kuniga",            "Ko'proq / Cheksiz"],
-                ["✍️ AI Referat yozish",      "2 / kuniga (3–4 bet)",  "Ko'proq / Cheksiz"],
-                ["📎 DOCX yuklab olish",      "✅ Bor",                 "✅ Bor"],
-                ["📨 Telegramga yuborish",    "✅ Bor",                 "✅ Bor"],
-                ["📋 OTM Referat formatlash", "2 / kuniga",            "Ko'proq / Cheksiz"],
-                ["📏 Maksimal referat beti",  "4 bet",                 "8–30 bet / Cheksiz"],
-                ["⚡ Tezlik",                 "Oddiy",                 "Prioritetli tezkor"],
-                ["⭐ Premium nishon",          "Yo'q",                  "Bor ✅"],
-              ].map(([label, free, premium], i, arr) => (
-                <div
-                  key={label}
-                  className={`grid grid-cols-3 text-slate-300 ${i < arr.length - 1 ? "border-b border-slate-800/40 pb-2" : ""}`}
-                >
-                  <div>{label}</div>
-                  <div className="text-center text-slate-500">{free}</div>
-                  <div className="text-right font-extrabold text-purple-300">{premium}</div>
-                </div>
-              ))}
-            </div>
           </div>
 
           <div className="mt-8 border-t border-slate-800/80 pt-6 text-center space-y-4">
@@ -371,7 +322,7 @@ export default function PremiumPage() {
             </div>
 
             <button
-              onClick={handlePurchase}
+              onClick={openPurchaseModal}
               className="w-full py-4 rounded-[22px] font-extrabold text-slate-900 transition-all duration-200 active:scale-[0.98] bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-400 shadow-[0_4px_25px_rgba(6,182,212,0.35)]"
               style={{ fontSize: "16px" }}
             >
@@ -381,43 +332,105 @@ export default function PremiumPage() {
         </div>
       </main>
 
-      {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
           <div className="bg-[#101622] border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl relative">
-            <button onClick={() => setShowUploadModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+            <button onClick={() => setShowModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
               ✕
             </button>
-            <h3 className="text-xl font-bold mb-2 flex items-center gap-2">📸 To'lov chekini yuklang</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Premium tarifni faollashtirish uchun to'lov qilinganligini tasdiqlovchi chek rasmini yuklang.
-            </p>
-            <div className="mb-5">
-              <label className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-400 file:text-slate-900 hover:file:bg-cyan-300 file:cursor-pointer cursor-pointer border border-dashed border-slate-700 rounded-2xl p-4 text-center">
-                Fayl tanlash...
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files?.length) setSelectedFile(e.target.files[0]);
-                  }}
-                />
-              </label>
-              {selectedFile && (
-                <p className="text-xs text-emerald-400 mt-2 text-center">✅ {selectedFile.name} tanlandi</p>
-              )}
-            </div>
-            <button
-              onClick={handleUploadProof}
-              disabled={!selectedFile || uploading}
-              className={`w-full py-3 rounded-xl font-bold transition-all ${
-                !selectedFile || uploading
-                  ? "bg-slate-800 text-slate-500 cursor-not-allowed"
-                  : "bg-cyan-400 text-slate-900 hover:bg-cyan-300"
-              }`}
-            >
-              {uploading ? "⏳ Yuklanmoqda..." : "Yuborish"}
-            </button>
+
+            {modalStep === "CARD_INFO" && (
+              <div>
+                <h3 className="text-xl font-extrabold mb-1 text-slate-100 flex items-center gap-2">
+                  💳 To'lov rekvizitlari
+                </h3>
+                <p className="text-slate-400 text-xs mb-4">
+                  Pastdagi karta raqamiga to'lovni amalga oshiring va chekni yuklang.
+                </p>
+
+                {activePlanDetails && (
+                  <div className="bg-[#182232] border border-slate-700/60 rounded-2xl p-4 mb-4 text-sm">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-slate-400 text-xs">Tarif:</span>
+                      <span className="font-bold text-cyan-400">{activePlanDetails.name} ({activePlanDetails.durationText})</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-slate-400 text-xs">To'lov summasi:</span>
+                      <span className="font-extrabold text-lg text-emerald-400">{activePlanDetails.priceText}</span>
+                    </div>
+
+                    <div className="border-t border-slate-700/60 pt-3">
+                      <span className="text-slate-400 text-[10px] uppercase font-bold block mb-1">Karta raqami (Humo / Uzcard)</span>
+                      <div className="flex items-center justify-between bg-[#101622] px-3 py-2 rounded-xl border border-slate-700">
+                        <span className="font-mono font-black text-base text-amber-400 tracking-wider">{CARD_NUMBER}</span>
+                        <button
+                          onClick={copyCardNumber}
+                          className="px-2.5 py-1 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 rounded-lg text-xs font-bold transition-all active:scale-95"
+                        >
+                          {copied ? "✓ Nusxalandi" : "📋 Nusxalash"}
+                        </button>
+                      </div>
+                      <span className="text-slate-500 text-[10px] block mt-1">Qabul qiluvchi: {CARD_HOLDER}</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setModalStep("UPLOAD_PROOF")}
+                  className="w-full py-3.5 rounded-2xl font-extrabold text-slate-900 bg-cyan-400 hover:bg-cyan-300 transition-all active:scale-95 text-sm shadow-lg shadow-cyan-400/20"
+                >
+                  💳 To'lov qildim (Chek yuklash)
+                </button>
+              </div>
+            )}
+
+            {modalStep === "UPLOAD_PROOF" && (
+              <div>
+                <button
+                  onClick={() => setModalStep("CARD_INFO")}
+                  className="text-xs text-cyan-400 font-bold mb-3 inline-block hover:underline"
+                >
+                  ← Rekvizitlarga qaytish
+                </button>
+                <h3 className="text-xl font-extrabold mb-1 text-slate-100 flex items-center gap-2">
+                  📸 To'lov chekini yuklang
+                </h3>
+                <p className="text-slate-400 text-xs mb-4">
+                  To'lov muvaffaqiyatli amalga oshirilganini tasdiqlovchi chek (skrinshot) rasmini tanlang.
+                </p>
+
+                <div className="mb-5">
+                  <label className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cyan-400 file:text-slate-900 hover:file:bg-cyan-300 file:cursor-pointer cursor-pointer border border-dashed border-slate-700 rounded-2xl p-5 text-center bg-[#182232]/40 hover:bg-[#182232]/80 transition-all">
+                    📁 Chek rasmini tanlang...
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.length) setSelectedFile(e.target.files[0]);
+                      }}
+                    />
+                  </label>
+                  {selectedFile && (
+                    <p className="text-xs text-emerald-400 mt-2.5 text-center font-bold">
+                      ✅ {selectedFile.name} tanlandi
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleUploadProof}
+                  disabled={!selectedFile || uploading}
+                  className={`w-full py-3.5 rounded-2xl font-extrabold transition-all text-sm shadow-lg ${
+                    !selectedFile || uploading
+                      ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                      : "bg-gradient-to-r from-emerald-400 to-cyan-400 text-slate-900 hover:opacity-90 active:scale-95 shadow-emerald-400/20"
+                  }`}
+                >
+                  {uploading ? "⏳ Chek yuklanmoqda..." : "🚀 Chekni yuborish"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -448,3 +461,4 @@ export default function PremiumPage() {
     </>
   );
 }
+

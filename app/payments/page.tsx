@@ -76,23 +76,39 @@ export default function PaymentsPage() {
     return amount.toLocaleString("uz-UZ") + " so'm";
   };
 
-  const getStatusBadge = (status: Payment["status"]) => {
-    switch (status) {
-      case "paid":
+  const getStatusBadge = (status: string) => {
+    const st = (status || "").toUpperCase();
+    switch (st) {
+      case "PAID":
         return {
           badgeClass: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
-          statusText: "🟢 paid",
+          statusText: "🟢 PAID",
         };
-      case "failed":
+      case "PROOF_UPLOADED":
+        return {
+          badgeClass: "bg-sky-500/10 border-sky-500/20 text-sky-400",
+          statusText: "📸 PROOF UPLOADED",
+        };
+      case "FAILED":
         return {
           badgeClass: "bg-rose-500/10 border-rose-500/20 text-rose-400",
-          statusText: "🔴 failed",
+          statusText: "🔴 FAILED",
         };
-      case "pending":
+      case "EXPIRED":
+        return {
+          badgeClass: "bg-slate-500/10 border-slate-500/20 text-slate-400",
+          statusText: "⏰ EXPIRED",
+        };
+      case "ARCHIVED":
+        return {
+          badgeClass: "bg-purple-500/10 border-purple-500/20 text-purple-400",
+          statusText: "📦 ARCHIVED",
+        };
+      case "PENDING":
       default:
         return {
           badgeClass: "bg-amber-500/10 border-amber-500/20 text-amber-400",
-          statusText: "🟡 pending",
+          statusText: "🟡 PENDING",
         };
     }
   };
