@@ -12,6 +12,9 @@ import { getPaymentsStats, getRecentPayments, getPaymentById, updatePaymentStatu
 import { saveGroupChat, removeGroupChat, saveChannelChat, removeChannelChat, getBroadcastRecipients, createBroadcastRecord, getBroadcastHistory, getBroadcastById, executeBroadcast, retryFailedBroadcast, BroadcastTarget } from "@/lib/broadcast";
 import { createTicket, addMessageToTicket, getTicketById, getTicketByNumber, getUserTickets, getAdminTickets, getTicketMessages, updateTicketStatus, updateTicketPriority, searchTickets, getSupportStats, CATEGORY_LABELS, PRIORITY_LABELS, STATUS_LABELS, TicketCategory, TicketPriority, TicketStatus } from "@/lib/support";
 import { getFullUserProfile, getFilteredUsers, searchUsersV2, managePremiumV2, banUserV2, unbanUserV2, muteUserV2, unmuteUserV2, addUserNote, getUserNotes, getUserStatsV2, exportUsersCSV } from "@/lib/user-management";
+import { isAdminActive, hasPermission, getAllAdminsV2, addAdminV2, removeAdminV2, updateAdminStatus, getAdminProfile, AdminRole } from "@/lib/admin-management";
+import { getSystemSettings, updateSystemSetting } from "@/lib/settings";
+import { getAuditLogs, recordAuditLog } from "@/lib/audit-log";
 import { bot } from "@/lib/bot";
 import { getSupabase } from "@/lib/supabase";
 
@@ -377,12 +380,17 @@ bot.on(
   }
 );
 
-// OWNER ONLY /admin COMMAND
+// OWNER / ADMIN PANEL COMMAND
 bot.command("admin", async (ctx) => {
   const userId = ctx.from?.id;
   if (!userId) return;
 
   if (!(await isAdmin(userId))) return;
+
+  if (!(await isAdminActive(userId))) {
+    await ctx.reply("❌ Ruxsat berilmagan. Admin hisobingiz nofaol (DISABLED) holatda.");
+    return;
+  }
 
   await renderMainPanel(ctx);
 });
@@ -423,6 +431,10 @@ async function renderMainPanel(ctx: any) {
         [
           { text: "🎫 Support Center", callback_data: "admin:support" },
           { text: "👤 User Management V2", callback_data: "admin:users" }
+        ],
+        [
+          { text: "⚙️ Settings V2", callback_data: "admin:settings" },
+          { text: "📜 Audit Log V2", callback_data: "admin:audit" }
         ]
       ]
     };
@@ -528,18 +540,130 @@ async function renderAdminSupportMenu(ctx: any) {
 
 // SUBMENU RENDERERS
 async function renderAdminsMenu(ctx: any) {
-  const text = `👑 <b>Admin Management</b>\n\nManage bot administrators.`;
-  const keyboard = {
-    inline_keyboard: [
-      [
-        { text: "➕ Add Admin", callback_data: "admin:admins:add" },
-        { text: "➖ Remove Admin", callback_data: "admin:admins:remove" }
-      ],
-      [{ text: "📋 Admin List", callback_data: "admin:admins:list" }],
-      [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
-    ]
-  };
-  await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+  try {
+    const admins = await getAllAdminsV2();
+    let text = `👑 <b>Admin Management System V2</b>\n\n`;
+    text += `📊 <b>Jami Adminlar:</b> ${admins.length} ta\n\n`;
+
+    admins.forEach((a, idx) => {
+      const statusBadge = a.status === "ACTIVE" ? "🟢 ACTIVE" : "🔴 DISABLED";
+      const roleBadge = a.role === "OWNER" ? "👑 OWNER" : a.role === "ADMIN" ? "🛡 ADMIN" : "👤 MODERATOR";
+      const usernameStr = a.username ? `@${a.username}` : "yo'q";
+      const dateStr = new Date(a.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+
+      text += `${idx + 1}. <b>${a.name || "Admin"}</b> (${roleBadge} | ${statusBadge})\n`;
+      text += `🆔 ID: <code>${a.telegram_id}</code> | 📛 User: ${usernameStr}\n`;
+      text += `📅 Qo'shilgan: ${dateStr}\n\n`;
+    });
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "➕ Add Admin", callback_data: "admin:adm:add_input" },
+          { text: "🗑 Remove Admin", callback_data: "admin:adm:remove_input" }
+        ],
+        [
+          { text: "🔴 Disable Admin", callback_data: "admin:adm:disable_input" },
+          { text: "🟢 Enable Admin", callback_data: "admin:adm:enable_input" }
+        ],
+        [
+          { text: "⬅️ Back to Panel", callback_data: "admin:main" }
+        ]
+      ]
+    };
+
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    } else {
+      await ctx.replyWithHTML(text, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("renderAdminsMenu error:", err);
+    await ctx.reply("❌ Adminlar menyusini yuklashda xatolik.");
+  }
+}
+
+async function renderSettingsMenu(ctx: any) {
+  try {
+    const settings = await getSystemSettings();
+    let text = `⚙️ <b>Settings Management System V2</b>\n\n`;
+
+    text += `🤖 <b>Bot Sozlamalari:</b>\n`;
+    text += `• Bot nomi: ${settings.bot_name || "Talaba AI Bot"}\n`;
+    text += `• Bot username: @${settings.bot_username || "talaba_ai_bot"}\n`;
+    text += `• Support: @${settings.support_username || "Narkabilov_S_07"}\n`;
+    text += `• Texnik tanaffus (Maintenance): ${settings.maintenance_mode ? "🔴 YOQILGAN" : "🟢 O'CHIRILGAN"}\n\n`;
+
+    text += `💳 <b>To'lov Rekvizitlari:</b>\n`;
+    text += `• Karta egasi: ${settings.card_holder || "Sirojiddin Narkabilov"}\n`;
+    text += `• Karta raqami: <code>${settings.card_number || "8600 0000 0000 0000"}</code>\n\n`;
+
+    text += `🤖 <b>AI Model & Tizim:</b>\n`;
+    text += `• Model: ${settings.default_ai_model || "gemini-1.5-flash"}\n`;
+    text += `• Vaqt mintaqasi: ${settings.timezone || "Asia/Tashkent"}\n`;
+    text += `• Max fayl hajmi: ${settings.file_upload_limit_mb || 20} MB\n`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "💳 Karta Raqamini O'zgartirish", callback_data: "admin:sett:edit_card" },
+          { text: "🛠 Maintenance Toggle", callback_data: "admin:sett:toggle_maint" }
+        ],
+        [
+          { text: "🤖 AI Modelni O'zgartirish", callback_data: "admin:sett:edit_model" }
+        ],
+        [
+          { text: "⬅️ Back to Panel", callback_data: "admin:main" }
+        ]
+      ]
+    };
+
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    } else {
+      await ctx.replyWithHTML(text, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("renderSettingsMenu error:", err);
+    await ctx.reply("❌ Settings menyusini yuklashda xatolik.");
+  }
+}
+
+async function renderAuditLogMenu(ctx: any) {
+  try {
+    const { logs, total } = await getAuditLogs({ limit: 15 });
+    let text = `📜 <b>Audit Log V2 (Oxirgi ${logs.length} / ${total} ta harakat):</b>\n\n`;
+
+    if (logs.length === 0) {
+      text += `<i>Hozircha audit loglar yo'q.</i>\n`;
+    } else {
+      logs.forEach((l, idx) => {
+        const dateStr = new Date(l.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+        text += `${idx + 1}. ⚡ <b>${l.action}</b> by ${l.admin_name || `ID:${l.admin_id}`}\n`;
+        text += `🎯 Target: ${l.target || "—"} | 📅 ${dateStr}\n`;
+        text += `📝 ${l.description}\n\n`;
+      });
+    }
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "🔍 Audit Log Qidirish", callback_data: "admin:audit:search_input" },
+          { text: "📥 Export CSV", callback_data: "admin:audit:export_csv" }
+        ],
+        [{ text: "⬅️ Back to Panel", callback_data: "admin:main" }]
+      ]
+    };
+
+    if (ctx.callbackQuery) {
+      await ctx.editMessageText(text, { parse_mode: "HTML", reply_markup: keyboard });
+    } else {
+      await ctx.replyWithHTML(text, { reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error("renderAuditLogMenu error:", err);
+    await ctx.reply("❌ Audit Log menyusini yuklashda xatolik.");
+  }
 }
 
 async function renderPremiumMenu(ctx: any) {
@@ -766,6 +890,152 @@ bot.action("admin:search", async (ctx) => {
   if (!(await isAdmin(ctx.from?.id || 0))) return;
   await renderSearchMenu(ctx);
   await ctx.answerCbQuery();
+});
+
+bot.action("admin:admins", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!(await isAdmin(userId)) || !(await isAdminActive(userId))) return;
+  await renderAdminsMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:adm:add_input", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner admin qo'sha oladi!", { show_alert: true });
+    return;
+  }
+  await setBotState(userId, "owner:waiting_for_add_admin_id");
+  await ctx.replyWithHTML("➕ <b>Yangi Admin Qo'shish</b>\n\nIltimos, yangi adminning Telegram ID sini kiriting (masalan: <code>123456789</code>):");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:adm:remove_input", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner admin o'chira oladi!", { show_alert: true });
+    return;
+  }
+  await setBotState(userId, "owner:waiting_for_remove_admin_id");
+  await ctx.replyWithHTML("🗑 <b>Admin O'chirish</b>\n\nIltimos, o'chirilishi kerak bo'lgan adminning Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:adm:disable_input", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner admin holatini o'zgartira oladi!", { show_alert: true });
+    return;
+  }
+  await setBotState(userId, "owner:waiting_for_disable_admin_id");
+  await ctx.replyWithHTML("🔴 <b>Adminni Nofaol Qilish (Disable)</b>\n\nIltimos, nofaol qilinadigan adminning Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:adm:enable_input", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner admin holatini o'zgartira oladi!", { show_alert: true });
+    return;
+  }
+  await setBotState(userId, "owner:waiting_for_enable_admin_id");
+  await ctx.replyWithHTML("🟢 <b>Adminni Faollashtirish (Enable)</b>\n\nIltimos, faollashtiriladigan adminning Telegram ID sini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:settings", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner tizim sozlamalariga kirishi mumkin!", { show_alert: true });
+    return;
+  }
+  await renderSettingsMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:sett:toggle_maint", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner sozlamalarni o'zgartira oladi!", { show_alert: true });
+    return;
+  }
+  try {
+    const currentSettings = await getSystemSettings("bot");
+    const newStatus = !currentSettings.maintenance_mode;
+    await updateSystemSetting("maintenance_mode", newStatus, "bot", userId);
+    await recordAuditLog({
+      adminId: userId,
+      action: "SETTINGS_UPDATED",
+      target: "maintenance_mode",
+      description: `Maintenance mode toggled to ${newStatus}`,
+    });
+    await ctx.answerCbQuery(`✅ Maintenance mode: ${newStatus ? "YOQILDI" : "O'CHIRILDI"}`, { show_alert: true });
+    await renderSettingsMenu(ctx);
+  } catch (err) {
+    console.error("toggle_maint error:", err);
+    await ctx.answerCbQuery("❌ Xatolik yuz berdi.");
+  }
+});
+
+bot.action("admin:sett:edit_card", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner karta raqamini o'zgartirishi mumkin!", { show_alert: true });
+    return;
+  }
+  await setBotState(userId, "owner:waiting_for_edit_card");
+  await ctx.replyWithHTML("💳 <b>Karta Raqamini O'zgartirish</b>\n\nYangi karta raqamini kiriting (masalan: <code>8600 1234 5678 9012</code>):");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:sett:edit_model", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner AI modelni o'zgartirishi mumkin!", { show_alert: true });
+    return;
+  }
+  await setBotState(userId, "owner:waiting_for_edit_model");
+  await ctx.replyWithHTML("🤖 <b>AI Modelni O'zgartirish</b>\n\nYangi AI model nomini kiriting (masalan: <code>gemini-1.5-pro</code> yoki <code>gemini-1.5-flash</code>):");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:audit", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!(await hasPermission(userId, "audit_log"))) {
+    await ctx.answerCbQuery("❌ Audit Log ni ko'rish ruxsati yo'q!", { show_alert: true });
+    return;
+  }
+  await renderAuditLogMenu(ctx);
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:audit:search_input", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!(await hasPermission(userId, "audit_log"))) return;
+  await setBotState(userId, "owner:waiting_for_audit_search");
+  await ctx.reply("🔍 Audit Log dan qidirish uchun kalit so'z yoki action nomini kiriting:");
+  await ctx.answerCbQuery();
+});
+
+bot.action("admin:audit:export_csv", async (ctx) => {
+  const userId = ctx.from?.id || 0;
+  if (!isOwner(userId)) {
+    await ctx.answerCbQuery("❌ Faqat Owner audit loglarini eksport qila oladi!", { show_alert: true });
+    return;
+  }
+  try {
+    const { exportAuditLogsCSV } = await import("@/lib/audit-log");
+    const csv = await exportAuditLogsCSV();
+    const buffer = Buffer.from(csv, "utf-8");
+    await ctx.replyWithDocument(Input.fromBuffer(buffer, `audit_logs_${Date.now()}.csv`), {
+      caption: "📥 <b>Audit Log V2 Eksport Fayli (CSV)</b>",
+      parse_mode: "HTML",
+    });
+    await ctx.answerCbQuery();
+  } catch (err) {
+    console.error("Export audit CSV error:", err);
+    await ctx.reply("❌ Audit log eksportida xatolik.");
+  }
 });
 
 bot.action("admin:broadcast", async (ctx) => {
@@ -1955,6 +2225,162 @@ bot.on("message", async (ctx, next) => {
     return;
   }
 
+  // Admin Management V2 States
+  if (state === "owner:waiting_for_add_admin_id") {
+    await deleteBotState(userId);
+    if (!isOwner(userId)) return next();
+    const targetId = Number(text.trim());
+    if (isNaN(targetId) || targetId <= 0) {
+      await ctx.reply("❌ Noto'g'ri Telegram ID kiritildi.");
+      return;
+    }
+
+    try {
+      const user = await getUser(targetId);
+      const added = await addAdminV2({
+        telegramId: targetId,
+        name: user?.firstName || "Admin",
+        username: user?.username || undefined,
+        role: "ADMIN",
+        adminId: userId,
+      });
+      await ctx.replyWithHTML(`✅ <b>Yangi admin muvaffaqiyatli qo'shildi!</b>\n\n🆔 <b>ID:</b> <code>${added.telegram_id}</code>\n👤 <b>Ism:</b> ${added.name || "Admin"}\n🛡 <b>Role:</b> ADMIN\n🟢 <b>Status:</b> ACTIVE`);
+    } catch (err: any) {
+      console.error("Add admin text handler error:", err);
+      await ctx.reply(`❌ Admin qo'shishda xatolik: ${err.message}`);
+    }
+    return;
+  }
+
+  if (state === "owner:waiting_for_remove_admin_id") {
+    await deleteBotState(userId);
+    if (!isOwner(userId)) return next();
+    const targetId = Number(text.trim());
+    if (isNaN(targetId) || targetId <= 0) {
+      await ctx.reply("❌ Noto'g'ri Telegram ID kiritildi.");
+      return;
+    }
+
+    try {
+      await removeAdminV2(targetId, userId);
+      await ctx.replyWithHTML(`✅ Admin <code>${targetId}</code> ro'yxatdan o'chirildi.`);
+    } catch (err: any) {
+      console.error("Remove admin text handler error:", err);
+      await ctx.reply(`❌ Admin o'chirishda xatolik: ${err.message}`);
+    }
+    return;
+  }
+
+  if (state === "owner:waiting_for_disable_admin_id") {
+    await deleteBotState(userId);
+    if (!isOwner(userId)) return next();
+    const targetId = Number(text.trim());
+    if (isNaN(targetId) || targetId <= 0) {
+      await ctx.reply("❌ Noto'g'ri Telegram ID kiritildi.");
+      return;
+    }
+
+    try {
+      await updateAdminStatus(targetId, "DISABLED", userId);
+      await ctx.replyWithHTML(`🔴 Admin <code>${targetId}</code> nofaol holatga keltirildi (DISABLED).`);
+    } catch (err: any) {
+      console.error("Disable admin text handler error:", err);
+      await ctx.reply(`❌ Adminni nofaol qilishda xatolik: ${err.message}`);
+    }
+    return;
+  }
+
+  if (state === "owner:waiting_for_enable_admin_id") {
+    await deleteBotState(userId);
+    if (!isOwner(userId)) return next();
+    const targetId = Number(text.trim());
+    if (isNaN(targetId) || targetId <= 0) {
+      await ctx.reply("❌ Noto'g'ri Telegram ID kiritildi.");
+      return;
+    }
+
+    try {
+      await updateAdminStatus(targetId, "ACTIVE", userId);
+      await ctx.replyWithHTML(`🟢 Admin <code>${targetId}</code> faollashtirildi (ACTIVE).`);
+    } catch (err: any) {
+      console.error("Enable admin text handler error:", err);
+      await ctx.reply(`❌ Adminni faollashtirishda xatolik: ${err.message}`);
+    }
+    return;
+  }
+
+  // Settings V2 States
+  if (state === "owner:waiting_for_edit_card") {
+    await deleteBotState(userId);
+    if (!isOwner(userId)) return next();
+    const newCard = text.trim();
+    if (!newCard) {
+      await ctx.reply("❌ Karta raqami bo'sh bo'lishi mumkin emas.");
+      return;
+    }
+    try {
+      await updateSystemSetting("card_number", newCard, "payment", userId);
+      await recordAuditLog({
+        adminId: userId,
+        action: "SETTINGS_UPDATED",
+        target: "card_number",
+        description: `Updated payment card number to ${newCard}`,
+      });
+      await ctx.replyWithHTML(`✅ <b>Karta raqami muvaffaqiyatli yangilandi:</b> <code>${newCard}</code>`);
+    } catch (err: any) {
+      await ctx.reply(`❌ Karta raqamini saqlashda xatolik: ${err.message}`);
+    }
+    return;
+  }
+
+  if (state === "owner:waiting_for_edit_model") {
+    await deleteBotState(userId);
+    if (!isOwner(userId)) return next();
+    const newModel = text.trim();
+    if (!newModel) {
+      await ctx.reply("❌ Model nomi bo'sh bo'lishi mumkin emas.");
+      return;
+    }
+    try {
+      await updateSystemSetting("default_ai_model", newModel, "ai", userId);
+      await recordAuditLog({
+        adminId: userId,
+        action: "SETTINGS_UPDATED",
+        target: "default_ai_model",
+        description: `Updated default AI model to ${newModel}`,
+      });
+      await ctx.replyWithHTML(`✅ <b>Default AI Model yangilandi:</b> <code>${newModel}</code>`);
+    } catch (err: any) {
+      await ctx.reply(`❌ AI Model saqlashda xatolik: ${err.message}`);
+    }
+    return;
+  }
+
+  if (state === "owner:waiting_for_audit_search") {
+    await deleteBotState(userId);
+    if (!(await hasPermission(userId, "audit_log"))) return next();
+    const queryStr = text.trim();
+    try {
+      const { logs, total } = await getAuditLogs({ search: queryStr, limit: 15 });
+      if (logs.length === 0) {
+        await ctx.replyWithHTML(`📜 "<code>${queryStr}</code>" bo'yicha hech qanday audit log topilmadi.`);
+      } else {
+        let msg = `🔍 <b>Audit Log qidiruv natijalari (${logs.length} / ${total} ta):</b>\n\n`;
+        logs.forEach((l, idx) => {
+          const dateStr = new Date(l.created_at).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+          msg += `${idx + 1}. ⚡ <b>${l.action}</b> by ${l.admin_name || `ID:${l.admin_id}`}\n`;
+          msg += `🎯 Target: ${l.target || "—"} | 📅 ${dateStr}\n`;
+          msg += `📝 ${l.description}\n\n`;
+        });
+        const keyboard = { inline_keyboard: [[{ text: "⬅️ Audit Log ga qaytish", callback_data: "admin:audit" }]] };
+        await ctx.replyWithHTML(msg, { reply_markup: keyboard });
+      }
+    } catch (err) {
+      await ctx.reply("❌ Audit log qidiruvida xatolik.");
+    }
+    return;
+  }
+
   // Admin User Note state
   if (state.startsWith("owner:waiting_for_user_note_")) {
     await deleteBotState(userId);
@@ -2278,13 +2704,17 @@ bot.on("message", async (ctx, next) => {
 export async function POST(
   req: Request
 ) {
-  const body =
-    await req.json();
+  const body = await req.json();
+
+  const fromId = body?.message?.from?.id || body?.callback_query?.from?.id;
+  if (fromId) {
+    import("@/lib/admin-management").then(({ updateAdminLastActivity }) => {
+      updateAdminLastActivity(fromId, true).catch(() => {});
+    });
+  }
 
   try {
-    await bot.handleUpdate(
-      body
-    );
+    await bot.handleUpdate(body);
 
     return NextResponse.json({
       ok: true,

@@ -203,6 +203,19 @@ export async function updatePaymentStatus(
     console.error("updatePaymentStatus error:", error);
     throw error;
   }
+
+  if (confirmedBy) {
+    const actionName = status === "PAID" ? "PAYMENT_APPROVED" : status === "FAILED" ? "PAYMENT_REJECTED" : `PAYMENT_${status}`;
+    import("./audit-log").then(({ recordAuditLog }) => {
+      recordAuditLog({
+        adminId: confirmedBy,
+        action: actionName,
+        target: `payment:${id}`,
+        description: `Payment ${id} updated to status ${status}`,
+      }).catch(console.error);
+    });
+  }
+
   return !!(data && data.length > 0);
 }
 
