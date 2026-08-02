@@ -70,10 +70,25 @@ export async function extractTextFromFile(
     needsOcr = true;
     text = await performOcrOnImage(fileBuffer, mimeType || `image/${ext}`);
   }
-  // 5. PDF (Try text extraction or OCR via Gemini)
+  // 5. PDF (Try text extraction first, fallback to OCR ONLY if scanned/empty)
   else if (ext === "pdf" || mimeType === "application/pdf") {
-    needsOcr = true;
-    text = await performOcrOnPdf(fileBuffer);
+    const rawPdfString = fileBuffer.toString("utf-8");
+    // Filter printable Cyrillic & Latin characters
+    const extractedTextPdf = rawPdfString
+      .replace(/[^\x20-\x7E\s\u0400-\u04FF\t\n]/g, " ")
+      .split(/\n+/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 3)
+      .join("\n");
+
+    if (extractedTextPdf && extractedTextPdf.length > 200) {
+      text = extractedTextPdf;
+      needsOcr = false;
+      console.log(`[Quiz Upload Manager] Text PDF extracted cleanly (${text.length} chars). OCR skipped.`);
+    } else {
+      needsOcr = true;
+      text = await performOcrOnPdf(fileBuffer);
+    }
   }
   // Fallback
   else {

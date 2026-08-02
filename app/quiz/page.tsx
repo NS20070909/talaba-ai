@@ -331,7 +331,16 @@ export default function QuizPage() {
       showToast(`✅ ${result.questions.length} ta savol ajratib olindi!`);
     } catch (err: any) {
       if (err.name !== "AbortError") {
-        alert(err.message || "Xatolik yuz berdi");
+        const rawMsg = String(err?.message || err || "").toLowerCase();
+        let userMsg = "❌ Test faylini tahlil qilib bo'lmadi. Qayta urinib ko'ring.";
+        if (rawMsg.includes("limit") || rawMsg.includes("403")) {
+          userMsg = "⚠️ Kunlik Quiz limiti tugagan. Cheksiz ishlatish uchun Premium tarifiga o'ting!";
+        } else if (rawMsg.includes("empty") || rawMsg.includes("400")) {
+          userMsg = "📄 Fayl yoki matn bo'sh. Iltimos, boshqa fayl yuboring.";
+        } else if (rawMsg.includes("busy") || rawMsg.includes("429") || rawMsg.includes("503")) {
+          userMsg = "⚠️ AI xizmati vaqtincha band. Bir ozdan so'ng qayta urinib ko'ring.";
+        }
+        alert(userMsg);
       }
     } finally {
       setIsProcessing(false);
