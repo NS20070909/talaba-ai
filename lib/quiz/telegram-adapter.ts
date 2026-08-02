@@ -19,9 +19,15 @@ export async function sendQuizToTelegram(
 
   try {
     // 1. Send Quiz Header intro message
-    const headerText = `🧠 <b>TALABA AI — QUIZ TEST</b>\n\n📌 <b>Mavzu:</b> ${title}\n📊 <b>Savollar soni:</b> ${questions.length} ta\n⏱ <b>Vaqt:</b> ${
-      config?.timerSeconds ? `${config.timerSeconds} sek/savol` : "Cheklovsiz"
-    }\n\n👇 <i>Omad yor bo'lsin! Savollarga javob bering:</i>`;
+    const headerText =
+      `🧠 <b>TALABA AI — QUIZ TEST</b>\n\n` +
+      `📌 <b>Mavzu:</b> ${title}\n` +
+      `📊 <b>Savollar soni:</b> ${questions.length} ta\n` +
+      `⏱ <b>Vaqt:</b> ${config?.timerSeconds ? `${config.timerSeconds} sek/savol` : "Cheklovsiz"}\n` +
+      (config?.splitBatchSize && config.splitBatchSize > 0
+        ? `✂️ <b>Bo'linish:</b> Har ${config.splitBatchSize} tadan to'plam\n`
+        : "") +
+      `\n👇 <i>Omad yor bo'lsin! Savollarga javob bering:</i>`;
 
     const headerMsg = await bot.telegram.sendMessage(targetChatId, headerText, {
       parse_mode: "HTML",
@@ -30,16 +36,34 @@ export async function sendQuizToTelegram(
       sentMessageIds.push(headerMsg.message_id);
     }
 
-    // Determine if channel or requested anonymous
     const isChannel = typeof targetChatId === "string" && targetChatId.startsWith("@");
     const forceAnonymous = options?.isAnonymous ?? isChannel;
 
+    const batchSize = config?.splitBatchSize && config.splitBatchSize > 0 ? config.splitBatchSize : 0;
+    let currentBatchIndex = 0;
+
     // 2. Send each question as a native Telegram Quiz Poll
     for (let i = 0; i < questions.length; i++) {
+      // If batching is enabled, send batch divider headers
+      if (batchSize > 0 && i % batchSize === 0) {
+        currentBatchIndex++;
+        const totalBatches = Math.ceil(questions.length / batchSize);
+        const batchEnd = Math.min(questions.length, (currentBatchIndex) * batchSize);
+        const batchStart = (currentBatchIndex - 1) * batchSize + 1;
+
+        const dividerText = `📦 <b>Set ${currentBatchIndex}/${totalBatches}</b> (${batchStart}–${batchEnd}-savollar)`;
+        const divMsg = await bot.telegram.sendMessage(targetChatId, dividerText, {
+          parse_mode: "HTML",
+        });
+        if (divMsg?.message_id) {
+          sentMessageIds.push(divMsg.message_id);
+        }
+      }
+
       const q = questions[i];
 
       // Format Question text
-      let rawQText = `${i + 1}. ${q.text}`.trim();
+      let rawQText = `📄 Test ${i + 1}/${questions.length}\n\n${q.text}`.trim();
       if (rawQText.length > 300) {
         rawQText = rawQText.substring(0, 297) + "...";
       }
@@ -51,19 +75,16 @@ export async function sendQuizToTelegram(
         return txt || "Variant";
       });
 
-      // Ensure between 2 and 10 options
       if (optionsText.length < 2) {
         optionsText.push("Boshqa variant");
       }
       const safeOptions = optionsText.slice(0, 10);
 
-      // Find correct option index
       let correctIndex = q.options.findIndex((o) => o.isCorrect);
       if (correctIndex < 0 || correctIndex >= safeOptions.length) {
-        correctIndex = 0; // Default to first option if unspecified
+        correctIndex = 0;
       }
 
-      // Format Explanation
       let explanation = q.explanation ? q.explanation.trim() : undefined;
       if (explanation && explanation.length > 200) {
         explanation = explanation.substring(0, 197) + "...";
@@ -87,8 +108,7 @@ export async function sendQuizToTelegram(
           sentMessageIds.push(pollMsg.message_id);
         }
 
-        // Small delay to avoid Telegram rate limits
-        await new Promise((r) => setTimeout(r, 250));
+        await new Promise((r) => setTimeout(r, 200));
       } catch (pollErr) {
         console.error(`Failed to send Telegram poll for question ${i + 1}:`, pollErr);
       }

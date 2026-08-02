@@ -817,17 +817,35 @@ export default function QuizPage() {
                     </select>
                   </div>
 
-                  {config.selectionMode === "SMART_RANDOM" || config.selectionMode === "RANDOM" ? (
-                    <div>
-                      <label className="text-slate-400 font-bold block mb-1">Qancha savol tanlansin?</label>
-                      <input
-                        type="number"
-                        value={config.targetCount || 20}
-                        onChange={(e) => setConfig({ ...config, targetCount: Number(e.target.value) })}
-                        className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-bold"
-                      />
+                  <div>
+                    <label className="text-slate-400 font-bold block mb-1">Qancha savol tanlansin?</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {[5, 10, 15, 20, 25, 30, 40, 50, 100, questions.length]
+                        .filter((v, idx, self) => v <= questions.length && self.indexOf(v) === idx)
+                        .map((countVal) => (
+                          <button
+                            key={countVal}
+                            type="button"
+                            onClick={() => setConfig({ ...config, targetCount: countVal })}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                              (config.targetCount || questions.length) === countVal
+                                ? "bg-violet-600 text-white shadow-sm"
+                                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                            }`}
+                          >
+                            {countVal === questions.length ? `Hammasi (${countVal})` : `${countVal} ta`}
+                          </button>
+                        ))}
                     </div>
-                  ) : null}
+                    <input
+                      type="number"
+                      min={1}
+                      max={questions.length}
+                      value={config.targetCount || questions.length}
+                      onChange={(e) => setConfig({ ...config, targetCount: Math.min(questions.length, Math.max(1, Number(e.target.value))) })}
+                      className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-bold text-xs"
+                    />
+                  </div>
 
                   {/* Shuffling Switches */}
                   <div className="grid grid-cols-2 gap-3 border-t border-slate-800/80 pt-3">

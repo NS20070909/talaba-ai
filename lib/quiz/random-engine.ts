@@ -4,7 +4,6 @@ import { runQuizModelChain } from "./models";
 /**
  * Fisher-Yates shuffle array helper
  */
-
 export function shuffleArray<T>(array: T[]): T[] {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -20,6 +19,15 @@ export function shuffleQuestionOptions(question: QuizQuestion): QuizQuestion {
     ...question,
     options: shuffledOpts,
   };
+}
+
+export function splitQuizIntoBatches<T>(items: T[], batchSize: number): T[][] {
+  if (!batchSize || batchSize <= 0) return [items];
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    batches.push(items.slice(i, i + batchSize));
+  }
+  return batches;
 }
 
 export function buildQuizSelection(
@@ -44,52 +52,42 @@ export function buildQuizSelection(
   // 3. Simple Random
   if (config.selectionMode === "RANDOM") {
     selected = shuffleArray(selected);
-    if (config.targetCount && config.targetCount < selected.length) {
-      selected = selected.slice(0, config.targetCount);
-    }
   }
 
-  // 4. Shuffle Questions
+  // 4. Target Count Limit (Slice to requested targetCount if smaller than total)
+  if (config.targetCount && config.targetCount > 0 && config.targetCount < selected.length) {
+    selected = selected.slice(0, config.targetCount);
+  }
+
+  // 5. Shuffle Questions
   if (config.shuffleQuestions) {
     selected = shuffleArray(selected);
   }
 
-  // 5. Shuffle Options
+  // 6. Shuffle Options
   if (config.shuffleOptions) {
     selected = selected.map(shuffleQuestionOptions);
   }
 
-  // Update question numbers sequentially
-  return selected.map((q, idx) => ({
-    ...q,
-    number: idx + 1,
-  }));
+  return selected;
 }
 
 /**
- * Smart Random using Gemini AI to pick best balanced questions
+ * Smart Random AI Selection: picks the most diverse and high-quality subset of questions
  */
 export async function smartRandomSelect(
   questions: QuizQuestion[],
   targetCount: number
 ): Promise<QuizQuestion[]> {
-  if (questions.length <= targetCount) {
-    return questions;
-  }
+  if (questions.length <= targetCount) return questions;
 
   const prompt = `
-You are a Smart Quiz Balancer. From the list of ${questions.length} questions below, select EXACTLY ${targetCount} best quality questions.
+Task: Select exactly ${targetCount} best, non-duplicate, highly representative test questions from the list below.
+Return a JSON array of selected Question IDs only: ["q_1", "q_2", ...].
 
-REQUIREMENTS:
-1. Remove duplicates or near-duplicate questions.
-2. Balance topics evenly.
-3. Balance difficulty levels (easy, medium, hard).
-4. Avoid repetitive wording or trivial questions.
-5. Return ONLY a JSON array of the selected question IDs: ["q_1", "q_4", "q_7"...]
-
-QUESTIONS LIST:
+QUESTIONS:
 ${JSON.stringify(
-  questions.map((q) => ({ id: q.id, text: q.text })),
+  questions.map((q) => ({ id: q.id, question: q.text })),
   null,
   2
 )}
@@ -103,40 +101,14 @@ ${JSON.stringify(
     const cleanText = outputText.replace(/```json/gi, "").replace(/```/g, "").trim();
     const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
-      const selectedIds: string[] = JSON.parse(jsonMatch[0]);
-      const selectedSet = new Set(selectedIds);
-      const smartSelected = questions.filter((q) => selectedSet.has(q.id));
-      if (smartSelected.length >= Math.min(targetCount, 5)) {
-        return smartSelected.slice(0, targetCount);
-      }
+      const ids: string[] = JSON.parse(jsonMatch[0]);
+      const idSet = new Set(ids);
+      const selected = questions.filter((q) => idSet.has(q.id));
+      if (selected.length > 0) return selected;
     }
   } catch (err) {
-    console.error("smartRandomSelect error:", err);
+    console.error("smartRandomSelect error, falling back to random shuffle:", err);
   }
 
   return shuffleArray(questions).slice(0, targetCount);
-}
-
-/**
- * Quiz Splitter
- * Example: 130 questions with batch size 50 -> returns [50, 50, 30] batches
- */
-export function splitQuizIntoBatches(
-  questions: QuizQuestion[],
-  batchSize: number
-): QuizQuestion[][] {
-  if (!batchSize || batchSize <= 0 || batchSize >= questions.length) {
-    return [questions];
-  }
-
-  const batches: QuizQuestion[][] = [];
-  for (let i = 0; i < questions.length; i += batchSize) {
-    const batch = questions.slice(i, i + batchSize).map((q, idx) => ({
-      ...q,
-      number: idx + 1,
-    }));
-    batches.push(batch);
-  }
-
-  return batches;
 }

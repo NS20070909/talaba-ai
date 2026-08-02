@@ -1,6 +1,6 @@
 import { parseQuizWithRuleEngine } from "./rule-parser";
 import { parseQuizWithAi } from "./ai-parser";
-import { validateQuestions, generateTargetedAiExplanations } from "./validator";
+import { validateQuestions } from "./validator";
 import { ParsedQuizResult, QuizQuestion } from "./types";
 
 export async function parseQuizHybrid(
@@ -26,27 +26,30 @@ export async function parseQuizHybrid(
     };
   }
 
-  // Stage 1: Rule Engine / Regex Parser
+  console.log(`[Upload] File received: ${fileName || "Text input"} (${normalized.length} chars)`);
+
+  // Stage 1: Code-First Rule Engine / Regex Parser
   const ruleStartTime = Date.now();
   let questions: QuizQuestion[] = parseQuizWithRuleEngine(normalized);
   const ruleTime = Date.now() - ruleStartTime;
   let parserMethod: "RULE" | "REGEX" | "HYBRID_AI" | "OCR" = "RULE";
 
-  // Stage 2: Validate Rule-parsed result
+  console.log(`[Rule Parser] Executed in ${ruleTime}ms. Found ${questions.length} questions.`);
+
+  // Stage 2: Validation
   const valStartTime = Date.now();
   let { validatedQuestions, overallValidation } = validateQuestions(questions);
   const valTime = Date.now() - valStartTime;
 
-  // Stage 3: Check if AI parsing is strictly required
-  // Call Gemini ONLY IF < 2 valid questions OR > 35% flawed questions
-  const isPoorResult =
-    validatedQuestions.length < 2 ||
-    (validatedQuestions.length > 0 && overallValidation.flawedQuestions / validatedQuestions.length > 0.35);
+  console.log(`[Validation] Completed in ${valTime}ms. Valid: ${validatedQuestions.length}, Flawed: ${overallValidation.flawedQuestions}`);
 
+  // Stage 3: AI Parser ONLY if Rule Parser returned < 2 valid questions
+  const isPoorResult = validatedQuestions.length < 2;
   let aiTime = 0;
+
   if (isPoorResult) {
     const aiStartTime = Date.now();
-    console.warn(`[Quiz Hybrid Parser] Rule parser returned inadequate results (${validatedQuestions.length} valid). Invoking Gemini AI parser...`);
+    console.warn(`[Parser] Rule parser returned insufficient questions (${validatedQuestions.length}). Invoking Gemini AI parser...`);
     try {
       const aiQuestions = await parseQuizWithAi(normalized);
       if (aiQuestions.length >= validatedQuestions.length) {
@@ -57,29 +60,23 @@ export async function parseQuizHybrid(
         overallValidation = reVal.overallValidation;
       }
     } catch (err: any) {
-      console.error("[Quiz Hybrid Parser] Gemini AI parser fallback error:", err?.message || err);
+      console.error("[Parser] Gemini AI parser error:", err?.message || err);
     }
     aiTime = Date.now() - aiStartTime;
+    console.log(`[AI] Parser completed in ${aiTime}ms.`);
   } else {
-    console.log(`[Quiz Hybrid Parser] Rule/Regex parser succeeded (${validatedQuestions.length} valid questions). Gemini AI parser call skipped.`);
+    console.log(`[Parser] Rule Parser succeeded with ${validatedQuestions.length} questions. Gemini AI skipped completely (0 AI cost).`);
   }
-
-  // Stage 4: Generate targeted AI explanations ONLY for problematic questions (capped)
-  const expStartTime = Date.now();
-  if (validatedQuestions.length > 0 && validatedQuestions.length <= 50) {
-    validatedQuestions = await generateTargetedAiExplanations(validatedQuestions);
-  }
-  const expTime = Date.now() - expStartTime;
 
   const totalTime = Date.now() - totalStartTime;
 
   console.log(
-    `[Quiz Hybrid Parser Timings] Total: ${totalTime}ms | Rule Engine: ${ruleTime}ms | Validation: ${valTime}ms | Gemini AI Parser: ${aiTime}ms | AI Explanations: ${expTime}ms`
+    `[Quiz Pipeline] Total: ${totalTime}ms | Rule Parser: ${ruleTime}ms | Validation: ${valTime}ms | Gemini AI: ${aiTime}ms`
   );
 
   const defaultTitle = fileName
     ? fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ")
-    : "AI Generated Quiz";
+    : "Quiz Test";
 
   return {
     title: defaultTitle,

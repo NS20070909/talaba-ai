@@ -698,13 +698,14 @@ export async function handleQuizCallback(ctx: any) {
     await ctx.answerCbQuery(`⏱ Taymer: ${session.config.timerSeconds || "Cheksiz"}`);
   } else if (callbackData === "tg_quiz:toggle_count") {
     const total = session.questions.length;
-    const counts = [Math.min(10, total), Math.min(20, total), Math.min(30, total), Math.min(50, total), total].filter(
-      (v, idx, self) => self.indexOf(v) === idx
-    );
+    const presets = [5, 10, 15, 20, 25, 30, 40, 50, 100, total];
+    const counts = presets
+      .map((p) => Math.min(p, total))
+      .filter((v, idx, self) => v > 0 && self.indexOf(v) === idx);
     const currIdx = counts.indexOf(session.config.targetCount || total);
     const nextIdx = (currIdx + 1) % counts.length;
     session.config.targetCount = counts[nextIdx];
-    await ctx.answerCbQuery(`📊 Soni: ${session.config.targetCount}`);
+    await ctx.answerCbQuery(`📊 Savollar soni: ${session.config.targetCount}`);
   } else if (callbackData === "tg_quiz:toggle_sq") {
     session.config.shuffleQuestions = !session.config.shuffleQuestions;
     await ctx.answerCbQuery(`🔀 Savol Shuffle: ${session.config.shuffleQuestions ? "✅" : "❌"}`);

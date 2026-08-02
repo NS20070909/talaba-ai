@@ -11,19 +11,31 @@ export async function saveQuizHistory(
 ): Promise<QuizHistoryRecord | null> {
   try {
     const supabase = getSupabase();
-    const { data, error } = await supabase
+    const insertPayload: any = {
+      user_id: userId,
+      title: title || "Quiz",
+      source_file_name: sourceFileName || null,
+      question_count: questions.length,
+      settings: settings || {},
+      questions: questions || [],
+      telegram_message_ids: telegramMessageIds,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    let { data, error } = await supabase
       .from("quiz_history")
-      .insert({
-        user_id: userId,
-        title,
-        source_file_name: sourceFileName || null,
-        question_count: questions.length,
-        settings,
-        questions,
-        telegram_message_ids: telegramMessageIds,
-      })
+      .insert(insertPayload)
       .select("*")
       .single();
+
+    if (error && (error.code === "PGRST204" || String(error.message).includes("telegram_message_ids"))) {
+      delete insertPayload.telegram_message_ids;
+      delete insertPayload.source_file_name;
+      const retry = await supabase.from("quiz_history").insert(insertPayload).select("*").single();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error || !data) {
       console.error("saveQuizHistory DB error:", error);
@@ -38,7 +50,7 @@ export async function saveQuizHistory(
       questionCount: data.question_count,
       settings: data.settings,
       questions: data.questions,
-      telegramMessageIds: data.telegram_message_ids,
+      telegramMessageIds: data.telegram_message_ids || [],
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };
@@ -70,7 +82,7 @@ export async function getUserQuizHistory(userId: number): Promise<QuizHistoryRec
       questionCount: row.question_count,
       settings: row.settings,
       questions: row.questions,
-      telegramMessageIds: row.telegram_message_ids,
+      telegramMessageIds: row.telegram_message_ids || [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -100,7 +112,7 @@ export async function getQuizHistoryById(id: string, userId: number): Promise<Qu
       questionCount: data.question_count,
       settings: data.settings,
       questions: data.questions,
-      telegramMessageIds: data.telegram_message_ids,
+      telegramMessageIds: data.telegram_message_ids || [],
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };
