@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { QuizQuestion, QuizConfig } from "@/lib/quiz/types";
-import { sendQuizToTelegram } from "@/lib/quiz/telegram-adapter";
+import { sendQuizToTelegram, sendQuizCardToTelegram } from "@/lib/quiz/telegram-adapter";
 import { saveQuizHistory } from "@/lib/quiz/storage";
 import { canUseQuiz, incrementQuiz } from "@/lib/limit-checker";
 
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const sendResult = await sendQuizToTelegram(
+    const sendResult = await sendQuizCardToTelegram(
       telegramId,
       title || "TALABA AI Quiz",
       questions,
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
 
     if (!sendResult.success) {
       return NextResponse.json(
-        { success: false, error: sendResult.error || "Telegram-ga yuborishda xatolik" },
+        { success: false, error: sendResult.error || "Telegram-ga card yuborishda xatolik" },
         { status: 500 }
       );
     }
@@ -61,14 +61,14 @@ export async function POST(req: Request) {
       questions,
       config || { selectionMode: "ALL", shuffleQuestions: false, shuffleOptions: false, timerSeconds: 0 },
       sourceFileName,
-      sendResult.messageIds
+      sendResult.messageId ? [sendResult.messageId] : []
     );
 
     return NextResponse.json({
       success: true,
-      sentCount: sendResult.sentCount,
+      sentCount: questions.length,
       historyId: historyRecord?.id,
-      message: `✅ Telegram-ga ${sendResult.sentCount} ta savol muvaffaqiyatli yuborildi!`,
+      message: `✅ Telegram-ga ${questions.length} ta savoldan iborat Test Karta yuborildi!`,
     });
   } catch (error: any) {
     console.error("Quiz send-telegram API error:", error);

@@ -4,7 +4,7 @@ import { getBotState, setBotState, deleteBotState } from "../storage";
 import { extractTextFromFile } from "./upload-manager";
 import { parseQuizHybrid } from "./hybrid-parser";
 import { buildQuizSelection, smartRandomSelect } from "./random-engine";
-import { sendQuizToTelegram } from "./telegram-adapter";
+import { sendQuizToTelegram, sendQuizCardToTelegram, preparedQuizStore } from "./telegram-adapter";
 import { saveQuizHistory, getUserQuizHistory, getQuizHistoryById, deleteQuizHistoryRecord } from "./storage";
 import { QuizQuestion, QuizConfig } from "./types";
 import { getActiveUserSession, saveUserSession, clearUserSession } from "./session-manager";
@@ -502,6 +502,48 @@ export async function handleQuizCallback(ctx: any) {
     return;
   }
 
+  if (callbackData.startsWith("tg_quiz:start_poll_")) {
+    const quizId = callbackData.replace("tg_quiz:start_poll_", "");
+    const prepared = preparedQuizStore.get(quizId);
+
+    if (!prepared) {
+      await ctx.answerCbQuery("⚠️ Test karta topilmadi yoki eskirgan.", { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery("🚀 Test boshlandi!");
+    try {
+      await ctx.editMessageText(
+        `🚀 <b>"${prepared.title}" test savollari yuborilmoqda...</b>\n\n` +
+          `📊 Jami ${prepared.questions.length} ta savol.`,
+        { parse_mode: "HTML" }
+      );
+    } catch {}
+
+    const isChannel = typeof prepared.targetChatId === "string" && prepared.targetChatId.startsWith("@");
+    const sendResult = await sendQuizToTelegram(
+      prepared.targetChatId,
+      prepared.title,
+      prepared.questions,
+      prepared.config,
+      { isAnonymous: isChannel }
+    );
+
+    if (sendResult.success) {
+      await incrementQuiz(userId);
+      await saveQuizHistory(
+        userId,
+        prepared.title,
+        prepared.questions,
+        prepared.config || { selectionMode: "ALL", shuffleQuestions: false, shuffleOptions: false, timerSeconds: 0 },
+        undefined,
+        sendResult.messageIds
+      );
+      preparedQuizStore.delete(quizId);
+    }
+    return;
+  }
+
   if (callbackData === "tg_quiz:start_new") {
     await ctx.answerCbQuery();
     await handleTelegramQuizCommand(ctx);
@@ -723,7 +765,7 @@ export async function handleQuizCallback(ctx: any) {
     await ctx.answerCbQuery(`✂️ Split: ${session.config.splitBatchSize || "Off"}`);
   } else if (callbackData === "tg_quiz:generate") {
     session.state = "SENDING";
-    await ctx.answerCbQuery("🚀 Quiz yaratilmoqda va yuborilmoqda...");
+    await ctx.answerCbQuery("🚀 Test karta tayyorlanmoqda...");
 
     try {
       let targetQuestions = [...session.questions];
@@ -733,60 +775,27 @@ export async function handleQuizCallback(ctx: any) {
       }
 
       const builtQuestions = buildQuizSelection(targetQuestions, session.config);
-
       const recipientChatId = session.targetChatId || ctx.chat?.id || userId;
-      const isChannel = typeof recipientChatId === "string" && recipientChatId.startsWith("@");
 
-      const sendResult = await sendQuizToTelegram(
+      const cardResult = await sendQuizCardToTelegram(
         recipientChatId,
         session.title,
         builtQuestions,
-        session.config,
-        { isAnonymous: isChannel }
+        session.config
       );
 
-      if (sendResult.success) {
+      if (cardResult.success) {
         session.state = "FINISHED";
-        await incrementQuiz(userId);
-        await saveQuizHistory(
-          userId,
-          session.title,
-          builtQuestions,
-          session.config,
-          session.sourceFileName,
-          sendResult.messageIds
-        );
         await deleteBotState(userId);
         await clearUserSession(userId);
-
-        await ctx.replyWithHTML(
-          `✅ <b>Quiz Muvaffaqiyatli Yuborildi!</b>\n\n` +
-            `Jami ${sendResult.sentCount} ta test savoli <code>${recipientChatId}</code> chatiga yuborildi.`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: "📜 Tarix", callback_data: "tg_quiz:menu_history" },
-                  { text: "📊 Statistika", callback_data: "tg_quiz:menu_stats" },
-                ],
-                [
-                  { text: "🌐 Mini App'da ochish", web_app: { url: `${appUrl}/quiz?userId=${userId}` } },
-                ],
-                [
-                  { text: "🔁 Yangi Quiz Yaratish", callback_data: "tg_quiz:start_new" },
-                ],
-              ],
-            },
-          }
-        );
       } else {
         session.state = "SETTINGS";
-        await ctx.reply(`❌ Quizni yuborishda xatolik: ${sendResult.error || "Noma'lum xatolik"}`);
+        await ctx.reply(`❌ Test karta yuborishda xatolik: ${cardResult.error || "Noma'lum xatolik"}`);
       }
     } catch (err: any) {
       session.state = "SETTINGS";
       console.error("tg_quiz:generate error:", err);
-      await ctx.reply(`❌ Quiz yaratishda xatolik: ${err?.message || "Noma'lum xatolik"}`);
+      await ctx.reply(`❌ Test karta yaratishda xatolik: ${err?.message || "Noma'lum xatolik"}`);
     }
     return;
   }

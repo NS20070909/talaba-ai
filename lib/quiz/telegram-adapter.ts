@@ -8,6 +8,97 @@ export interface SendTelegramQuizResult {
   error?: string;
 }
 
+export interface PreparedQuiz {
+  id: string;
+  targetChatId: number | string;
+  title: string;
+  questions: QuizQuestion[];
+  config?: QuizConfig;
+  createdAt: number;
+}
+
+export const preparedQuizStore = new Map<string, PreparedQuiz>();
+
+export function storePreparedQuiz(
+  targetChatId: number | string,
+  title: string,
+  questions: QuizQuestion[],
+  config?: QuizConfig
+): string {
+  const id = `qz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  preparedQuizStore.set(id, {
+    id,
+    targetChatId,
+    title,
+    questions,
+    config,
+    createdAt: Date.now(),
+  });
+  return id;
+}
+
+/**
+ * Sends a single professional Test Card Message with "▶️ Testni boshlash" button
+ * instead of immediately blasting multiple poll messages.
+ */
+export async function sendQuizCardToTelegram(
+  targetChatId: number | string,
+  title: string,
+  questions: QuizQuestion[],
+  config?: QuizConfig
+): Promise<{ success: boolean; quizId: string; messageId?: number; error?: string }> {
+  try {
+    const quizId = storePreparedQuiz(targetChatId, title, questions, config);
+
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || "TalabaAI_Bot";
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
+      `https://t.me/${botUsername}`
+    )}&text=${encodeURIComponent(`🧠 ${title} quizi! Sinab ko'ring:`)}`;
+
+    const cardText =
+      `🧠 <b>TALABA AI TEST</b>\n\n` +
+      `📌 <b>Mavzu:</b>\n${title}\n\n` +
+      `📊 <b>Savollar:</b>\n${questions.length} ta\n\n` +
+      `⏱ <b>Vaqt:</b>\n${config?.timerSeconds ? `${config.timerSeconds} sek/savol` : "Cheklovsiz"}\n\n` +
+      `🔀 <b>Rejim:</b>\n${config?.selectionMode || "Standard"}\n` +
+      (config?.splitBatchSize && config.splitBatchSize > 0
+        ? `\n✂️ <b>Bo'linish:</b>\nHar ${config.splitBatchSize} tadan to'plam\n`
+        : "") +
+      `\n━━━━━━━━━━━━━━━\n` +
+      `👇 <i>Testni boshlash uchun quyidagi tugmani bosing:</i>`;
+
+    const cardMsg = await bot.telegram.sendMessage(targetChatId, cardText, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "▶️ Testni boshlash", callback_data: `tg_quiz:start_poll_${quizId}` }],
+          [
+            { text: "👥 Guruhda boshlash", url: shareUrl },
+            { text: "📤 Testni ulashish", url: shareUrl },
+          ],
+          [{ text: "📊 Statistikani ko'rish", callback_data: "tg_quiz:menu_stats" }],
+        ],
+      },
+    });
+
+    return {
+      success: true,
+      quizId,
+      messageId: cardMsg?.message_id,
+    };
+  } catch (err: any) {
+    console.error("sendQuizCardToTelegram error:", err);
+    return {
+      success: false,
+      quizId: "",
+      error: err?.message || "Test Card yuborishda xatolik",
+    };
+  }
+}
+
+/**
+ * Sends actual native Telegram Polls (batching & split supported)
+ */
 export async function sendQuizToTelegram(
   targetChatId: number | string,
   title: string,
@@ -18,37 +109,19 @@ export async function sendQuizToTelegram(
   const sentMessageIds: number[] = [];
 
   try {
-    // 1. Send Quiz Header intro message
-    const headerText =
-      `🧠 <b>TALABA AI — QUIZ TEST</b>\n\n` +
-      `📌 <b>Mavzu:</b> ${title}\n` +
-      `📊 <b>Savollar soni:</b> ${questions.length} ta\n` +
-      `⏱ <b>Vaqt:</b> ${config?.timerSeconds ? `${config.timerSeconds} sek/savol` : "Cheklovsiz"}\n` +
-      (config?.splitBatchSize && config.splitBatchSize > 0
-        ? `✂️ <b>Bo'linish:</b> Har ${config.splitBatchSize} tadan to'plam\n`
-        : "") +
-      `\n👇 <i>Omad yor bo'lsin! Savollarga javob bering:</i>`;
-
-    const headerMsg = await bot.telegram.sendMessage(targetChatId, headerText, {
-      parse_mode: "HTML",
-    });
-    if (headerMsg?.message_id) {
-      sentMessageIds.push(headerMsg.message_id);
-    }
-
     const isChannel = typeof targetChatId === "string" && targetChatId.startsWith("@");
     const forceAnonymous = options?.isAnonymous ?? isChannel;
 
     const batchSize = config?.splitBatchSize && config.splitBatchSize > 0 ? config.splitBatchSize : 0;
     let currentBatchIndex = 0;
 
-    // 2. Send each question as a native Telegram Quiz Poll
+    // Send each question as a native Telegram Quiz Poll
     for (let i = 0; i < questions.length; i++) {
       // If batching is enabled, send batch divider headers
       if (batchSize > 0 && i % batchSize === 0) {
         currentBatchIndex++;
         const totalBatches = Math.ceil(questions.length / batchSize);
-        const batchEnd = Math.min(questions.length, (currentBatchIndex) * batchSize);
+        const batchEnd = Math.min(questions.length, currentBatchIndex * batchSize);
         const batchStart = (currentBatchIndex - 1) * batchSize + 1;
 
         const dividerText = `📦 <b>Set ${currentBatchIndex}/${totalBatches}</b> (${batchStart}–${batchEnd}-savollar)`;
@@ -62,13 +135,11 @@ export async function sendQuizToTelegram(
 
       const q = questions[i];
 
-      // Format Question text
       let rawQText = `📄 Test ${i + 1}/${questions.length}\n\n${q.text}`.trim();
       if (rawQText.length > 300) {
         rawQText = rawQText.substring(0, 297) + "...";
       }
 
-      // Format Options
       const optionsText = q.options.map((o) => {
         let txt = o.text.trim();
         if (txt.length > 100) txt = txt.substring(0, 97) + "...";

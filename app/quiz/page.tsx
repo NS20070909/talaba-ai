@@ -766,12 +766,20 @@ export default function QuizPage() {
                   ))}
                 </div>
 
-                <button
-                  onClick={() => setBuilderStep("CONFIG")}
-                  className="w-full py-3.5 rounded-2xl font-extrabold text-slate-900 bg-violet-400 hover:bg-violet-300 transition text-sm"
-                >
-                  ⚙️ Test Sozlamalariga O'tish →
-                </button>
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    onClick={() => setBuilderStep("INPUT")}
+                    className="flex-1 py-3.5 rounded-2xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-xs"
+                  >
+                    ← Manbaga O'tish
+                  </button>
+                  <button
+                    onClick={() => setBuilderStep("CONFIG")}
+                    className="flex-1 py-3.5 rounded-2xl font-extrabold text-slate-900 bg-violet-400 hover:bg-violet-300 transition text-xs shadow-md"
+                  >
+                    ⚙️ Sozlamalarga O'tish →
+                  </button>
+                </div>
               </div>
             )}
 
@@ -905,12 +913,20 @@ export default function QuizPage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={handleApplyBuild}
-                  className="w-full py-4 rounded-2xl font-extrabold text-slate-900 bg-gradient-to-r from-emerald-400 to-cyan-400 hover:opacity-90 transition text-sm shadow-lg shadow-emerald-400/20"
-                >
-                  🚀 Quizni Shakllantirish va Preview →
-                </button>
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    onClick={() => setBuilderStep("EDIT")}
+                    className="flex-1 py-3.5 rounded-2xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-xs"
+                  >
+                    ← Tahrirlashga Qaytish
+                  </button>
+                  <button
+                    onClick={handleApplyBuild}
+                    className="flex-1 py-3.5 rounded-2xl font-extrabold text-slate-900 bg-gradient-to-r from-emerald-400 to-cyan-400 hover:opacity-90 transition text-xs shadow-lg shadow-emerald-400/20"
+                  >
+                    🚀 Shakllantirish va Preview →
+                  </button>
+                </div>
               </div>
             )}
 
