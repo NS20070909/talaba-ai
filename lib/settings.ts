@@ -12,14 +12,10 @@ export interface SettingRecord {
 
 // In-memory fallback cache in case Supabase schema cache hasn't refreshed or table is missing
 const inMemoryCache: Record<string, any> = {
-  card_holder: "Sirojiddin Narkabilov",
-  card_number: "8600 0000 0000 0000",
   maintenance_mode: false,
 };
 
 export const DEFAULT_SETTINGS: Record<string, { category: string; value: any }> = {
-  card_holder: { category: "payment", value: "Sirojiddin Narkabilov" },
-  card_number: { category: "payment", value: "8600 0000 0000 0000" },
   maintenance_mode: { category: "bot", value: false },
 };
 

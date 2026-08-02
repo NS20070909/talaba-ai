@@ -27,8 +27,6 @@ export interface PricingPlan {
   scaleClass: string;
 }
 
-const CARD_NUMBER = "8600 0000 0000 0000";
-const CARD_HOLDER = "TALABA AI PLATFORMA";
 
 const PRICING_PLANS: PricingPlan[] = [
   {
@@ -158,6 +156,29 @@ export default function PremiumPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [paymentSettings, setPaymentSettings] = useState<{ card_holder: string; card_number: string }>({
+    card_holder: "",
+    card_number: "",
+  });
+
+  const fetchPaymentSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/payments/settings", { cache: "no-store" });
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setPaymentSettings({
+          card_holder: data.settings.card_holder || "",
+          card_number: data.settings.card_number || "",
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch payment settings:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPaymentSettings();
+  }, [fetchPaymentSettings]);
 
   const activePlanDetails = PRICING_PLANS.find((plan) => plan.id === selectedPlan);
 
@@ -167,13 +188,15 @@ export default function PremiumPage() {
       alert("Foydalanuvchi identifikatori topilmadi. Iltimos, Telegram orqali qayta kiring.");
       return;
     }
+    fetchPaymentSettings();
     setModalStep("CARD_INFO");
     setSelectedFile(null);
     setShowModal(true);
   };
 
   const copyCardNumber = () => {
-    navigator.clipboard.writeText(CARD_NUMBER.replace(/\s+/g, ""));
+    if (!paymentSettings.card_number) return;
+    navigator.clipboard.writeText(paymentSettings.card_number.replace(/\s+/g, ""));
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
@@ -362,7 +385,7 @@ export default function PremiumPage() {
                     <div className="border-t border-slate-700/60 pt-3">
                       <span className="text-slate-400 text-[10px] uppercase font-bold block mb-1">Karta raqami (Humo / Uzcard)</span>
                       <div className="flex items-center justify-between bg-[#101622] px-3 py-2 rounded-xl border border-slate-700">
-                        <span className="font-mono font-black text-base text-amber-400 tracking-wider">{CARD_NUMBER}</span>
+                        <span className="font-mono font-black text-base text-amber-400 tracking-wider">{paymentSettings.card_number}</span>
                         <button
                           onClick={copyCardNumber}
                           className="px-2.5 py-1 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 rounded-lg text-xs font-bold transition-all active:scale-95"
@@ -370,7 +393,7 @@ export default function PremiumPage() {
                           {copied ? "✓ Nusxalandi" : "📋 Nusxalash"}
                         </button>
                       </div>
-                      <span className="text-slate-500 text-[10px] block mt-1">Qabul qiluvchi: {CARD_HOLDER}</span>
+                      <span className="text-slate-500 text-[10px] block mt-1">Qabul qiluvchi: {paymentSettings.card_holder}</span>
                     </div>
                   </div>
                 )}

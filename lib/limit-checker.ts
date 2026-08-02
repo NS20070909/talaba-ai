@@ -196,3 +196,33 @@ export async function incrementTranslation(telegramId: number): Promise<void> {
     translationUsedToday: stats.translationUsedToday + 1,
   });
 }
+
+export async function canUseQuiz(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+
+  const limits = PLAN_LIMITS[plan];
+  if (limits?.unlimited) {
+    return { allowed: true, remaining: Infinity };
+  }
+
+  const stats = await getOrResetUsage(telegramId);
+  const limit = limits?.quizPerDay ?? 5;
+  const remaining = Math.max(0, limit - (stats.quizUsedToday || 0));
+
+  return {
+    allowed: remaining > 0,
+    remaining,
+  };
+}
+
+export async function incrementQuiz(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    quizUsedToday: (stats.quizUsedToday || 0) + 1,
+  });
+}
+

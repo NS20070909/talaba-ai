@@ -17,6 +17,16 @@ import { getSystemSettings, updateSystemSetting } from "@/lib/settings";
 import { getAuditLogs, recordAuditLog } from "@/lib/audit-log";
 import { bot } from "@/lib/bot";
 import { getSupabase } from "@/lib/supabase";
+import {
+  handleTelegramQuizCommand,
+  handleTelegramHistoryCommand,
+  handleTelegramStatistikaCommand,
+  handleTelegramHelpQuizCommand,
+  handleTelegramQuizFile,
+  handleTelegramQuizText,
+  handleTelegramQuizChannelInput,
+  handleQuizCallback,
+} from "@/lib/quiz/telegram-flow";
 
 // Global Telegraf error handler for non-fatal Telegram API errors
 bot.catch((err: any) => {
@@ -170,6 +180,56 @@ bot.command("talabaai", async (ctx) => {
       }
     }
   );
+});
+
+// QUIZ ENGINE COMMANDS
+bot.command("quiz", async (ctx) => {
+  await handleTelegramQuizCommand(ctx);
+});
+
+bot.command("history", async (ctx) => {
+  await handleTelegramHistoryCommand(ctx);
+});
+
+bot.command("statistika", async (ctx) => {
+  await handleTelegramStatistikaCommand(ctx);
+});
+
+bot.command("help_quiz", async (ctx) => {
+  await handleTelegramHelpQuizCommand(ctx);
+});
+
+// QUIZ CALLBACK ACTIONS
+bot.action(/^tg_quiz:/, async (ctx) => {
+  await handleQuizCallback(ctx);
+});
+
+// QUIZ DOCUMENT & PHOTO HANDLERS
+bot.on("document", async (ctx, next) => {
+  const userId = ctx.from?.id;
+  if (userId) {
+    const state = await getBotState(userId);
+    if (state === "quiz:waiting_for_input") {
+      const doc = ctx.message.document;
+      await handleTelegramQuizFile(ctx, doc.file_id, doc.file_name || "Document.pdf", doc.mime_type);
+      return;
+    }
+  }
+  return next();
+});
+
+bot.on("photo", async (ctx, next) => {
+  const userId = ctx.from?.id;
+  if (userId) {
+    const state = await getBotState(userId);
+    if (state === "quiz:waiting_for_input") {
+      const photos = ctx.message.photo;
+      const largestPhoto = photos[photos.length - 1];
+      await handleTelegramQuizFile(ctx, largestPhoto.file_id, "Photo_Scan.jpg", "image/jpeg");
+      return;
+    }
+  }
+  return next();
 });
 
 // HELP
@@ -588,8 +648,8 @@ async function renderSettingsMenu(ctx: any) {
     const settings = await getSystemSettings();
     let text = `⚙️ <b>Settings Management Panel</b>\n\n`;
 
-    text += `💳 <b>Karta Egasi:</b> ${settings.card_holder || "Sirojiddin Narkabilov"}\n`;
-    text += `💳 <b>Karta Raqami:</b> <code>${settings.card_number || "8600 0000 0000 0000"}</code>\n`;
+    text += `💳 <b>Karta Egasi:</b> ${settings.card_holder || ""}\n`;
+    text += `💳 <b>Karta Raqami:</b> <code>${settings.card_number || ""}</code>\n`;
     text += `🛠 <b>Maintenance Mode:</b> ${settings.maintenance_mode ? "🔴 YOQILGAN" : "🟢 O'CHIRILGAN"}\n\n`;
     text += `Boshqarish uchun pastdagi tugmalardan foydalaning:`;
 
@@ -2258,6 +2318,16 @@ bot.on("message", async (ctx, next) => {
       console.error("Remove admin text handler error:", err);
       await ctx.reply(`❌ Admin o'chirishda xatolik: ${err.message}`);
     }
+    return;
+  }
+
+  if (state === "quiz:waiting_for_input") {
+    await handleTelegramQuizText(ctx, text);
+    return;
+  }
+
+  if (state === "quiz:waiting_for_channel") {
+    await handleTelegramQuizChannelInput(ctx, text);
     return;
   }
 

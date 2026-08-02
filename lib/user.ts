@@ -34,6 +34,7 @@ export interface UsageStats {
   scanUsedToday: number;
   referatUsedToday: number;
   translationUsedToday: number;
+  quizUsedToday: number;
 
   lastResetDate: Date;
 

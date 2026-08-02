@@ -35,7 +35,7 @@ const features = [
     desc: "PDF yoki test fayldan quiz",
     color:
       "from-violet-500/20 to-fuchsia-500/10",
-    link: "#",
+    link: "/quiz",
   },
   {
     icon: "🤖",

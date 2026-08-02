@@ -29,6 +29,7 @@ function mapUsageStats(row: any): UsageStats {
     scanUsedToday: row.scan_used_today ?? 0,
     referatUsedToday: row.referat_used_today ?? 0,
     translationUsedToday: row.translation_used_today ?? 0,
+    quizUsedToday: row.quiz_used_today ?? 0,
     lastResetDate: new Date(row.last_reset_date),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),

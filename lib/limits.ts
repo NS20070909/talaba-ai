@@ -5,6 +5,7 @@ export interface PlanLimits {
   scanPerDay?: number;
   referatPerDay?: number;
   translationPerDay?: number;
+  quizPerDay?: number;
   referatMinPages?: number;
   referatMaxPages?: number;
   unlimited?: boolean;
@@ -18,6 +19,7 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     scanPerDay: 2,
     referatPerDay: 2,
     translationPerDay: 2,
+    quizPerDay: 5,
     referatMinPages: 3,
     referatMaxPages: 7,
   },

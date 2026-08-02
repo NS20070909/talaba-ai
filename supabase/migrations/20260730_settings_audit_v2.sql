@@ -46,7 +46,7 @@ INSERT INTO system_settings (key, category, value) VALUES
   ('notify_broadcast', 'notifications', 'true'::jsonb),
   ('notify_support', 'notifications', 'true'::jsonb),
 
-  ('default_ai_model', 'ai', '"gemini-1.5-flash"'::jsonb),
+  ('default_ai_model', 'ai', '"models/gemini-2.5-flash"'::jsonb),
   ('ai_timeout', 'ai', '30000'::jsonb),
   ('ai_retry_count', 'ai', '3'::jsonb),
 
