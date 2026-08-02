@@ -467,47 +467,47 @@ export default function QuizPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#090d16] text-white font-sans pb-24">
+    <main className="min-h-screen bg-[#090d16] text-white font-sans pb-24 overflow-x-hidden">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-[#101624]/90 backdrop-blur-md border-b border-slate-800 px-4 py-3.5 flex items-center justify-between gap-2">
-        <Link href="/" className="text-slate-400 flex items-center gap-1 text-sm font-semibold hover:text-white transition shrink-0">
-          <span>←</span> Bosh sahifa
+      <header className="sticky top-0 z-30 bg-[#101624]/90 backdrop-blur-md border-b border-slate-800 px-2 sm:px-4 py-2 sm:py-3.5 flex items-center justify-between gap-1 sm:gap-2">
+        <Link href="/" className="text-slate-400 flex items-center gap-1 text-xs sm:text-sm font-semibold hover:text-white transition shrink-0">
+          <span>←</span> <span className="hidden sm:inline">Bosh sahifa</span>
         </Link>
         <div
           onClick={() => setActiveTab("builder")}
-          className="flex items-center gap-2 cursor-pointer select-none hover:opacity-90 transition"
+          className="flex items-center gap-1 sm:gap-2 cursor-pointer select-none hover:opacity-90 transition min-w-0"
           title="Quiz Builder'ga qaytish"
         >
-          <span className="text-xl">🧠</span>
-          <h1 className="text-base font-extrabold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+          <span className="text-base sm:text-xl shrink-0">🧠</span>
+          <h1 className="text-xs sm:text-base font-extrabold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent truncate">
             Quiz Engine V2
           </h1>
           {gamificationData.stats?.streakCount > 0 && (
-            <span className="ml-1 text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 animate-pulse">
-              🔥 {gamificationData.stats.streakCount} Kun Streak
+            <span className="hidden md:inline-block ml-1 text-[10px] sm:text-[11px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 animate-pulse shrink-0">
+              🔥 {gamificationData.stats.streakCount} Kun
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <button
             onClick={() => {
               setActiveTab("stats");
               loadGamification();
             }}
-            className={`text-xs font-bold px-3 py-1.5 rounded-full transition flex items-center gap-1 ${
+            className={`text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition flex items-center gap-1 whitespace-nowrap ${
               activeTab === "stats"
                 ? "bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 shadow-sm"
                 : "bg-violet-500/10 border border-violet-500/30 text-violet-300 hover:bg-violet-500/20"
             }`}
           >
-            <span>📊</span> Statistika
+            <span>📊</span> <span className="hidden min-[360px]:inline">Statistika</span><span className="min-[360px]:hidden">Stats</span>
           </button>
           <button
             onClick={() => {
               setActiveTab("history");
               loadHistory();
             }}
-            className={`text-xs font-bold px-3 py-1.5 rounded-full transition flex items-center gap-1 ${
+            className={`text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition flex items-center gap-1 whitespace-nowrap ${
               activeTab === "history"
                 ? "bg-amber-500/20 border border-amber-500/40 text-amber-300 shadow-sm"
                 : "bg-violet-500/10 border border-violet-500/30 text-violet-300 hover:bg-violet-500/20"
@@ -518,19 +518,19 @@ export default function QuizPage() {
         </div>
       </header>
 
-      <div className="max-w-xl mx-auto px-4 py-5">
+      <div className="max-w-xl mx-auto px-2.5 sm:px-4 py-3 sm:py-5">
 
         {/* QUIZ BUILDER TAB CONTENT */}
         {activeTab === "builder" && (
           <>
             {/* Session Resume Prompt Banner — only in builder tab */}
             {activeSessionPrompt && (
-              <div className="mb-5 bg-gradient-to-r from-violet-900/80 via-fuchsia-900/80 to-indigo-900/80 border border-violet-400 rounded-3xl p-5 shadow-2xl flex flex-col gap-3">
+              <div className="mb-5 bg-gradient-to-r from-violet-900/80 via-fuchsia-900/80 to-indigo-900/80 border border-violet-400 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-3xl">🔄</span>
+                  <span className="text-2xl sm:text-3xl">🔄</span>
                   <div>
-                    <h3 className="font-extrabold text-base text-white">Chala qolgan Quiz topildi!</h3>
-                    <p className="text-xs text-violet-200 mt-0.5">
+                    <h3 className="font-extrabold text-sm sm:text-base text-white">Chala qolgan Quiz topildi!</h3>
+                    <p className="text-[11px] sm:text-xs text-violet-200 mt-0.5">
                       Fayl: <strong>{activeSessionPrompt.fileName || "Quiz"}</strong> ({activeSessionPrompt.questions?.length || 0} ta savol)
                     </p>
                   </div>
@@ -538,13 +538,13 @@ export default function QuizPage() {
                 <div className="flex gap-2.5 pt-1">
                   <button
                     onClick={resumeSession}
-                    className="flex-1 py-2.5 rounded-xl font-extrabold text-slate-950 bg-gradient-to-r from-emerald-400 to-cyan-400 text-xs shadow-md active:scale-95 transition"
+                    className="flex-1 py-2 sm:py-2.5 rounded-xl font-extrabold text-slate-950 bg-gradient-to-r from-emerald-400 to-cyan-400 text-xs shadow-md active:scale-95 transition"
                   >
                     ▶️ Davom ettirish
                   </button>
                   <button
                     onClick={startNewSession}
-                    className="px-4 py-2.5 rounded-xl font-bold bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-xs active:scale-95 transition"
+                    className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-xs active:scale-95 transition"
                   >
                     ➕ Yangi Quiz
                   </button>
@@ -553,9 +553,9 @@ export default function QuizPage() {
             )}
 
             {/* Builder inner content */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* Step Indicator */}
-            <div className="flex items-center justify-between mb-6 bg-[#131b2c] p-1.5 rounded-2xl border border-slate-800/80 text-xs">
+            <div className="flex items-center justify-between mb-4 sm:mb-6 bg-[#131b2c] p-1 sm:p-1.5 rounded-2xl border border-slate-800/80 text-[10px] sm:text-xs">
               {[
                 { step: "INPUT", label: "1. Manba" },
                 { step: "EDIT", label: "2. Tahrir" },
@@ -567,7 +567,7 @@ export default function QuizPage() {
                   onClick={() => {
                     if (questions.length > 0) setBuilderStep(item.step as any);
                   }}
-                  className={`flex-1 text-center py-2 rounded-xl font-bold cursor-pointer transition ${builderStep === item.step
+                  className={`flex-1 text-center py-1.5 sm:py-2 px-1 rounded-xl font-bold cursor-pointer transition truncate ${builderStep === item.step
                     ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg"
                     : questions.length > 0
                       ? "text-slate-400 hover:text-slate-200"
@@ -581,13 +581,13 @@ export default function QuizPage() {
 
             {/* Live Processing Card */}
             {isProcessing && (
-              <div className="mb-6 bg-violet-950/40 border border-violet-500/40 rounded-3xl p-5 text-center relative overflow-hidden animate-pulse">
-                <div className="text-3xl mb-2">⚙️</div>
-                <h3 className="font-extrabold text-sm text-violet-300">{progressStep}</h3>
-                <p className="text-xs text-slate-400 mt-1">AI tahlili va tayyorlash jarayoni davom etmoqda...</p>
+              <div className="mb-4 sm:mb-6 bg-violet-950/40 border border-violet-500/40 rounded-2xl sm:rounded-3xl p-4 sm:p-5 text-center relative overflow-hidden animate-pulse">
+                <div className="text-2xl sm:text-3xl mb-2">⚙️</div>
+                <h3 className="font-extrabold text-xs sm:text-sm text-violet-300">{progressStep}</h3>
+                <p className="text-[11px] sm:text-xs text-slate-400 mt-1">AI tahlili va tayyorlash jarayoni davom etmoqda...</p>
                 <button
                   onClick={handleCancel}
-                  className="mt-4 px-4 py-1.5 rounded-full bg-red-500/20 text-red-300 text-xs font-bold hover:bg-red-500/30 border border-red-500/40 transition"
+                  className="mt-3 sm:mt-4 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-red-500/20 text-red-300 text-xs font-bold hover:bg-red-500/30 border border-red-500/40 transition"
                 >
                   🛑 Bekor qilish
                 </button>
@@ -596,19 +596,19 @@ export default function QuizPage() {
 
             {/* STEP 1: INPUT */}
             {builderStep === "INPUT" && (
-              <div className="space-y-5">
+              <div className="space-y-4 sm:space-y-5">
                 {/* Tabs */}
                 <div className="flex bg-[#121927] p-1 rounded-2xl border border-slate-800 text-xs font-bold">
                   <button
                     onClick={() => setInputMode("upload")}
-                    className={`flex-1 py-2.5 rounded-xl transition ${inputMode === "upload" ? "bg-violet-600 text-white" : "text-slate-400"
+                    className={`flex-1 py-2 sm:py-2.5 rounded-xl transition ${inputMode === "upload" ? "bg-violet-600 text-white" : "text-slate-400"
                       }`}
                   >
                     📁 Fayl yuklash
                   </button>
                   <button
                     onClick={() => setInputMode("text")}
-                    className={`flex-1 py-2.5 rounded-xl transition ${inputMode === "text" ? "bg-violet-600 text-white" : "text-slate-400"
+                    className={`flex-1 py-2 sm:py-2.5 rounded-xl transition ${inputMode === "text" ? "bg-violet-600 text-white" : "text-slate-400"
                       }`}
                   >
                     ✍️ Matn kiriting
@@ -620,7 +620,7 @@ export default function QuizPage() {
                     ref={dropzoneRef}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
-                    className="border-2 border-dashed border-violet-500/30 bg-[#121927]/60 hover:bg-[#121927] hover:border-violet-500/50 rounded-3xl p-8 text-center transition-all cursor-pointer select-none"
+                    className="border-2 border-dashed border-violet-500/30 bg-[#121927]/60 hover:bg-[#121927] hover:border-violet-500/50 rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-center transition-all cursor-pointer select-none"
                   >
                     <input
                       type="file"

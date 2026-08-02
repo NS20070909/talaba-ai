@@ -15,7 +15,7 @@ import { getFullUserProfile, getFilteredUsers, searchUsersV2, managePremiumV2, b
 import { isAdminActive, hasPermission, getAllAdminsV2, addAdminV2, removeAdminV2, updateAdminStatus, getAdminProfile, AdminRole } from "@/lib/admin-management";
 import { getSystemSettings, updateSystemSetting } from "@/lib/settings";
 import { getAuditLogs, recordAuditLog } from "@/lib/audit-log";
-import { bot } from "@/lib/bot";
+import { bot, ensureTelegramCommandsRegistered } from "@/lib/bot";
 import { getSupabase } from "@/lib/supabase";
 import {
   handleTelegramQuizCommand,
@@ -183,20 +183,41 @@ bot.command("talabaai", async (ctx) => {
 });
 
 // QUIZ ENGINE COMMANDS
-bot.command("quiz", async (ctx) => {
-  await handleTelegramQuizCommand(ctx);
+const BOT_NAME = process.env.NEXT_PUBLIC_BOT_USERNAME || "talaba_ai_bot";
+bot.command(["quiz", `quiz@${BOT_NAME}`], async (ctx) => {
+  try {
+    await handleTelegramQuizCommand(ctx);
+  } catch (err: any) {
+    console.error("Error in /quiz command:", err);
+    await ctx.reply("❌ Quiz buyrug'ini bajarishda xatolik yuz berdi.").catch(() => {});
+  }
 });
 
-bot.command("history", async (ctx) => {
-  await handleTelegramHistoryCommand(ctx);
+bot.command(["history", `history@${BOT_NAME}`], async (ctx) => {
+  try {
+    await handleTelegramHistoryCommand(ctx);
+  } catch (err: any) {
+    console.error("Error in /history command:", err);
+    await ctx.reply("❌ Tarix buyrug'ini bajarishda xatolik yuz berdi.").catch(() => {});
+  }
 });
 
-bot.command("statistika", async (ctx) => {
-  await handleTelegramStatistikaCommand(ctx);
+bot.command(["statistika", `statistika@${BOT_NAME}`], async (ctx) => {
+  try {
+    await handleTelegramStatistikaCommand(ctx);
+  } catch (err: any) {
+    console.error("Error in /statistika command:", err);
+    await ctx.reply("❌ Statistika buyrug'ini bajarishda xatolik yuz berdi.").catch(() => {});
+  }
 });
 
-bot.command("help_quiz", async (ctx) => {
-  await handleTelegramHelpQuizCommand(ctx);
+bot.command(["help_quiz", `help_quiz@${BOT_NAME}`], async (ctx) => {
+  try {
+    await handleTelegramHelpQuizCommand(ctx);
+  } catch (err: any) {
+    console.error("Error in /help_quiz command:", err);
+    await ctx.reply("❌ Yordam buyrug'ini bajarishda xatolik yuz berdi.").catch(() => {});
+  }
 });
 
 // QUIZ CALLBACK ACTIONS
@@ -2765,6 +2786,8 @@ export async function POST(
   req: Request
 ) {
   const body = await req.json();
+
+  ensureTelegramCommandsRegistered().catch(() => {});
 
   const fromId = body?.message?.from?.id || body?.callback_query?.from?.id;
   if (fromId) {

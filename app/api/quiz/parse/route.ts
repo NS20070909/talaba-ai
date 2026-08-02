@@ -8,6 +8,8 @@ import { saveUserSession } from "@/lib/quiz/session-manager";
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
+  const startTime = Date.now();
+
   try {
     let telegramId: number | undefined = undefined;
     let rawText = "";
@@ -39,6 +41,7 @@ export async function POST(req: Request) {
     if (telegramId && !isNaN(telegramId)) {
       const limitCheck = await canUseQuiz(telegramId);
       if (!limitCheck.allowed) {
+        console.warn(`[Quiz Parse API] User ${telegramId} limit reached.`);
         return NextResponse.json(
           {
             success: false,
@@ -54,12 +57,14 @@ export async function POST(req: Request) {
     let fileHash = "";
 
     if (fileBuffer) {
+      const extStartTime = Date.now();
       const extracted = await extractTextFromFile(fileBuffer, fileName, mimeType);
       extractedText = extracted.text;
       fileHash = extracted.fileHash;
 
-      // Immediately release fileBuffer to prevent memory leaks
+      // Release buffer immediately
       fileBuffer = null;
+      console.log(`[Quiz Parse API Stage] File Extraction completed in ${Date.now() - extStartTime}ms`);
 
       if (extracted.isCached && extracted.cachedQuestions?.length) {
         const cachedResult = {
@@ -84,9 +89,10 @@ export async function POST(req: Request) {
             step: "EDIT",
             rawText: extractedText,
             questions: extracted.cachedQuestions,
-          });
+          }).catch((err) => console.error("Failed to save session:", err));
         }
 
+        console.log(`[Quiz Parse API SHA-256 Cache Hit] Total API time: ${Date.now() - startTime}ms`);
         return NextResponse.json({
           success: true,
           isCached: true,
@@ -108,40 +114,47 @@ export async function POST(req: Request) {
 
     const parsedResult = await parseQuizHybrid(extractedText, fileName);
 
-    // Save to SHA-256 cache
+    // Save to SHA-256 cache silently in background
     if (fileHash && parsedResult.questions.length > 0) {
-      await saveQuizToCache(
+      saveQuizToCache(
         fileHash,
         fileName || "Quiz",
         fileName.split(".").pop() || "txt",
         extractedText,
         parsedResult.questions
-      );
+      ).catch((err) => console.error("Failed to save quiz cache:", err));
     }
 
-    // Save to active user session for session resume
+    // Save to active user session in background
     if (telegramId && !isNaN(telegramId)) {
-      await saveUserSession({
+      saveUserSession({
         userId: telegramId,
         fileHash: fileHash || undefined,
         fileName: fileName || undefined,
         step: "EDIT",
         rawText: extractedText,
         questions: parsedResult.questions,
-      });
+      }).catch((err) => console.error("Failed to save active session:", err));
     }
+
+    const totalElapsed = Date.now() - startTime;
+    console.log(`[Quiz Parse API Completed] Total Elapsed: ${totalElapsed}ms | Questions: ${parsedResult.questions.length}`);
 
     return NextResponse.json({
       success: true,
       isCached: false,
       result: parsedResult,
+      elapsedMs: totalElapsed,
     });
   } catch (error: any) {
-    console.error("Quiz Parse API error:", error);
+    const totalElapsed = Date.now() - startTime;
+    console.error(`[Quiz Parse API Error] Failed after ${totalElapsed}ms:`, error);
+
     return NextResponse.json(
       {
         success: false,
-        error: error?.message || "Quiz tahlil qilishda xatolik yuz berdi",
+        error: "PARSING_FAILED",
+        message: error?.message || "Quiz tahlil qilishda kutilmagan xatolik yuz berdi",
       },
       { status: 500 }
     );

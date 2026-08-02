@@ -1,16 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
 
+// Standard production Gemini models in order of priority & speed
 export const QUIZ_MODEL_CHAIN = [
-  "models/gemini-2.5-flash",
-  "models/gemini-3.6-flash",
-  "models/gemini-3.5-flash",
-  "models/gemini-2.5-flash-lite",
-  "models/gemini-3.5-flash-lite",
-  "models/gemini-2.0-flash",
-  "models/gemini-2.0-flash-001",
-  "models/gemini-2.0-flash-lite",
-  "models/gemini-2.0-flash-lite-001",
-  "models/gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash-8b",
+  "gemini-2.5-pro",
 ];
 
 export type QuizModelName = (typeof QUIZ_MODEL_CHAIN)[number];
@@ -25,8 +22,8 @@ export function getQuizApiKey(): string {
 
 /**
  * Returns true ONLY for non-retryable configuration/auth errors (400, 401, 403, API_KEY_INVALID, INVALID_ARGUMENT).
- * For ALL other errors (404, 429, 500, 502, 503, 504, RESOURCE_EXHAUSTED, TIMEOUT, UNAVAILABLE, etc.), returns false
- * so the chain continues to the next model.
+ * For ALL other errors (404, 429, 500, 502, 503, 504, TIMEOUT, etc.), returns false
+ * so the chain continues immediately to the next model.
  */
 export function isNonRetryableQuizError(error: any): boolean {
   if (!error) return false;
@@ -34,12 +31,10 @@ export function isNonRetryableQuizError(error: any): boolean {
   const status = Number(error.status || error.statusCode || error.response?.status || 0);
   const message = String(error.message || error || "").toUpperCase();
 
-  // Explicit configuration/auth HTTP statuses
   if (status === 400 || status === 401 || status === 403) {
     return true;
   }
 
-  // Explicit configuration/auth error text markers
   if (
     message.includes("400 INVALID") ||
     message.includes("INVALID_ARGUMENT") ||
@@ -54,33 +49,66 @@ export function isNonRetryableQuizError(error: any): boolean {
   return false;
 }
 
-export async function runQuizModelChain(contents: any): Promise<string> {
+/**
+ * Runs the model chain with a strict per-model timeout (default 12s) to prevent
+ * Vercel 504 Function Invocation Timeout errors.
+ */
+export async function runQuizModelChain(
+  contents: any,
+  timeoutMsPerModel: number = 12000
+): Promise<string> {
   const apiKey = getQuizApiKey();
   const ai = new GoogleGenAI({ apiKey });
   let lastError: any = null;
 
   for (const model of QUIZ_MODEL_CHAIN) {
+    const startTime = Date.now();
+    const cleanModel = model.replace(/^models\//, "");
+
     try {
-      const response = await ai.models.generateContent({
-        model,
+      // Per-model timeout race promise to prevent Vercel 504 timeout
+      const generatePromise = ai.models.generateContent({
+        model: cleanModel,
         contents,
       });
 
-      const text = response.text ? response.text.trim() : "";
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error(`Timeout (${timeoutMsPerModel}ms) exceeded for model ${model}`));
+        }, timeoutMsPerModel);
+        // Ensure timer unref if supported in node environment
+        if (timer && typeof timer === "object" && "unref" in timer) {
+          (timer as any).unref();
+        }
+      });
+
+      const response: any = await Promise.race([generatePromise, timeoutPromise]);
+      const elapsed = Date.now() - startTime;
+
+      const text = response?.text ? response.text.trim() : "";
       if (text.length > 0) {
+        console.log(`[Quiz Model Chain Success] Model: '${model}' | Elapsed: ${elapsed}ms | Output length: ${text.length} chars`);
         return text;
       }
     } catch (err: any) {
+      const elapsed = Date.now() - startTime;
       lastError = err;
-      console.warn(`Model failed:\n${model}\nReason:\n${err?.message || err}`);
+
+      const status = err?.status || err?.statusCode || err?.response?.status || "N/A";
+      const message = err?.message || String(err);
+
+      console.warn(
+        `[Quiz Model Chain Warning] Model: '${model}' failed after ${elapsed}ms | Status: ${status} | Error: ${message}`
+      );
 
       if (isNonRetryableQuizError(err)) {
+        console.error(`[Quiz Model Chain Fatal] Non-retryable auth/config error on '${model}': ${message}`);
         throw err;
       }
-      // Non-configuration error -> continue automatically to next model in QUIZ_MODEL_CHAIN
+      // Non-configuration error -> continue immediately to next model in QUIZ_MODEL_CHAIN
     }
   }
 
-  console.error("All models failed.");
-  throw lastError || new Error("All models in QUIZ_MODEL_CHAIN failed.");
+  console.error("[Quiz Model Chain Fatal] All models in QUIZ_MODEL_CHAIN failed or timed out.");
+  throw lastError || new Error("All models in QUIZ_MODEL_CHAIN failed or timed out.");
 }
