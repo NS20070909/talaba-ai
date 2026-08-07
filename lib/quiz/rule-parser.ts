@@ -4,22 +4,57 @@ import { QuizQuestion, QuizOption } from "./types";
  * Universal Rule Engine Parser for Quiz Questions in Uzbek (Latin & Cyrillic), Russian, and English.
  */
 export function parseQuizWithRuleEngine(rawText: string): QuizQuestion[] {
+  const startTime = Date.now();
   const normalized = rawText.replace(/\r\n/g, "\n").trim();
   if (!normalized) return [];
 
+  console.log(`[Parser] Rule Engine analyzing input text (${normalized.length} chars)...`);
+
+  const answerKeysMap = extractAnswerKeysFromText(normalized);
+  if (answerKeysMap.size > 0) {
+    console.log(`[Parser] Answer key block detected at bottom (${answerKeysMap.size} answers found).`);
+  }
+
+  let questions: QuizQuestion[] = [];
+
   // Strategy 1: Separator blocks (====, ###, ----)
   const sepQuestions = parseSeparatorFormat(normalized);
-  if (sepQuestions.length >= 2) return sepQuestions;
+  if (sepQuestions.length >= 2) {
+    console.log(`[Parser] Separator strategy matched ${sepQuestions.length} questions.`);
+    questions = sepQuestions;
+  } else {
+    // Strategy 2: Numbered Question Blocks (1. / 1) / 1- / Savol 1: / Вопрос 1:)
+    const numberedQuestions = parseNumberedBlocks(normalized);
+    if (numberedQuestions.length >= 2) {
+      console.log(`[Parser] Numbered blocks strategy matched ${numberedQuestions.length} questions.`);
+      questions = numberedQuestions;
+    } else {
+      // Strategy 3: Line-by-line streaming parser
+      const lineQuestions = parseLineByLineFallback(normalized);
+      console.log(`[Parser] Line-by-line strategy matched ${lineQuestions.length} questions.`);
+      questions = numberedQuestions.length > 0 ? numberedQuestions : sepQuestions.length > 0 ? sepQuestions : lineQuestions;
+    }
+  }
 
-  // Strategy 2: Numbered Question Blocks (1. / 1) / 1- / Savol 1: / Вопрос 1:)
-  const numberedQuestions = parseNumberedBlocks(normalized);
-  if (numberedQuestions.length >= 2) return numberedQuestions;
+  // Apply bottom answer keys if any question lacks a correct answer
+  if (answerKeysMap.size > 0 && questions.length > 0) {
+    questions.forEach((q) => {
+      if (q.number !== undefined) {
+        const targetAnswer = answerKeysMap.get(q.number);
+        if (targetAnswer && !q.options.some((o) => o.isCorrect)) {
+          const matchedOpt = q.options.find((o) => o.id === targetAnswer);
+          if (matchedOpt) {
+            matchedOpt.isCorrect = true;
+            q.correctOptionId = targetAnswer;
+          }
+        }
+      }
+    });
+  }
 
-  // Strategy 3: Line-by-line streaming parser
-  const lineQuestions = parseLineByLineFallback(normalized);
-  if (lineQuestions.length >= 2) return lineQuestions;
-
-  return numberedQuestions.length > 0 ? numberedQuestions : sepQuestions.length > 0 ? sepQuestions : lineQuestions;
+  const elapsed = Date.now() - startTime;
+  console.log(`[Parser] Rule Engine completed | Parsed: ${questions.length} questions | Elapsed: ${elapsed}ms`);
+  return questions;
 }
 
 // Map Cyrillic option letters to standard English letters
@@ -41,6 +76,58 @@ function normalizeOptionId(rawId: string): string {
   return map[clean] || clean;
 }
 
+/**
+ * Extracts bottom answer key mappings (e.g., "Javoblar: 1-A, 2-B, 3-C" or "Ответы: 1A 2B 3C")
+ */
+function extractAnswerKeysFromText(text: string): Map<number, string> {
+  const answerMap = new Map<number, string>();
+  const keyHeaderRegex = /(?:javoblar|to'g'ri\s+javoblar|ответы|ключи|answers|answer\s*keys)[:\s\n]+/i;
+  const match = text.match(keyHeaderRegex);
+  if (!match) return answerMap;
+
+  const keySection = text.substring(match.index! + match[0].length);
+  const pairRegex = /(\d+)[\.\)\:\-\s]+([A-Fa-f\u0410-\u0425\u0430-\u0455])/g;
+  let m: RegExpExecArray | null;
+  while ((m = pairRegex.exec(keySection)) !== null) {
+    const qNum = parseInt(m[1], 10);
+    const letter = normalizeOptionId(m[2]);
+    answerMap.set(qNum, letter);
+  }
+
+  return answerMap;
+}
+
+/**
+ * Splits inline options (e.g. "A) text1  B) text2  C) text3") into individual lines
+ */
+function expandInlineOptions(lines: string[]): string[] {
+  const expanded: string[] = [];
+  const inlineRegex = /(?:^|\s+)([\+\-\*]?\s*[A-Fa-f\u0410-\u0425\u0430-\u04551-6][\.\)\:\-]\s+)/g;
+
+  for (const line of lines) {
+    const matches = Array.from(line.matchAll(inlineRegex));
+    if (matches.length >= 2) {
+      let lastIndex = 0;
+      for (let m = 0; m < matches.length; m++) {
+        const matchIndex = matches[m].index!;
+        if (m === 0) {
+          const prefix = line.substring(0, matchIndex).trim();
+          if (prefix) expanded.push(prefix);
+        } else {
+          const part = line.substring(lastIndex, matchIndex).trim();
+          if (part) expanded.push(part);
+        }
+        lastIndex = matchIndex;
+      }
+      const lastPart = line.substring(lastIndex).trim();
+      if (lastPart) expanded.push(lastPart);
+    } else {
+      expanded.push(line);
+    }
+  }
+  return expanded;
+}
+
 // Strategy 1: Separators
 function parseSeparatorFormat(text: string): QuizQuestion[] {
   const blocks = text.split(/(?:^|\n)(?:={3,}|#{3,}|-{3,})\s*(?:\n|$)/).map((b) => b.trim()).filter(Boolean);
@@ -50,9 +137,10 @@ function parseSeparatorFormat(text: string): QuizQuestion[] {
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
-    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
-    if (lines.length < 2) continue;
+    const rawLines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (rawLines.length < 2) continue;
 
+    const lines = expandInlineOptions(rawLines);
     const questionText = lines[0].replace(/^[\d+.)\s\-]+/, "").trim();
     const options: QuizOption[] = [];
     let correctId: string | undefined = undefined;
@@ -105,7 +193,7 @@ function parseSeparatorFormat(text: string): QuizQuestion[] {
         number: i + 1,
         text: questionText,
         options,
-        correctOptionId: correctId || options[0].id,
+        correctOptionId: correctId || undefined,
       });
     }
   }
@@ -115,7 +203,6 @@ function parseSeparatorFormat(text: string): QuizQuestion[] {
 
 // Strategy 2: Numbered Blocks (1. 1) 1- Savol 1: Вопрос 1: Question 1:)
 function parseNumberedBlocks(text: string): QuizQuestion[] {
-  // Matches start of question like "1. ", "1) ", "1- ", "Savol 1.", "Вопрос 1:"
   const questionRegex = /(?:^|\n)(?:\d+[\.\)\-]|(?:Savol|Вопрос|Question)\s+\d+[\.\:\-]?)\s+/gi;
   const rawBlocks = text.split(questionRegex).map((b) => b.trim()).filter(Boolean);
 
@@ -125,9 +212,10 @@ function parseNumberedBlocks(text: string): QuizQuestion[] {
 
   for (let i = 0; i < rawBlocks.length; i++) {
     const block = rawBlocks[i];
-    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
-    if (lines.length < 2) continue;
+    const rawLines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (rawLines.length < 2) continue;
 
+    const lines = expandInlineOptions(rawLines);
     let questionLines: string[] = [];
     const options: QuizOption[] = [];
     let correctId: string | undefined = undefined;
@@ -135,7 +223,6 @@ function parseNumberedBlocks(text: string): QuizQuestion[] {
 
     for (let j = 0; j < lines.length; j++) {
       const line = lines[j];
-      // Regex for option lines: A), A., A-, +A), *A., A:, a), б), в)
       const optMatch = line.match(/^([\+\-\*]?)\s*([A-Fa-f\u0410-\u0425\u0430-\u04551-6])[\.\)\:\-]\s+(.*)/);
       const isAnswerKeyLine = /(?:javob|to'g'ri\s+javob|answer|correct|ans|ответ|ключ)[:\s]*([A-Fa-f\u0410-\u04251-6])/i.test(line);
 
@@ -173,12 +260,6 @@ function parseNumberedBlocks(text: string): QuizQuestion[] {
       });
     }
 
-    // Default first option as correct if no correct marker found
-    if (options.length >= 2 && !options.some((o) => o.isCorrect)) {
-      options[0].isCorrect = true;
-      correctId = options[0].id;
-    }
-
     const questionText = questionLines.join(" ").trim();
     if (questionText && options.length >= 2) {
       questions.push({
@@ -186,7 +267,7 @@ function parseNumberedBlocks(text: string): QuizQuestion[] {
         number: i + 1,
         text: questionText,
         options,
-        correctOptionId: correctId || options[0].id,
+        correctOptionId: correctId || undefined,
       });
     }
   }
@@ -196,7 +277,8 @@ function parseNumberedBlocks(text: string): QuizQuestion[] {
 
 // Strategy 3: Line-by-Line Streaming Fallback
 function parseLineByLineFallback(text: string): QuizQuestion[] {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const rawLines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = expandInlineOptions(rawLines);
   const questions: QuizQuestion[] = [];
 
   let currentQText = "";
@@ -205,22 +287,17 @@ function parseLineByLineFallback(text: string): QuizQuestion[] {
 
   const pushCurrent = () => {
     if (currentQText && currentOptions.length >= 2) {
-      if (!currentOptions.some((o) => o.isCorrect)) {
-        if (currentCorrectId) {
-          currentOptions.forEach((o) => {
-            if (o.id === currentCorrectId) o.isCorrect = true;
-          });
-        } else {
-          currentOptions[0].isCorrect = true;
-          currentCorrectId = currentOptions[0].id;
-        }
+      if (currentCorrectId) {
+        currentOptions.forEach((o) => {
+          if (o.id === currentCorrectId) o.isCorrect = true;
+        });
       }
       questions.push({
         id: `q_${questions.length + 1}_${Math.random().toString(36).substring(2, 7)}`,
         number: questions.length + 1,
         text: currentQText,
         options: [...currentOptions],
-        correctOptionId: currentCorrectId || currentOptions[0].id,
+        correctOptionId: currentCorrectId || undefined,
       });
     }
     currentQText = "";

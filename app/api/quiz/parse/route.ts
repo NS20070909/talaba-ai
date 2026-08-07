@@ -4,6 +4,7 @@ import { parseQuizHybrid } from "@/lib/quiz/hybrid-parser";
 import { canUseQuiz } from "@/lib/limit-checker";
 import { saveQuizToCache } from "@/lib/quiz/cache";
 import { saveUserSession } from "@/lib/quiz/session-manager";
+import { sanitizeFilename, sanitizeErrorMessage } from "@/lib/quiz/security";
 
 export const maxDuration = 60;
 
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
       const file = formData.get("file") as File | null;
 
       if (file) {
-        fileName = file.name;
+        fileName = sanitizeFilename(file.name);
         mimeType = file.type;
         const arrayBuffer = await file.arrayBuffer();
         fileBuffer = Buffer.from(arrayBuffer);
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
       const json = await req.json();
       telegramId = Number(json.telegram_id);
       rawText = json.text || "";
-      fileName = json.file_name || "";
+      fileName = sanitizeFilename(json.file_name || "");
     }
 
     if (telegramId && !isNaN(telegramId)) {
@@ -154,7 +155,7 @@ export async function POST(req: Request) {
       {
         success: false,
         error: "PARSING_FAILED",
-        message: error?.message || "Quiz tahlil qilishda kutilmagan xatolik yuz berdi",
+        message: sanitizeErrorMessage(error),
       },
       { status: 500 }
     );

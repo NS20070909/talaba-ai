@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { QuizQuestion, QuizConfig } from "@/lib/quiz/types";
-import { buildQuizSelection, smartRandomSelect, splitQuizIntoBatches } from "@/lib/quiz/random-engine";
+import { buildQuizSelection, buildQuizCollection, smartRandomSelect, splitQuizIntoBatches } from "@/lib/quiz/random-engine";
 import { recommendQuizConfig } from "@/lib/quiz/auto-builder";
 
 export const maxDuration = 60;
@@ -27,6 +27,18 @@ export async function POST(req: Request) {
       return NextResponse.json({
         success: true,
         recommendation,
+      });
+    }
+
+    // Handle MULTI mode collection generation
+    if (config?.builderMode === "MULTI") {
+      const collection = buildQuizCollection(questions, config);
+      return NextResponse.json({
+        success: true,
+        collection,
+        questions: collection.testSets.flatMap((s) => s.questions),
+        totalCount: collection.totalQuestions,
+        batchCount: collection.testSets.length,
       });
     }
 

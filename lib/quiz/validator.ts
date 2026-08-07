@@ -53,7 +53,7 @@ export function validateQuestions(questions: QuizQuestion[]): {
     if (emptyOpts.length > 0) {
       issues.push({
         type: "EMPTY_OPTION",
-        message: `${emptyOpts.length} ta variat matni bo'sh.`,
+        message: `${emptyOpts.length} ta variant matni bo'sh.`,
         severity: "warning",
       });
     }
@@ -63,8 +63,9 @@ export function validateQuestions(questions: QuizQuestion[]): {
     if (correctOpts.length === 0) {
       issues.push({
         type: "MISSING_ANSWER",
-        message: "To'g'ri javob ko'rsatilmadi.",
+        message: "To'g'ri javob belgilanmagan (Noma'lum javob).",
         severity: "error",
+        suggestedFix: "Tahrirlash bo'limida to'g'ri variantni belgilang.",
       });
     } else if (correctOpts.length > 1) {
       issues.push({
@@ -88,6 +89,8 @@ export function validateQuestions(questions: QuizQuestion[]): {
       validationIssues: issues,
     };
   });
+
+  console.log(`[Validation] Processed ${questions.length} questions | Valid: ${validCount} | Flawed: ${flawedCount}`);
 
   return {
     validatedQuestions,

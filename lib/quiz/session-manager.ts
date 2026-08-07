@@ -62,12 +62,12 @@ export async function saveUserSession(session: QuizUserSession): Promise<boolean
     );
 
     if (error) {
-      console.error("saveUserSession error:", error);
+      console.warn("saveUserSession warning (non-blocking):", error.message || error.code);
       return false;
     }
     return true;
-  } catch (err) {
-    console.error("saveUserSession exception:", err);
+  } catch (err: any) {
+    console.warn("saveUserSession exception (non-blocking):", err?.message || err);
     return false;
   }
 }

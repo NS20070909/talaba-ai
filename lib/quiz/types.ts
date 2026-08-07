@@ -44,9 +44,28 @@ export interface ParsedQuizResult {
 }
 
 export type QuestionSelectionMode = "ALL" | "RANGE" | "MANUAL" | "RANDOM" | "SMART_RANDOM";
+export type QuizBuilderMode = "SINGLE" | "MULTI";
+
+export interface QuizTestSet {
+  id: string;
+  index: number; // 1-based index (e.g., 1, 2, 3...)
+  title: string; // e.g. "Test 1 (1–25)"
+  startNum: number;
+  endNum: number;
+  questions: QuizQuestion[];
+}
+
+export interface QuizCollection {
+  title: string;
+  totalQuestions: number;
+  batchSize: number;
+  testSets: QuizTestSet[];
+}
 
 export interface QuizConfig {
   title?: string;
+  builderMode?: QuizBuilderMode; // "SINGLE" | "MULTI"
+  multiTestBatchSize?: number; // e.g., 20, 25, 30, 40, 50, 100
   selectionMode: QuestionSelectionMode;
   rangeStart?: number;
   rangeEnd?: number;
@@ -66,7 +85,9 @@ export interface QuizHistoryRecord {
   questionCount: number;
   settings: QuizConfig;
   questions: QuizQuestion[];
+  collection?: QuizCollection;
   telegramMessageIds?: number[];
   createdAt: string;
   updatedAt: string;
 }
+

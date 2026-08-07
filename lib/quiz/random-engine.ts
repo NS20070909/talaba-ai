@@ -1,4 +1,4 @@
-import { QuizQuestion, QuizConfig } from "./types";
+import { QuizQuestion, QuizConfig, QuizCollection, QuizTestSet } from "./types";
 import { runQuizModelChain } from "./models";
 
 /**
@@ -28,6 +28,52 @@ export function splitQuizIntoBatches<T>(items: T[], batchSize: number): T[][] {
     batches.push(items.slice(i, i + batchSize));
   }
   return batches;
+}
+
+/**
+ * Multi-Test Collection Builder: Splits total questions into sequential, non-overlapping test sets.
+ * Shuffles questions/options strictly inside each batch if configured.
+ */
+export function buildQuizCollection(
+  questions: QuizQuestion[],
+  config: QuizConfig
+): QuizCollection {
+  const total = questions.length;
+  const batchSize = Math.max(1, config.multiTestBatchSize || 25);
+  const testSets: QuizTestSet[] = [];
+  const mainTitle = config.title || "Talaba AI Quiz";
+
+  let index = 1;
+  for (let i = 0; i < total; i += batchSize) {
+    const slice = questions.slice(i, i + batchSize);
+    const startNum = i + 1;
+    const endNum = i + slice.length;
+
+    let batchQuestions = [...slice];
+    if (config.shuffleQuestions) {
+      batchQuestions = shuffleArray(batchQuestions);
+    }
+    if (config.shuffleOptions) {
+      batchQuestions = batchQuestions.map(shuffleQuestionOptions);
+    }
+
+    testSets.push({
+      id: `set_${index}_${Math.random().toString(36).substring(2, 7)}`,
+      index,
+      title: `Test ${index} (${startNum}–${endNum})`,
+      startNum,
+      endNum,
+      questions: batchQuestions,
+    });
+    index++;
+  }
+
+  return {
+    title: mainTitle,
+    totalQuestions: total,
+    batchSize,
+    testSets,
+  };
 }
 
 export function buildQuizSelection(

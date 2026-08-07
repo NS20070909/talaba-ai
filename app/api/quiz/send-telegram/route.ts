@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { QuizQuestion, QuizConfig } from "@/lib/quiz/types";
-import { sendQuizToTelegram, sendQuizCardToTelegram } from "@/lib/quiz/telegram-adapter";
+import { sendQuizToTelegram, sendQuizCardToTelegram, sendQuizCollectionCardToTelegram } from "@/lib/quiz/telegram-adapter";
+import { buildQuizCollection } from "@/lib/quiz/random-engine";
 import { saveQuizHistory } from "@/lib/quiz/storage";
 import { canUseQuiz, incrementQuiz } from "@/lib/limit-checker";
 
@@ -35,6 +36,40 @@ export async function POST(req: Request) {
         },
         { status: 403 }
       );
+    }
+
+    if (config?.builderMode === "MULTI") {
+      const collection = buildQuizCollection(questions, config);
+      const colResult = await sendQuizCollectionCardToTelegram(
+        telegramId,
+        collection,
+        config
+      );
+
+      if (!colResult.success) {
+        return NextResponse.json(
+          { success: false, error: colResult.error || "Telegram-ga collection card yuborishda xatolik" },
+          { status: 500 }
+        );
+      }
+
+      await incrementQuiz(telegramId);
+      const historyRecord = await saveQuizHistory(
+        telegramId,
+        title || collection.title || "TALABA AI Quiz Collection",
+        questions,
+        config,
+        sourceFileName,
+        colResult.messageId ? [colResult.messageId] : []
+      );
+
+      return NextResponse.json({
+        success: true,
+        sentCount: questions.length,
+        batchCount: collection.testSets.length,
+        historyId: historyRecord?.id,
+        message: `✅ Telegram-ga ${collection.testSets.length} ta testdan iborat Test To'plami Karta yuborildi!`,
+      });
     }
 
     const sendResult = await sendQuizCardToTelegram(

@@ -24,7 +24,14 @@ export async function getCachedQuizByHash(hash: string): Promise<CachedQuizData 
       .eq("hash", hash)
       .single();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      if (error && error.code !== "PGRST116") {
+        console.warn(`[Cache] Lookup bypass (${error.message || error.code})`);
+      }
+      return null;
+    }
+
+    console.log(`[Cache] SHA-256 Hit for file hash ${hash.substring(0, 8)}...`);
 
     return {
       hash: data.hash,
@@ -34,8 +41,8 @@ export async function getCachedQuizByHash(hash: string): Promise<CachedQuizData 
       questions: data.questions,
       createdAt: data.created_at,
     };
-  } catch (err) {
-    console.error("getCachedQuizByHash exception:", err);
+  } catch (err: any) {
+    console.warn(`[Cache] Non-blocking lookup exception (${err?.message || "connection error"}). Proceeding with fresh parse.`);
     return null;
   }
 }
@@ -62,12 +69,14 @@ export async function saveQuizToCache(
     );
 
     if (error) {
-      console.error("saveQuizToCache error:", error);
+      console.warn(`[Cache] Non-blocking save error (${error.message || error.code}). Quiz generated successfully.`);
       return false;
     }
+
+    console.log(`[Cache] Successfully cached quiz for file hash ${hash.substring(0, 8)}...`);
     return true;
-  } catch (err) {
-    console.error("saveQuizToCache exception:", err);
+  } catch (err: any) {
+    console.warn(`[Cache] Non-blocking save exception (${err?.message || "connection reset"}). Quiz generated successfully.`);
     return false;
   }
 }

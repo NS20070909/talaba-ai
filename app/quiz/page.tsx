@@ -82,13 +82,7 @@ export default function QuizPage() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === "stats") {
-      loadGamification();
-    }
-  }, [activeTab, loadGamification]);
-
-  useEffect(() => {
-    // Initial fetch of streak & stats on mount
+    // Initial fetch of streak & stats on mount or when stats tab becomes active
     loadGamification();
   }, [loadGamification]);
 
@@ -801,6 +795,35 @@ export default function QuizPage() {
                 </div>
 
                 <div className="bg-[#121927] border border-slate-800 rounded-3xl p-5 space-y-4 text-xs">
+                  {/* Builder Mode Segment Selector */}
+                  <div>
+                    <label className="text-slate-400 font-bold block mb-1.5">🎛 Builder Rejimi:</label>
+                    <div className="grid grid-cols-2 gap-2 bg-[#090d16] p-1 rounded-2xl border border-slate-800 text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setConfig({ ...config, builderMode: "SINGLE" })}
+                        className={`py-2 rounded-xl transition ${
+                          config.builderMode !== "MULTI"
+                            ? "bg-violet-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        1️⃣ SINGLE TEST
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfig({ ...config, builderMode: "MULTI" })}
+                        className={`py-2 rounded-xl transition ${
+                          config.builderMode === "MULTI"
+                            ? "bg-violet-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        📦 MULTI TEST (To'plam)
+                      </button>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-slate-400 font-bold block mb-1">Quiz Nomi:</label>
                     <input
@@ -811,49 +834,93 @@ export default function QuizPage() {
                     />
                   </div>
 
-                  <div>
-                    <label className="text-slate-400 font-bold block mb-1">Tanlov Rejimi:</label>
-                    <select
-                      value={config.selectionMode}
-                      onChange={(e) => setConfig({ ...config, selectionMode: e.target.value as any })}
-                      className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-violet-500"
-                    >
-                      <option value="ALL">Barcha savollar ({questions.length} ta)</option>
-                      <option value="SMART_RANDOM">🧠 Smart Random (AI Saralash)</option>
-                      <option value="RANDOM">🎲 Tasodifiy (Random)</option>
-                      <option value="RANGE">🔢 Oraliq boyicha (Range)</option>
-                    </select>
-                  </div>
+                  {config.builderMode === "MULTI" ? (
+                    <div className="bg-violet-950/30 border border-violet-500/30 rounded-2xl p-3.5 space-y-3">
+                      <div>
+                        <label className="text-violet-300 font-bold block mb-1.5">
+                          📑 Har bir test nechta savoldan iborat bo'lsin?
+                        </label>
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {[20, 25, 30, 40, 50, 100].map((bSize) => (
+                            <button
+                              key={bSize}
+                              type="button"
+                              onClick={() => setConfig({ ...config, multiTestBatchSize: bSize })}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                                (config.multiTestBatchSize || 25) === bSize
+                                  ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-md"
+                                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                              }`}
+                            >
+                              {bSize} tadan
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-                  <div>
-                    <label className="text-slate-400 font-bold block mb-1">Qancha savol tanlansin?</label>
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {[5, 10, 15, 20, 25, 30, 40, 50, 100, questions.length]
-                        .filter((v, idx, self) => v <= questions.length && self.indexOf(v) === idx)
-                        .map((countVal) => (
-                          <button
-                            key={countVal}
-                            type="button"
-                            onClick={() => setConfig({ ...config, targetCount: countVal })}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                              (config.targetCount || questions.length) === countVal
-                                ? "bg-violet-600 text-white shadow-sm"
-                                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                            }`}
-                          >
-                            {countVal === questions.length ? `Hammasi (${countVal})` : `${countVal} ta`}
-                          </button>
-                        ))}
+                      {/* Live Calculation Preview */}
+                      <div className="bg-[#090d16] border border-violet-500/20 rounded-xl p-3 text-[11px] text-violet-200 font-mono space-y-1">
+                        <div className="flex justify-between border-b border-slate-800 pb-1 font-extrabold text-white">
+                          <span>📦 Jami testlar:</span>
+                          <span className="text-emerald-400">
+                            {Math.ceil(questions.length / (config.multiTestBatchSize || 25))} ta test
+                          </span>
+                        </div>
+                        <div className="text-slate-400 pt-0.5">
+                          {questions.length} ta savol ➔ har birida {config.multiTestBatchSize || 25} tadan
+                        </div>
+                        <div className="text-slate-500 text-[10px] italic">
+                          Test 1 (1–{Math.min(questions.length, config.multiTestBatchSize || 25)}), Test 2 ({Math.min(questions.length, (config.multiTestBatchSize || 25) + 1)}–{Math.min(questions.length, (config.multiTestBatchSize || 25) * 2)})...
+                        </div>
+                      </div>
                     </div>
-                    <input
-                      type="number"
-                      min={1}
-                      max={questions.length}
-                      value={config.targetCount || questions.length}
-                      onChange={(e) => setConfig({ ...config, targetCount: Math.min(questions.length, Math.max(1, Number(e.target.value))) })}
-                      className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-bold text-xs"
-                    />
-                  </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-slate-400 font-bold block mb-1">Tanlov Rejimi:</label>
+                        <select
+                          value={config.selectionMode}
+                          onChange={(e) => setConfig({ ...config, selectionMode: e.target.value as any })}
+                          className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-violet-500"
+                        >
+                          <option value="ALL">Barcha savollar ({questions.length} ta)</option>
+                          <option value="SMART_RANDOM">🧠 Smart Random (AI Saralash)</option>
+                          <option value="RANDOM">🎲 Tasodifiy (Random)</option>
+                          <option value="RANGE">🔢 Oraliq boyicha (Range)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-slate-400 font-bold block mb-1">Qancha savol tanlansin?</label>
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {[5, 10, 15, 20, 25, 30, 40, 50, 100, questions.length]
+                            .filter((v, idx, self) => v <= questions.length && self.indexOf(v) === idx)
+                            .map((countVal) => (
+                              <button
+                                key={countVal}
+                                type="button"
+                                onClick={() => setConfig({ ...config, targetCount: countVal })}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                                  (config.targetCount || questions.length) === countVal
+                                    ? "bg-violet-600 text-white shadow-sm"
+                                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                                }`}
+                              >
+                                {countVal === questions.length ? `Hammasi (${countVal})` : `${countVal} ta`}
+                              </button>
+                            ))}
+                        </div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={questions.length}
+                          value={config.targetCount || questions.length}
+                          onChange={(e) => setConfig({ ...config, targetCount: Math.min(questions.length, Math.max(1, Number(e.target.value))) })}
+                          className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-bold text-xs"
+                        />
+                      </div>
+                    </>
+                  )}
 
                   {/* Shuffling Switches */}
                   <div className="grid grid-cols-2 gap-3 border-t border-slate-800/80 pt-3">

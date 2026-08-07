@@ -3,8 +3,8 @@ import { canUseQuiz, incrementQuiz } from "../limit-checker";
 import { getBotState, setBotState, deleteBotState } from "../storage";
 import { extractTextFromFile } from "./upload-manager";
 import { parseQuizHybrid } from "./hybrid-parser";
-import { buildQuizSelection, smartRandomSelect } from "./random-engine";
-import { sendQuizToTelegram, sendQuizCardToTelegram, preparedQuizStore } from "./telegram-adapter";
+import { buildQuizSelection, buildQuizCollection, smartRandomSelect } from "./random-engine";
+import { sendQuizToTelegram, sendQuizCardToTelegram, sendQuizCollectionCardToTelegram, preparedQuizStore, preparedCollectionStore, escapeHTML } from "./telegram-adapter";
 import { saveQuizHistory, getUserQuizHistory, getQuizHistoryById, deleteQuizHistoryRecord } from "./storage";
 import { QuizQuestion, QuizConfig } from "./types";
 import { getActiveUserSession, saveUserSession, clearUserSession } from "./session-manager";
@@ -29,8 +29,85 @@ interface QuizTelegramSession {
   targetChatTitle?: string;
 }
 
-// In-memory sessions store for Telegram flow (keyed by userId)
-const telegramQuizSessions = new Map<number, QuizTelegramSession>();
+// In-memory sessions store for Telegram flow (keyed by composite key: `${userId}_${chatId}`)
+const telegramQuizSessions = new Map<string, QuizTelegramSession>();
+
+function getSessionKey(userId: number, chatId?: number | string): string {
+  return chatId ? `${userId}_${chatId}` : `${userId}`;
+}
+
+export async function getTelegramSession(userId: number, chatId?: number | string): Promise<QuizTelegramSession | null> {
+  const key = getSessionKey(userId, chatId);
+  let session = telegramQuizSessions.get(key);
+  if (session) return session;
+
+  // Fallback to primary userId session if composite key miss
+  session = telegramQuizSessions.get(`${userId}`);
+  if (session) return session;
+
+  // Fallback to Supabase persistent active session on process cold start
+  try {
+    const dbSession = await getActiveUserSession(userId);
+    if (dbSession && dbSession.questions && dbSession.questions.length > 0) {
+      const tgMeta = (dbSession.settings as any)?._tg || {};
+      const recovered: QuizTelegramSession = {
+        state: tgMeta.state || "SETTINGS",
+        title: tgMeta.title || dbSession.fileName?.replace(/\.[^/.]+$/, "") || "Talaba AI Quiz",
+        sourceFileName: dbSession.fileName,
+        rawText: dbSession.rawText || "",
+        questions: dbSession.questions,
+        config: {
+          title: tgMeta.title || "Talaba AI Quiz",
+          builderMode: "SINGLE",
+          selectionMode: "ALL",
+          targetCount: Math.min(20, dbSession.questions.length),
+          shuffleQuestions: true,
+          shuffleOptions: true,
+          timerSeconds: 30,
+          splitBatchSize: 0,
+          ...dbSession.settings,
+        },
+        targetChatId: tgMeta.targetChatId || chatId || userId,
+        targetChatTitle: tgMeta.targetChatTitle || "Shaxsiy chat",
+      };
+      telegramQuizSessions.set(key, recovered);
+      return recovered;
+    }
+  } catch (err) {
+    console.warn("[TelegramSession] Recovery failed:", err);
+  }
+
+  return null;
+}
+
+export function setTelegramSession(userId: number, session: QuizTelegramSession, chatId?: number | string): void {
+  const key = getSessionKey(userId, chatId);
+  telegramQuizSessions.set(key, session);
+
+  // Non-blocking save to persistent DB storage
+  saveUserSession({
+    userId,
+    fileName: session.sourceFileName,
+    step: session.state === "SETTINGS" ? "CONFIG" : "EDIT",
+    rawText: session.rawText,
+    questions: session.questions,
+    settings: {
+      ...session.config,
+      _tg: {
+        state: session.state,
+        title: session.title,
+        targetChatId: session.targetChatId,
+        targetChatTitle: session.targetChatTitle,
+      },
+    } as any,
+  }).catch(() => {});
+}
+
+export function deleteTelegramSession(userId: number, chatId?: number | string): void {
+  telegramQuizSessions.delete(getSessionKey(userId, chatId));
+  telegramQuizSessions.delete(`${userId}`);
+  clearUserSession(userId).catch(() => {});
+}
 
 export function detectChatType(ctx: any): "private" | "group" | "supergroup" | "channel" {
   const type = (ctx.chat?.type as string) || "private";
@@ -73,6 +150,8 @@ export async function handleTelegramQuizCommand(ctx: any) {
       questions: [],
       config: {
         title: "Talaba AI Quiz",
+        builderMode: "SINGLE",
+        multiTestBatchSize: 25,
         selectionMode: "ALL",
         targetCount: 20,
         shuffleQuestions: true,
@@ -83,7 +162,7 @@ export async function handleTelegramQuizCommand(ctx: any) {
       targetChatId: ctx.chat?.id,
       targetChatTitle: ctx.chat?.title || "Shaxsiy chat",
     };
-    telegramQuizSessions.set(userId, session);
+    setTelegramSession(userId, session, ctx.chat?.id);
 
     await ctx.replyWithHTML(
       `🧠 <b>Quiz yaratishni boshlaymiz.</b>\n\n` +
@@ -276,7 +355,7 @@ export async function handleTelegramQuizText(ctx: any, text: string) {
  * Step 3: Settings Menu (`SETTINGS` state)
  */
 export async function renderQuizConfigMenu(ctx: any, userId: number) {
-  const session = telegramQuizSessions.get(userId);
+  const session = await getTelegramSession(userId, ctx.chat?.id);
   if (!session) {
     await ctx.reply("❌ Quiz sessiyasi topilmadi. Qaytadan /quiz deb yuboring.");
     return;
@@ -284,31 +363,41 @@ export async function renderQuizConfigMenu(ctx: any, userId: number) {
 
   const { title, questions, config, targetChatTitle, targetChatId } = session;
   const total = questions.length;
-  const targetLabel = targetChatTitle || (targetChatId ? String(targetChatId) : "Ushbu chat");
+  const targetLabel = escapeHTML(targetChatTitle || (targetChatId ? String(targetChatId) : "Ushbu chat"));
+  const safeTitle = escapeHTML(title);
+  const isMulti = config.builderMode === "MULTI";
+  const batchSize = config.multiTestBatchSize || 25;
+  const multiTestCount = Math.ceil(total / batchSize);
 
   let text = `⚙️ <b>Quiz Sozlamalari</b>\n\n`;
-  text += `📌 <b>Mavzu:</b> ${title}\n`;
+  text += `📌 <b>Mavzu:</b> ${safeTitle}\n`;
   text += `📊 <b>Topilgan savollar:</b> ${total} ta\n`;
-  text += `🔢 <b>Tanlangan savollar:</b> ${config.targetCount || total} ta (${config.selectionMode})\n`;
+  text += `🎛 <b>Rejim:</b> ${isMulti ? `📦 MULTI TEST (${multiTestCount} ta test)` : `1️⃣ SINGLE TEST`}\n`;
+  if (isMulti) {
+    text += `📑 <b>Har bir test:</b> ${batchSize} tadan savol\n`;
+  } else {
+    text += `🔢 <b>Tanlangan savollar:</b> ${config.targetCount || total} ta (${config.selectionMode})\n`;
+  }
   text += `⏱ <b>Taymer:</b> ${config.timerSeconds > 0 ? `${config.timerSeconds} sek` : "Cheksiz"}\n`;
   text += `🔀 <b>Savollar aralashtirish:</b> ${config.shuffleQuestions ? "✅ Yoqilgan" : "❌ O'chirilgan"}\n`;
   text += `🔀 <b>Variantlar aralashtirish:</b> ${config.shuffleOptions ? "✅ Yoqilgan" : "❌ O'chirilgan"}\n`;
-  text += `✂️ <b>Split (Bo'lish):</b> ${(config.splitBatchSize || 0) > 0 ? `Har ${config.splitBatchSize} tadan` : "Bo'linmaydi"}\n`;
   text += `📍 <b>Yuborish joyi:</b> <code>${targetLabel}</code>\n\n`;
   text += `Sozlamalarni o'zgartiring va <b>🚀 QUIZNI YARATISH</b> tugmasini bosing:`;
 
   const inlineKeyboard = [
     [
+      { text: `🎛 Rejim: ${isMulti ? "📦 MULTI TEST" : "1️⃣ SINGLE TEST"}`, callback_data: "tg_quiz:toggle_builder_mode" },
+      isMulti
+        ? { text: `📑 Har bir test: ${batchSize} ta`, callback_data: "tg_quiz:toggle_batch_size" }
+        : { text: `📊 Savol soni: ${config.targetCount}`, callback_data: "tg_quiz:toggle_count" },
+    ],
+    [
       { text: `⏱ Taymer: ${config.timerSeconds}s`, callback_data: "tg_quiz:toggle_timer" },
-      { text: `📊 Soni: ${config.targetCount}`, callback_data: "tg_quiz:toggle_count" },
+      { text: `🧠 Tanlov: ${config.selectionMode}`, callback_data: "tg_quiz:toggle_mode" },
     ],
     [
       { text: `🔀 Savol Shuffle: ${config.shuffleQuestions ? "✅" : "❌"}`, callback_data: "tg_quiz:toggle_sq" },
       { text: `🔀 Variant Shuffle: ${config.shuffleOptions ? "✅" : "❌"}`, callback_data: "tg_quiz:toggle_so" },
-    ],
-    [
-      { text: `🧠 Rejim: ${config.selectionMode}`, callback_data: "tg_quiz:toggle_mode" },
-      { text: `✂️ Split: ${(config.splitBatchSize || 0) > 0 ? config.splitBatchSize : "Off"}`, callback_data: "tg_quiz:toggle_split" },
     ],
     [
       { text: `📍 Yuborish joyi (${targetLabel})`, callback_data: "tg_quiz:prompt_channel" },
@@ -490,7 +579,7 @@ export async function handleQuizCallback(ctx: any) {
   }
 
   if (callbackData === "tg_quiz:cancel") {
-    telegramQuizSessions.delete(userId);
+    deleteTelegramSession(userId, ctx.chat?.id);
     await deleteBotState(userId);
     await clearUserSession(userId);
     await ctx.answerCbQuery("🛑 Bekor qilindi");
@@ -540,6 +629,49 @@ export async function handleQuizCallback(ctx: any) {
         sendResult.messageIds
       );
       preparedQuizStore.delete(quizId);
+    }
+    return;
+  }
+
+  // Multi-Test Collection batch launcher callback
+  if (callbackData.startsWith("tg_quiz:start_set_")) {
+    const parts = callbackData.replace("tg_quiz:start_set_", "").split("_");
+    const collectionId = parts.slice(0, -1).join("_");
+    const setIndex = Number(parts[parts.length - 1]);
+
+    const preparedCol = preparedCollectionStore.get(collectionId);
+    if (!preparedCol) {
+      await ctx.answerCbQuery("⚠️ Test to'plami topilmadi yoki eskirgan.", { show_alert: true });
+      return;
+    }
+
+    const testSet = preparedCol.collection.testSets.find((s) => s.index === setIndex);
+    if (!testSet) {
+      await ctx.answerCbQuery("⚠️ Test qismi topilmadi.", { show_alert: true });
+      return;
+    }
+
+    await ctx.answerCbQuery(`🚀 ${testSet.title} boshlandi!`);
+    const isChannel = typeof preparedCol.targetChatId === "string" && preparedCol.targetChatId.startsWith("@");
+
+    const sendResult = await sendQuizToTelegram(
+      preparedCol.targetChatId,
+      `${preparedCol.collection.title} — ${testSet.title}`,
+      testSet.questions,
+      preparedCol.config,
+      { isAnonymous: isChannel }
+    );
+
+    if (sendResult.success) {
+      await incrementQuiz(userId);
+      await saveQuizHistory(
+        userId,
+        `${preparedCol.collection.title} — ${testSet.title}`,
+        testSet.questions,
+        preparedCol.config || { selectionMode: "ALL", shuffleQuestions: false, shuffleOptions: false, timerSeconds: 0 },
+        undefined,
+        sendResult.messageIds
+      );
     }
     return;
   }
@@ -698,6 +830,7 @@ export async function handleQuizCallback(ctx: any) {
         questions: item.questions,
         config: item.settings || {
           title: item.title,
+          builderMode: "SINGLE",
           selectionMode: "ALL",
           targetCount: item.questionCount,
           shuffleQuestions: true,
@@ -724,7 +857,7 @@ export async function handleQuizCallback(ctx: any) {
     return;
   }
 
-  let session = telegramQuizSessions.get(userId);
+  let session = await getTelegramSession(userId, ctx.chat?.id);
   if (!session && callbackData.startsWith("tg_quiz:")) {
     await ctx.answerCbQuery("❌ Quiz sessiyasi eskirgan. /quiz yuboring.", { show_alert: true });
     return;
@@ -732,7 +865,16 @@ export async function handleQuizCallback(ctx: any) {
 
   if (!session) return;
 
-  if (callbackData === "tg_quiz:toggle_timer") {
+  if (callbackData === "tg_quiz:toggle_builder_mode") {
+    session.config.builderMode = session.config.builderMode === "MULTI" ? "SINGLE" : "MULTI";
+    await ctx.answerCbQuery(`🎛 Rejim: ${session.config.builderMode === "MULTI" ? "📦 MULTI TEST" : "1️⃣ SINGLE TEST"}`);
+  } else if (callbackData === "tg_quiz:toggle_batch_size") {
+    const presets = [20, 25, 30, 40, 50, 100];
+    const currIdx = presets.indexOf(session.config.multiTestBatchSize || 25);
+    const nextIdx = (currIdx + 1) % presets.length;
+    session.config.multiTestBatchSize = presets[nextIdx];
+    await ctx.answerCbQuery(`📑 Har bir test: ${session.config.multiTestBatchSize} ta`);
+  } else if (callbackData === "tg_quiz:toggle_timer") {
     const timers = [0, 15, 30, 60];
     const currIdx = timers.indexOf(session.config.timerSeconds);
     const nextIdx = (currIdx + 1) % timers.length;
@@ -756,41 +898,52 @@ export async function handleQuizCallback(ctx: any) {
     await ctx.answerCbQuery(`🔀 Variant Shuffle: ${session.config.shuffleOptions ? "✅" : "❌"}`);
   } else if (callbackData === "tg_quiz:toggle_mode") {
     session.config.selectionMode = session.config.selectionMode === "ALL" ? "SMART_RANDOM" : "ALL";
-    await ctx.answerCbQuery(`🧠 Rejim: ${session.config.selectionMode}`);
-  } else if (callbackData === "tg_quiz:toggle_split") {
-    const splits = [0, 30, 50];
-    const currIdx = splits.indexOf(session.config.splitBatchSize || 0);
-    const nextIdx = (currIdx + 1) % splits.length;
-    session.config.splitBatchSize = splits[nextIdx];
-    await ctx.answerCbQuery(`✂️ Split: ${session.config.splitBatchSize || "Off"}`);
+    await ctx.answerCbQuery(`🧠 Tanlov: ${session.config.selectionMode}`);
   } else if (callbackData === "tg_quiz:generate") {
     session.state = "SENDING";
     await ctx.answerCbQuery("🚀 Test karta tayyorlanmoqda...");
 
     try {
-      let targetQuestions = [...session.questions];
-
-      if (session.config.selectionMode === "SMART_RANDOM" && session.config.targetCount) {
-        targetQuestions = await smartRandomSelect(targetQuestions, session.config.targetCount);
-      }
-
-      const builtQuestions = buildQuizSelection(targetQuestions, session.config);
       const recipientChatId = session.targetChatId || ctx.chat?.id || userId;
 
-      const cardResult = await sendQuizCardToTelegram(
-        recipientChatId,
-        session.title,
-        builtQuestions,
-        session.config
-      );
+      if (session.config.builderMode === "MULTI") {
+        const collection = buildQuizCollection(session.questions, session.config);
+        const cardResult = await sendQuizCollectionCardToTelegram(
+          recipientChatId,
+          collection,
+          session.config
+        );
 
-      if (cardResult.success) {
-        session.state = "FINISHED";
-        await deleteBotState(userId);
-        await clearUserSession(userId);
+        if (cardResult.success) {
+          session.state = "FINISHED";
+          await deleteBotState(userId);
+          await clearUserSession(userId);
+        } else {
+          session.state = "SETTINGS";
+          await ctx.reply(`❌ Test to'plam karta yuborishda xatolik: ${cardResult.error || "Noma'lum xatolik"}`);
+        }
       } else {
-        session.state = "SETTINGS";
-        await ctx.reply(`❌ Test karta yuborishda xatolik: ${cardResult.error || "Noma'lum xatolik"}`);
+        let targetQuestions = [...session.questions];
+        if (session.config.selectionMode === "SMART_RANDOM" && session.config.targetCount) {
+          targetQuestions = await smartRandomSelect(targetQuestions, session.config.targetCount);
+        }
+        const builtQuestions = buildQuizSelection(targetQuestions, session.config);
+
+        const cardResult = await sendQuizCardToTelegram(
+          recipientChatId,
+          session.title,
+          builtQuestions,
+          session.config
+        );
+
+        if (cardResult.success) {
+          session.state = "FINISHED";
+          await deleteBotState(userId);
+          await clearUserSession(userId);
+        } else {
+          session.state = "SETTINGS";
+          await ctx.reply(`❌ Test karta yuborishda xatolik: ${cardResult.error || "Noma'lum xatolik"}`);
+        }
       }
     } catch (err: any) {
       session.state = "SETTINGS";

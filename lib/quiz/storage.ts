@@ -29,18 +29,28 @@ export async function saveQuizHistory(
       .select("*")
       .single();
 
-    if (error && (error.code === "PGRST204" || String(error.message).includes("telegram_message_ids"))) {
-      delete insertPayload.telegram_message_ids;
-      delete insertPayload.source_file_name;
-      const retry = await supabase.from("quiz_history").insert(insertPayload).select("*").single();
+    // If optional columns fail due to PGRST204 or missing column, fallback to core payload
+    if (error) {
+      console.warn(`[History] Insert warning (${error.message || error.code}). Attempting clean fallback...`);
+      const corePayload = {
+        user_id: userId,
+        title: title || "Quiz",
+        question_count: questions.length,
+        settings: settings || {},
+        questions: questions || [],
+        created_at: new Date().toISOString(),
+      };
+      const retry = await supabase.from("quiz_history").insert(corePayload).select("*").single();
       data = retry.data;
       error = retry.error;
     }
 
     if (error || !data) {
-      console.error("saveQuizHistory DB error:", error);
+      console.warn(`[History] Non-blocking record save skipped (${error?.message || "DB unavailable"}). Quiz flow unaffected.`);
       return null;
     }
+
+    console.log(`[History] Saved quiz history record (ID: ${data.id}) for user ${userId}`);
 
     return {
       id: data.id,
@@ -54,8 +64,8 @@ export async function saveQuizHistory(
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };
-  } catch (err) {
-    console.error("saveQuizHistory exception:", err);
+  } catch (err: any) {
+    console.warn(`[History] Non-blocking save exception (${err?.message || "Network error"}). Quiz flow unaffected.`);
     return null;
   }
 }

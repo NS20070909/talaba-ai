@@ -1,5 +1,7 @@
 import { bot } from "../bot";
-import { QuizQuestion, QuizConfig } from "./types";
+import { QuizQuestion, QuizConfig, QuizCollection, QuizTestSet } from "./types";
+import { processQuizQueue } from "./telegram-queue";
+import { sanitizeHTML } from "./security";
 
 export interface SendTelegramQuizResult {
   success: boolean;
@@ -17,7 +19,32 @@ export interface PreparedQuiz {
   createdAt: number;
 }
 
+export interface PreparedCollection {
+  id: string;
+  targetChatId: number | string;
+  collection: QuizCollection;
+  config?: QuizConfig;
+  createdAt: number;
+}
+
 export const preparedQuizStore = new Map<string, PreparedQuiz>();
+export const preparedCollectionStore = new Map<string, PreparedCollection>();
+
+// Auto-cleanup expired prepared quizzes (TTL 2 hours)
+function cleanupPreparedStores() {
+  const now = Date.now();
+  const maxAge = 2 * 60 * 60 * 1000;
+  preparedQuizStore.forEach((val, key) => {
+    if (now - val.createdAt > maxAge) preparedQuizStore.delete(key);
+  });
+  preparedCollectionStore.forEach((val, key) => {
+    if (now - val.createdAt > maxAge) preparedCollectionStore.delete(key);
+  });
+}
+
+export function escapeHTML(str: string): string {
+  return sanitizeHTML(str);
+}
 
 export function storePreparedQuiz(
   targetChatId: number | string,
@@ -25,6 +52,7 @@ export function storePreparedQuiz(
   questions: QuizQuestion[],
   config?: QuizConfig
 ): string {
+  cleanupPreparedStores();
   const id = `qz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   preparedQuizStore.set(id, {
     id,
@@ -35,6 +63,97 @@ export function storePreparedQuiz(
     createdAt: Date.now(),
   });
   return id;
+}
+
+export function storePreparedCollection(
+  targetChatId: number | string,
+  collection: QuizCollection,
+  config?: QuizConfig
+): string {
+  cleanupPreparedStores();
+  const id = `col_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  preparedCollectionStore.set(id, {
+    id,
+    targetChatId,
+    collection,
+    config,
+    createdAt: Date.now(),
+  });
+  return id;
+}
+
+/**
+ * Sends a Multi-Test Collection Card message to Telegram
+ */
+export async function sendQuizCollectionCardToTelegram(
+  targetChatId: number | string,
+  collection: QuizCollection,
+  config?: QuizConfig
+): Promise<{ success: boolean; collectionId: string; messageId?: number; error?: string }> {
+  try {
+    const collectionId = storePreparedCollection(targetChatId, collection, config);
+
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || "TalabaAI_Bot";
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
+      `https://t.me/${botUsername}`
+    )}&text=${encodeURIComponent(`🧠 ${collection.title} test to'plami! (${collection.totalQuestions} ta savol):`)}`;
+
+    const timerLabel = config?.timerSeconds ? `${config.timerSeconds} sek/savol` : "Cheksiz";
+    const safeTitle = escapeHTML(collection.title);
+
+    let cardText =
+      `🧠 <b>TALABA AI — TEST TO'PLAMI</b>\n\n` +
+      `📚 <b>Mavzu:</b> ${safeTitle}\n` +
+      `📄 <b>Umumiy savollar:</b> ${collection.totalQuestions} ta\n` +
+      `📦 <b>Testlar soni:</b> ${collection.testSets.length} ta\n` +
+      `📑 <b>Har bir test:</b> ${collection.batchSize} ta savol\n` +
+      `⏱ <b>Vaqt:</b> ${timerLabel}\n\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `👇 <i>Kerakli testni tanlang va ishlashni boshlang:</i>`;
+
+    const inlineKeyboard: any[] = [];
+
+    // Add buttons for each test batch
+    collection.testSets.forEach((set) => {
+      inlineKeyboard.push([
+        {
+          text: `📦 ${escapeHTML(set.title)} ▶️ Boshlash`,
+          callback_data: `tg_quiz:start_set_${collectionId}_${set.index}`,
+        },
+      ]);
+    });
+
+    // Add action buttons
+    inlineKeyboard.push([
+      { text: "👥 Guruhda boshlash", url: shareUrl },
+      { text: "📤 Testni ulashish", url: shareUrl },
+    ]);
+    inlineKeyboard.push([
+      { text: "📊 Statistikani ko'rish", callback_data: "tg_quiz:menu_stats" },
+    ]);
+
+    console.log(`[Telegram] Sending Collection Card (${collection.testSets.length} sets, ${collection.totalQuestions} Qs) to chat ${targetChatId}`);
+
+    const cardMsg = await bot.telegram.sendMessage(targetChatId, cardText, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: inlineKeyboard,
+      },
+    });
+
+    return {
+      success: true,
+      collectionId,
+      messageId: cardMsg?.message_id,
+    };
+  } catch (err: any) {
+    console.error("[Telegram] sendQuizCollectionCardToTelegram error:", err);
+    return {
+      success: false,
+      collectionId: "",
+      error: err?.message || "Test Collection Card yuborishda xatolik",
+    };
+  }
 }
 
 /**
@@ -55,17 +174,21 @@ export async function sendQuizCardToTelegram(
       `https://t.me/${botUsername}`
     )}&text=${encodeURIComponent(`🧠 ${title} quizi! Sinab ko'ring:`)}`;
 
+    const safeTitle = escapeHTML(title);
+
     const cardText =
       `🧠 <b>TALABA AI TEST</b>\n\n` +
-      `📌 <b>Mavzu:</b>\n${title}\n\n` +
-      `📊 <b>Savollar:</b>\n${questions.length} ta\n\n` +
-      `⏱ <b>Vaqt:</b>\n${config?.timerSeconds ? `${config.timerSeconds} sek/savol` : "Cheklovsiz"}\n\n` +
-      `🔀 <b>Rejim:</b>\n${config?.selectionMode || "Standard"}\n` +
+      `📌 <b>Mavzu:</b> ${safeTitle}\n` +
+      `📊 <b>Savollar soni:</b> ${questions.length} ta\n` +
+      `⏱ <b>Vaqt:</b> ${config?.timerSeconds ? `${config.timerSeconds} sek/savol` : "Cheklovsiz"}\n` +
+      `🔀 <b>Rejim:</b> ${config?.selectionMode || "Standard"}\n` +
       (config?.splitBatchSize && config.splitBatchSize > 0
-        ? `\n✂️ <b>Bo'linish:</b>\nHar ${config.splitBatchSize} tadan to'plam\n`
+        ? `✂️ <b>Bo'linish:</b> Har ${config.splitBatchSize} tadan to'plam\n`
         : "") +
       `\n━━━━━━━━━━━━━━━\n` +
       `👇 <i>Testni boshlash uchun quyidagi tugmani bosing:</i>`;
+
+    console.log(`[Telegram] Sending Single Test Card (${questions.length} Qs) to chat ${targetChatId}`);
 
     const cardMsg = await bot.telegram.sendMessage(targetChatId, cardText, {
       parse_mode: "HTML",
@@ -87,7 +210,7 @@ export async function sendQuizCardToTelegram(
       messageId: cardMsg?.message_id,
     };
   } catch (err: any) {
-    console.error("sendQuizCardToTelegram error:", err);
+    console.error("[Telegram] sendQuizCardToTelegram error:", err);
     return {
       success: false,
       quizId: "",
@@ -106,97 +229,6 @@ export async function sendQuizToTelegram(
   config?: QuizConfig,
   options?: { isAnonymous?: boolean }
 ): Promise<SendTelegramQuizResult> {
-  const sentMessageIds: number[] = [];
-
-  try {
-    const isChannel = typeof targetChatId === "string" && targetChatId.startsWith("@");
-    const forceAnonymous = options?.isAnonymous ?? isChannel;
-
-    const batchSize = config?.splitBatchSize && config.splitBatchSize > 0 ? config.splitBatchSize : 0;
-    let currentBatchIndex = 0;
-
-    // Send each question as a native Telegram Quiz Poll
-    for (let i = 0; i < questions.length; i++) {
-      // If batching is enabled, send batch divider headers
-      if (batchSize > 0 && i % batchSize === 0) {
-        currentBatchIndex++;
-        const totalBatches = Math.ceil(questions.length / batchSize);
-        const batchEnd = Math.min(questions.length, currentBatchIndex * batchSize);
-        const batchStart = (currentBatchIndex - 1) * batchSize + 1;
-
-        const dividerText = `📦 <b>Set ${currentBatchIndex}/${totalBatches}</b> (${batchStart}–${batchEnd}-savollar)`;
-        const divMsg = await bot.telegram.sendMessage(targetChatId, dividerText, {
-          parse_mode: "HTML",
-        });
-        if (divMsg?.message_id) {
-          sentMessageIds.push(divMsg.message_id);
-        }
-      }
-
-      const q = questions[i];
-
-      let rawQText = `📄 Test ${i + 1}/${questions.length}\n\n${q.text}`.trim();
-      if (rawQText.length > 300) {
-        rawQText = rawQText.substring(0, 297) + "...";
-      }
-
-      const optionsText = q.options.map((o) => {
-        let txt = o.text.trim();
-        if (txt.length > 100) txt = txt.substring(0, 97) + "...";
-        return txt || "Variant";
-      });
-
-      if (optionsText.length < 2) {
-        optionsText.push("Boshqa variant");
-      }
-      const safeOptions = optionsText.slice(0, 10);
-
-      let correctIndex = q.options.findIndex((o) => o.isCorrect);
-      if (correctIndex < 0 || correctIndex >= safeOptions.length) {
-        correctIndex = 0;
-      }
-
-      let explanation = q.explanation ? q.explanation.trim() : undefined;
-      if (explanation && explanation.length > 200) {
-        explanation = explanation.substring(0, 197) + "...";
-      }
-
-      try {
-        const pollMsg = await bot.telegram.sendPoll(
-          targetChatId,
-          rawQText,
-          safeOptions,
-          {
-            type: "quiz",
-            correct_option_id: correctIndex,
-            explanation,
-            open_period: config?.timerSeconds && config.timerSeconds >= 5 ? config.timerSeconds : undefined,
-            is_anonymous: forceAnonymous,
-          } as any
-        );
-
-        if (pollMsg?.message_id) {
-          sentMessageIds.push(pollMsg.message_id);
-        }
-
-        await new Promise((r) => setTimeout(r, 200));
-      } catch (pollErr) {
-        console.error(`Failed to send Telegram poll for question ${i + 1}:`, pollErr);
-      }
-    }
-
-    return {
-      success: true,
-      sentCount: questions.length,
-      messageIds: sentMessageIds,
-    };
-  } catch (err: any) {
-    console.error("sendQuizToTelegram error:", err);
-    return {
-      success: false,
-      sentCount: 0,
-      messageIds: sentMessageIds,
-      error: err?.message || "Telegram-ga quiz yuborishda xatolik yuz berdi",
-    };
-  }
+  const userId = typeof targetChatId === "number" ? targetChatId : 0;
+  return processQuizQueue(userId, targetChatId, title, questions, config, options);
 }
