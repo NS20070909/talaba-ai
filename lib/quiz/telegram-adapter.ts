@@ -128,10 +128,7 @@ export async function sendQuizCollectionCardToTelegram(
     inlineKeyboard.push([
       { text: "👤 Shaxsiy chat", callback_data: "tg_quiz:set_target_private" },
       { text: "👥 Guruhga yuborish", url: shareUrl },
-    ]);
-    inlineKeyboard.push([
       { text: "📢 Kanalga yuborish", callback_data: "tg_quiz:prompt_channel" },
-      { text: "🔗 Ulashish", url: shareUrl },
     ]);
     inlineKeyboard.push([
       { text: "📊 Statistika", callback_data: "tg_quiz:menu_stats" },

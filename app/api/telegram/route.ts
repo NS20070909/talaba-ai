@@ -787,7 +787,8 @@ async function renderBroadcastMenu(ctx: any) {
         { text: "📣 Channels", callback_data: "admin:bc:target:CHANNELS" }
       ],
       [
-        { text: "🌍 Everyone (Barchasi)", callback_data: "admin:bc:target:EVERYONE" }
+        { text: "🌍 Everyone (Barchasi)", callback_data: "admin:bc:target:EVERYONE" },
+        { text: "🎯 Specific User", callback_data: "admin:bc:target:SPECIFIC" }
       ],
       [
         { text: "📋 Broadcast History & Retry", callback_data: "admin:bc:history" },
@@ -1117,10 +1118,21 @@ bot.action("admin:broadcast", async (ctx) => {
 
 bot.action(/admin:bc:target:(.+)/, async (ctx) => {
   if (!(await isAdmin(ctx.from?.id || 0))) return;
-  const target = ctx.match[1] as BroadcastTarget;
+  const target = ctx.match[1] as BroadcastTarget | "SPECIFIC";
+  
+  if (target === "SPECIFIC") {
+    await setBotState(ctx.from!.id, "owner:waiting_for_bc_specific_id");
+    await ctx.replyWithHTML(
+      `🎯 <b>Bitta foydalanuvchiga xabar yuborish</b>\n\n` +
+      `Iltimos, xabar yubormoqchi bo'lgan foydalanuvchining <b>Telegram ID</b> sini kiriting:`
+    );
+    await ctx.answerCbQuery();
+    return;
+  }
+
   await setBotState(ctx.from!.id, `owner:waiting_for_bc_${target}`);
 
-  const recipients = await getBroadcastRecipients(target);
+  const recipients = await getBroadcastRecipients(target as BroadcastTarget);
   await ctx.replyWithHTML(
     `📢 <b>${target}</b> uchun xabar yuborish\n\n` +
     `📊 <b>Target auditoriya soni:</b> ${recipients.length} ta recipient\n\n` +
@@ -2587,6 +2599,27 @@ bot.on("message", async (ctx, next) => {
             `🗓 <b>Ro'yxatdan o'tgan:</b> ${createdAt}`;
 
           await ctx.replyWithHTML(message);
+        }
+      }
+    } else if (state === "owner:waiting_for_bc_specific_id") {
+      const targetId = Number(text.trim());
+      if (isNaN(targetId) || targetId <= 0) {
+        await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
+      } else {
+        await setBotState(userId, `owner:waiting_for_bc_specific_msg_${targetId}`);
+        await ctx.replyWithHTML(`✅ Target ID qabul qilindi: <code>${targetId}</code>\n\nIltimos, endi yubormoqchi bo'lgan xabaringizni kiriting (HTML qo'llab-quvvatlanadi):`);
+      }
+    } else if (state.startsWith("owner:waiting_for_bc_specific_msg_")) {
+      const targetIdStr = state.replace("owner:waiting_for_bc_specific_msg_", "");
+      const targetId = Number(targetIdStr);
+      if (!text || text.trim().length === 0) {
+        await ctx.reply("❌ Xabar bo'sh bo'lishi mumkin emas.");
+      } else {
+        try {
+          await bot.telegram.sendMessage(targetId, text.trim(), { parse_mode: "HTML" });
+          await ctx.replyWithHTML(`✅ Xabar muvaffaqiyatli yuborildi!\n\nTarget ID: <code>${targetId}</code>`);
+        } catch (err: any) {
+          await ctx.reply(`❌ Xabar yuborib bo'lmadi.\nSabab: ${err.message}`);
         }
       }
     } else if (state.startsWith("owner:waiting_for_bc_")) {

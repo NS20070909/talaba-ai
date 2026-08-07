@@ -44,9 +44,7 @@ export default function QuizPage() {
   /* ── Simple config: batch + timer + advanced ──────────────── */
   const [batchSize, setBatchSize] = useState(25);
   const [timerSeconds, setTimerSeconds] = useState(30);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [shuffleQuestions, setShuffleQuestions] = useState(true);
-  const [shuffleOptions, setShuffleOptions] = useState(true);
+
   const [quizTitle, setQuizTitle] = useState("");
 
   /* ── Stats & History ──────────────────────────────────────── */
@@ -72,7 +70,7 @@ export default function QuizPage() {
     setSelectedFile(null);
     setPastedText("");
     setQuizTitle("");
-    setShowAdvanced(false);
+
     setBatchSize(25);
     setTimerSeconds(30);
   };
@@ -206,7 +204,7 @@ export default function QuizPage() {
       const result: ParsedQuizResult = data.result;
       setParsedData(result);
       setQuestions(result.questions);
-      setQuizTitle(result.title || "Talaba AI Quiz");
+      setQuizTitle(result.title || "Yangi Test");
 
       // Auto-select best batch size
       const total = result.questions.length;
@@ -243,7 +241,7 @@ export default function QuizPage() {
     if (!tgId) { alert("Telegram user ID topilmadi"); return; }
 
     const sendQuestions = overrideQuestions || questions;
-    const sendTitle = overrideTitle || quizTitle || parsedData?.title || "TALABA AI Quiz";
+    const sendTitle = overrideTitle || quizTitle || parsedData?.title || "Yangi Test";
     const total = sendQuestions.length;
     const effectiveBatch = overrideConfig?.multiTestBatchSize || batchSize;
     const isMulti = total > effectiveBatch;
@@ -253,8 +251,8 @@ export default function QuizPage() {
       builderMode: isMulti ? "MULTI" : "SINGLE",
       multiTestBatchSize: effectiveBatch,
       selectionMode: "ALL",
-      shuffleQuestions,
-      shuffleOptions,
+      shuffleQuestions: true,
+      shuffleOptions: true,
       timerSeconds,
       splitBatchSize: 0,
       targetCount: total,
@@ -583,51 +581,6 @@ export default function QuizPage() {
                       </button>
                     ))}
                   </div>
-                </div>
-
-                {/* Advanced toggle */}
-                <div className="bg-[#121927] border border-slate-800 rounded-3xl overflow-hidden">
-                  <button
-                    id="btn-advanced-toggle"
-                    onClick={() => setShowAdvanced(v => !v)}
-                    className="w-full px-5 py-4 flex items-center justify-between text-xs font-bold text-slate-400 hover:text-slate-200 transition"
-                  >
-                    <span>⚙️ Kengaytirilgan sozlamalar</span>
-                    <span className={`text-slate-500 transition-transform duration-200 ${showAdvanced ? "rotate-180" : ""}`}>▼</span>
-                  </button>
-                  {showAdvanced && (
-                    <div className="px-5 pb-5 space-y-4 border-t border-slate-800">
-                      <div className="grid grid-cols-2 gap-3 pt-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={shuffleQuestions}
-                            onChange={e => setShuffleQuestions(e.target.checked)}
-                            className="accent-violet-500 w-4 h-4"
-                          />
-                          <span className="text-xs font-semibold text-slate-300">Savollar shuffle</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={shuffleOptions}
-                            onChange={e => setShuffleOptions(e.target.checked)}
-                            className="accent-violet-500 w-4 h-4"
-                          />
-                          <span className="text-xs font-semibold text-slate-300">Variantlar shuffle</span>
-                        </label>
-                      </div>
-                      <div>
-                        <label className="text-xs text-slate-400 font-bold block mb-1.5">Quiz nomi:</label>
-                        <input
-                          type="text"
-                          value={quizTitle}
-                          onChange={e => setQuizTitle(e.target.value)}
-                          className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2.5 text-white text-xs font-bold focus:outline-none focus:border-violet-500 transition"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* Send to Telegram */}

@@ -11,16 +11,17 @@ export async function saveQuizHistory(
 ): Promise<QuizHistoryRecord | null> {
   try {
     const supabase = getSupabase();
+    
+    // As per V4 spec: telegram_id, title, question_count, created_at, mode, timer, target, status
     const insertPayload: any = {
-      user_id: userId,
-      title: title || "Quiz",
-      source_file_name: sourceFileName || null,
+      telegram_id: userId,
+      title: title || "Yangi Test",
       question_count: questions.length,
-      settings: settings || {},
-      questions: questions || [],
-      telegram_message_ids: telegramMessageIds,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      mode: settings.builderMode || "SINGLE",
+      timer: settings.timerSeconds || 0,
+      target: "telegram",
+      status: "COMPLETED",
+      created_at: new Date().toISOString()
     };
 
     let { data, error } = await supabase
@@ -29,43 +30,38 @@ export async function saveQuizHistory(
       .select("*")
       .single();
 
-    // If optional columns fail due to PGRST204 or missing column, fallback to core payload
     if (error) {
-      console.warn(`[History] Insert warning (${error.message || error.code}). Attempting clean fallback...`);
-      const corePayload = {
+      // Automatically adapt: If the new schema isn't fully migrated, fallback silently
+      const fallbackPayload = {
         user_id: userId,
-        title: title || "Quiz",
+        title: title || "Yangi Test",
         question_count: questions.length,
         settings: settings || {},
         questions: questions || [],
         created_at: new Date().toISOString(),
       };
-      const retry = await supabase.from("quiz_history").insert(corePayload).select("*").single();
+      const retry = await supabase.from("quiz_history").insert(fallbackPayload).select("*").single();
       data = retry.data;
       error = retry.error;
     }
 
     if (error || !data) {
-      console.warn(`[History] Non-blocking record save skipped (${error?.message || "DB unavailable"}). Quiz flow unaffected.`);
       return null;
     }
 
-    console.log(`[History] Saved quiz history record (ID: ${data.id}) for user ${userId}`);
-
     return {
       id: data.id,
-      userId: Number(data.user_id),
+      userId: Number(data.user_id || data.telegram_id),
       title: data.title,
-      sourceFileName: data.source_file_name,
+      sourceFileName: data.source_file_name || "",
       questionCount: data.question_count,
-      settings: data.settings,
-      questions: data.questions,
+      settings: data.settings || {},
+      questions: data.questions || [],
       telegramMessageIds: data.telegram_message_ids || [],
       createdAt: data.created_at,
-      updatedAt: data.updated_at,
+      updatedAt: data.updated_at || data.created_at,
     };
   } catch (err: any) {
-    console.warn(`[History] Non-blocking save exception (${err?.message || "Network error"}). Quiz flow unaffected.`);
     return null;
   }
 }
@@ -76,28 +72,28 @@ export async function getUserQuizHistory(userId: number): Promise<QuizHistoryRec
     const { data, error } = await supabase
       .from("quiz_history")
       .select("*")
-      .eq("user_id", userId)
+      // Try filtering by telegram_id, fallback to user_id dynamically if one is missing?
+      // Supabase REST requires knowing the column. We will use `or(telegram_id.eq.X,user_id.eq.X)`
+      .or(`telegram_id.eq.${userId},user_id.eq.${userId}`)
       .order("created_at", { ascending: false });
 
     if (error || !data) {
-      console.error("getUserQuizHistory error:", error);
       return [];
     }
 
     return data.map((row) => ({
       id: row.id,
-      userId: Number(row.user_id),
+      userId: Number(row.user_id || row.telegram_id),
       title: row.title,
-      sourceFileName: row.source_file_name,
+      sourceFileName: row.source_file_name || "",
       questionCount: row.question_count,
-      settings: row.settings,
-      questions: row.questions,
+      settings: row.settings || {},
+      questions: row.questions || [],
       telegramMessageIds: row.telegram_message_ids || [],
       createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      updatedAt: row.updated_at || row.created_at,
     }));
   } catch (err) {
-    console.error("getUserQuizHistory exception:", err);
     return [];
   }
 }
@@ -109,7 +105,7 @@ export async function getQuizHistoryById(id: string, userId: number): Promise<Qu
       .from("quiz_history")
       .select("*")
       .eq("id", id)
-      .eq("user_id", userId)
+      .or(`telegram_id.eq.${userId},user_id.eq.${userId}`)
       .single();
 
     if (error || !data) return null;
@@ -124,10 +120,9 @@ export async function getQuizHistoryById(id: string, userId: number): Promise<Qu
       questions: data.questions,
       telegramMessageIds: data.telegram_message_ids || [],
       createdAt: data.created_at,
-      updatedAt: data.updated_at,
+      updatedAt: data.updated_at || data.created_at,
     };
   } catch (err) {
-    console.error("getQuizHistoryById exception:", err);
     return null;
   }
 }
@@ -139,15 +134,13 @@ export async function deleteQuizHistoryRecord(id: string, userId: number): Promi
       .from("quiz_history")
       .delete()
       .eq("id", id)
-      .eq("user_id", userId);
+      .or(`telegram_id.eq.${userId},user_id.eq.${userId}`);
 
     if (error) {
-      console.error("deleteQuizHistoryRecord error:", error);
       return false;
     }
     return true;
   } catch (err) {
-    console.error("deleteQuizHistoryRecord exception:", err);
     return false;
   }
 }

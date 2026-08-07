@@ -43,8 +43,9 @@ export async function parseQuizHybrid(
 
   console.log(`[Validation] Completed in ${valTime}ms. Valid: ${validatedQuestions.length}, Flawed: ${overallValidation.flawedQuestions}`);
 
-  // Stage 3: AI Parser ONLY if Rule Parser returned < 2 valid questions
-  const isPoorResult = validatedQuestions.length < 2;
+  // Stage 3: AI Parser ONLY if Rule Parser result is < 60% valid or < 2 questions total
+  const isValidRatioLow = questions.length > 0 && (validatedQuestions.length / questions.length) < 0.6;
+  const isPoorResult = validatedQuestions.length < 2 || isValidRatioLow;
   let aiTime = 0;
 
   if (isPoorResult) {

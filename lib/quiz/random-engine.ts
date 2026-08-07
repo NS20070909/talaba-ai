@@ -41,7 +41,7 @@ export function buildQuizCollection(
   const total = questions.length;
   const batchSize = Math.max(1, config.multiTestBatchSize || 25);
   const testSets: QuizTestSet[] = [];
-  const mainTitle = config.title || "Talaba AI Quiz";
+  const mainTitle = config.title || "Yangi Test";
 
   let index = 1;
   for (let i = 0; i < total; i += batchSize) {

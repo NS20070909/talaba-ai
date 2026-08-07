@@ -90,8 +90,6 @@ export function validateQuestions(questions: QuizQuestion[]): {
     };
   });
 
-  console.log(`[Validation] Processed ${questions.length} questions | Valid: ${validCount} | Flawed: ${flawedCount}`);
-
   return {
     validatedQuestions,
     overallValidation: {
