@@ -92,44 +92,50 @@ export async function sendQuizCollectionCardToTelegram(
 ): Promise<{ success: boolean; collectionId: string; messageId?: number; error?: string }> {
   try {
     const collectionId = storePreparedCollection(targetChatId, collection, config);
-
     const botUsername = process.env.TELEGRAM_BOT_USERNAME || "TalabaAI_Bot";
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
-      `https://t.me/${botUsername}`
-    )}&text=${encodeURIComponent(`🧠 ${collection.title} test to'plami! (${collection.totalQuestions} ta savol):`)}`;
-
-    const timerLabel = config?.timerSeconds ? `${config.timerSeconds} sek/savol` : "Cheksiz";
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(`https://t.me/${botUsername}`)}&text=${encodeURIComponent(`🧠 ${collection.title} test to'plami! (${collection.totalQuestions} ta savol):`)}`;
+    const timerLabel = config?.timerSeconds ? `${config.timerSeconds} soniya` : "Cheksiz";
     const safeTitle = escapeHTML(collection.title);
 
     let cardText =
-      `🧠 <b>TALABA AI — TEST TO'PLAMI</b>\n\n` +
-      `📚 <b>Mavzu:</b> ${safeTitle}\n` +
-      `📄 <b>Umumiy savollar:</b> ${collection.totalQuestions} ta\n` +
-      `📦 <b>Testlar soni:</b> ${collection.testSets.length} ta\n` +
-      `📑 <b>Har bir test:</b> ${collection.batchSize} ta savol\n` +
-      `⏱ <b>Vaqt:</b> ${timerLabel}\n\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `👇 <i>Kerakli testni tanlang va ishlashni boshlang:</i>`;
+      `🧠 <b>TARIX TESTLARI</b>\n` +
+      `📚 <b>Mavzu</b>\n${safeTitle}\n` +
+      `📄 <b>Umumiy savollar</b>\n${collection.totalQuestions}\n` +
+      `📦 <b>Testlar</b>\n${collection.testSets.length}\n` +
+      `📑 <b>Har biri</b>\n${collection.batchSize}\n` +
+      `⏱ <b>${timerLabel}</b>\n` +
+      `━━━━━━━━━━━━━━\n`;
+
+    collection.testSets.forEach((set) => {
+      cardText += `📦 <b>${escapeHTML(set.title)}</b>\n▶ Boshlash\n`;
+    });
+    
+    cardText += `━━━━━━━━━━━━━━`;
 
     const inlineKeyboard: any[] = [];
-
+    
     // Add buttons for each test batch
     collection.testSets.forEach((set) => {
       inlineKeyboard.push([
         {
-          text: `📦 ${escapeHTML(set.title)} ▶️ Boshlash`,
+          text: `📦 ${escapeHTML(set.title)} ▶ Boshlash`,
           callback_data: `tg_quiz:start_set_${collectionId}_${set.index}`,
         },
       ]);
     });
 
-    // Add action buttons
+    // Add action buttons as exactly requested
     inlineKeyboard.push([
-      { text: "👥 Guruhda boshlash", url: shareUrl },
-      { text: "📤 Testni ulashish", url: shareUrl },
+      { text: "👤 Shaxsiy chat", callback_data: "tg_quiz:set_target_private" },
+      { text: "👥 Guruhga yuborish", url: shareUrl },
     ]);
     inlineKeyboard.push([
-      { text: "📊 Statistikani ko'rish", callback_data: "tg_quiz:menu_stats" },
+      { text: "📢 Kanalga yuborish", callback_data: "tg_quiz:prompt_channel" },
+      { text: "🔗 Ulashish", url: shareUrl },
+    ]);
+    inlineKeyboard.push([
+      { text: "📊 Statistika", callback_data: "tg_quiz:menu_stats" },
+      { text: "📜 Tarix", callback_data: "tg_quiz:menu_history" },
     ]);
 
     console.log(`[Telegram] Sending Collection Card (${collection.testSets.length} sets, ${collection.totalQuestions} Qs) to chat ${targetChatId}`);

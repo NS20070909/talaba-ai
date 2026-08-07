@@ -9,110 +9,131 @@ import {
   QuizHistoryRecord,
 } from "@/lib/quiz/types";
 
+const BATCH_PRESETS = [20, 25, 30, 40, 50, 100];
+const TIMER_PRESETS = [
+  { label: "♾ Cheksiz", value: 0 },
+  { label: "15s", value: 15 },
+  { label: "30s", value: 30 },
+  { label: "60s", value: 60 },
+];
+
 export default function QuizPage() {
+  /* ── Tab ──────────────────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState<"builder" | "stats" | "history">("builder");
+
+  /* ── Input mode ───────────────────────────────────────────── */
   const [inputMode, setInputMode] = useState<"upload" | "text">("upload");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pastedText, setPastedText] = useState("");
   const [telegramId, setTelegramId] = useState<string>("");
+  const dropzoneRef = useRef<HTMLDivElement>(null);
 
-  // Live Progress State
+  /* ── Flow step: INPUT → RESULT ────────────────────────────── */
+  const [builderStep, setBuilderStep] = useState<"INPUT" | "RESULT">("INPUT");
+
+  /* ── Processing state ─────────────────────────────────────── */
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStep, setProgressStep] = useState<string>("");
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [isSendingTg, setIsSendingTg] = useState(false);
 
-  // Parsed & Validation Data
+  /* ── Parsed data ──────────────────────────────────────────── */
   const [parsedData, setParsedData] = useState<ParsedQuizResult | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
 
-  // Config State
-  const [config, setConfig] = useState<QuizConfig>({
-    title: "",
-    selectionMode: "ALL",
-    rangeStart: 1,
-    rangeEnd: 10,
-    targetCount: 20,
-    shuffleQuestions: true,
-    shuffleOptions: true,
-    timerSeconds: 30,
-    splitBatchSize: 0,
-  });
+  /* ── Simple config: batch + timer + advanced ──────────────── */
+  const [batchSize, setBatchSize] = useState(25);
+  const [timerSeconds, setTimerSeconds] = useState(30);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [shuffleQuestions, setShuffleQuestions] = useState(true);
+  const [shuffleOptions, setShuffleOptions] = useState(true);
+  const [quizTitle, setQuizTitle] = useState("");
 
-  // UI Flow Step
-  const [builderStep, setBuilderStep] = useState<"INPUT" | "EDIT" | "CONFIG" | "PREVIEW">("INPUT");
+  /* ── Stats & History ──────────────────────────────────────── */
+  const [historyList, setHistoryList] = useState<QuizHistoryRecord[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [statsData, setStatsData] = useState<any>(null);
 
-  // Web Interactive Quiz State
-  const [currentPreviewIdx, setCurrentPreviewIdx] = useState(0);
-  const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
-  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  /* ── Session resume ───────────────────────────────────────── */
+  const [activeSessionPrompt, setActiveSessionPrompt] = useState<any | null>(null);
 
-  // Gamification State
-  const [gamificationData, setGamificationData] = useState<{
-    stats: any | null;
-    leaderboard: any[];
-    wrongAnswers: any[];
-  }>({
-    stats: null,
-    leaderboard: [],
-    wrongAnswers: [],
-  });
-  const [loadingGamification, setLoadingGamification] = useState(false);
+  /* ── Toast ────────────────────────────────────────────────── */
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 4000);
+  };
 
-  const loadGamification = useCallback(async () => {
+  /* ── Reset builder ────────────────────────────────────────── */
+  const resetBuilder = () => {
+    setBuilderStep("INPUT");
+    setParsedData(null);
+    setQuestions([]);
+    setSelectedFile(null);
+    setPastedText("");
+    setQuizTitle("");
+    setShowAdvanced(false);
+    setBatchSize(25);
+    setTimerSeconds(30);
+  };
+
+  /* ── Telegram ID init ─────────────────────────────────────── */
+  const checkActiveSession = useCallback(async (tgId: string) => {
+    try {
+      const res = await fetch(`/api/quiz/session?telegram_id=${tgId}`);
+      const data = await res.json();
+      if (data.success && data.hasActiveSession && data.session) {
+        setActiveSessionPrompt(data.session);
+      }
+    } catch { }
+  }, []);
+
+  useEffect(() => {
+    const savedTgId = localStorage.getItem("telegram_user_id") || "";
+    setTelegramId(savedTgId);
+    if (savedTgId) checkActiveSession(savedTgId);
+  }, [checkActiveSession]);
+
+  /* ── History ──────────────────────────────────────────────── */
+  const loadHistory = useCallback(async () => {
     const tgId = localStorage.getItem("telegram_user_id");
-    setLoadingGamification(true);
+    if (!tgId) return;
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/quiz/history?telegram_id=${tgId}`);
+      const data = await res.json();
+      if (data.success && data.history) setHistoryList(data.history);
+    } catch { } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  /* ── Stats ────────────────────────────────────────────────── */
+  const loadStats = useCallback(async () => {
+    const tgId = localStorage.getItem("telegram_user_id");
     try {
       const url = tgId
         ? `/api/quiz/gamification?telegram_id=${tgId}`
         : `/api/quiz/gamification?mode=leaderboard`;
       const res = await fetch(url);
       const data = await res.json();
-      if (data.success) {
-        setGamificationData({
-          stats: data.stats || null,
-          leaderboard: data.leaderboard || [],
-          wrongAnswers: data.wrongAnswers || [],
-        });
-      }
-    } catch (err) {
-      console.error("Failed to load gamification:", err);
-    } finally {
-      setLoadingGamification(false);
-    }
+      if (data.success) setStatsData(data.stats || null);
+    } catch { }
   }, []);
 
+  useEffect(() => { loadStats(); }, [loadStats]);
+
   useEffect(() => {
-    // Initial fetch of streak & stats on mount or when stats tab becomes active
-    loadGamification();
-  }, [loadGamification]);
+    if (activeTab === "history") loadHistory();
+    if (activeTab === "stats") { loadStats(); loadHistory(); }
+  }, [activeTab, loadHistory, loadStats]);
 
-  // History State
-  const [historyList, setHistoryList] = useState<QuizHistoryRecord[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-
-  // Notification Toast
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [isSendingTg, setIsSendingTg] = useState(false);
-  const dropzoneRef = useRef<HTMLDivElement>(null);
-
-  const showToast = (msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 4000);
-  };
-
-  // ── Clipboard Paste Handler (Ctrl+V) ──────────────────────────────────────
+  /* ── Clipboard paste ──────────────────────────────────────── */
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
-      // Only process paste when on builder tab and not processing
       if (activeTab !== "builder" || builderStep !== "INPUT") return;
-
       const items = e.clipboardData?.items;
-      if (!items || items.length === 0) {
-        showToast("📋 Clipboard bo'sh");
-        return;
-      }
-
-      // Check for image first
+      if (!items) return;
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.startsWith("image/")) {
           const blob = items[i].getAsFile();
@@ -121,157 +142,40 @@ export default function QuizPage() {
           const file = new File([blob], `paste_${Date.now()}.${ext}`, { type: items[i].type });
           setSelectedFile(file);
           setInputMode("upload");
-          showToast("🖼 Rasm vaqtinchalik xotiradan qo'yildi!");
+          showToast("🖼 Rasm qo'yildi!");
           return;
         }
       }
-
-      // Check for text
       for (let i = 0; i < items.length; i++) {
         if (items[i].type === "text/plain") {
           items[i].getAsString((text) => {
-            if (!text.trim()) {
-              showToast("📋 Clipboard bo'sh");
-              return;
-            }
+            if (!text.trim()) return;
             setPastedText(text);
             setInputMode("text");
-            showToast("📝 Matn vaqtinchalik xotiradan qo'yildi!");
+            showToast("📝 Matn qo'yildi!");
           });
           return;
         }
       }
-
-      showToast("❌ Qo'llab-quvvatlanmagan format");
     };
-
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, [activeTab, builderStep]);
 
-  // ── Drag & Drop handler ───────────────────────────────────────────────────
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
+  /* ── Drag & Drop ──────────────────────────────────────────── */
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); };
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     const file = e.dataTransfer.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setInputMode("upload");
-      showToast(`📄 ${file.name} qo'shildi!`);
-    }
+    if (file) { setSelectedFile(file); setInputMode("upload"); showToast(`📄 ${file.name}`); }
   };
 
-  const [activeSessionPrompt, setActiveSessionPrompt] = useState<any | null>(null);
-
-  const checkActiveSession = useCallback(async (tgId: string) => {
-    try {
-      const res = await fetch(`/api/quiz/session?telegram_id=${tgId}`);
-      const data = await res.json();
-      if (data.success && data.hasActiveSession && data.session) {
-        setActiveSessionPrompt(data.session);
-      }
-    } catch (err) {
-      console.error("Failed to check active session:", err);
-    }
-  }, []);
-
-  useEffect(() => {
-    const savedTgId = localStorage.getItem("telegram_user_id") || "";
-    setTelegramId(savedTgId);
-    if (savedTgId) {
-      checkActiveSession(savedTgId);
-    }
-  }, [checkActiveSession]);
-
-  const resumeSession = () => {
-    if (!activeSessionPrompt) return;
-    const s = activeSessionPrompt;
-    if (s.questions?.length) {
-      setQuestions(s.questions);
-      setParsedData({
-        title: s.fileName ? s.fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ") : "Quiz",
-        sourceFileName: s.fileName,
-        rawText: s.rawText || "",
-        questions: s.questions,
-        overallValidation: {
-          totalQuestions: s.questions.length,
-          validQuestions: s.questions.length,
-          flawedQuestions: 0,
-          issues: [],
-        },
-        parserMethod: "RULE",
-      });
-      if (s.settings) setConfig((prev) => ({ ...prev, ...s.settings }));
-      setBuilderStep(s.step === "CONFIG" ? "CONFIG" : "EDIT");
-      showToast("🔄 Davom ettirish: Avvalgi quiz holati tiklandi!");
-    }
-    setActiveSessionPrompt(null);
-  };
-
-  const startNewSession = async () => {
-    const tgId = telegramId || localStorage.getItem("telegram_user_id");
-    if (tgId) {
-      try {
-        await fetch(`/api/quiz/session?telegram_id=${tgId}`, { method: "DELETE" });
-      } catch { }
-    }
-    setActiveSessionPrompt(null);
-  };
-
-  const loadHistory = useCallback(async () => {
-    const tgId = localStorage.getItem("telegram_user_id");
-    if (!tgId) return;
-    setLoadingHistory(true);
-    try {
-      const res = await fetch(`/api/quiz/history?telegram_id=${tgId}`);
-      const data = await res.json();
-      if (data.success && data.history) {
-        setHistoryList(data.history);
-      }
-    } catch (err) {
-      console.error("Failed to load quiz history:", err);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "history") {
-      loadHistory();
-    }
-  }, [activeTab, loadHistory]);
-
-  const handleCancel = () => {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-    }
-    setIsProcessing(false);
-    setProgressStep("");
-    showToast("🛑 Jarayon bekor qilindi.");
-  };
-
+  /* ── Parse ────────────────────────────────────────────────── */
   const handleStartParse = async () => {
     const tgId = telegramId || localStorage.getItem("telegram_user_id");
-    if (!tgId) {
-      alert("Foydalanuvchi identifikatori topilmadi. Telegram orqali kiring.");
-      return;
-    }
-
-    if (inputMode === "upload" && !selectedFile) {
-      alert("Iltimos, fayl tanlang!");
-      return;
-    }
-
-    if (inputMode === "text" && !pastedText.trim()) {
-      alert("Iltimos, matn kiriting!");
-      return;
-    }
+    if (!tgId) { alert("Telegram orqali kiring."); return; }
+    if (inputMode === "upload" && !selectedFile) { alert("Fayl tanlang!"); return; }
+    if (inputMode === "text" && !pastedText.trim()) { alert("Matn kiriting!"); return; }
 
     const controller = new AbortController();
     setAbortController(controller);
@@ -280,61 +184,47 @@ export default function QuizPage() {
 
     try {
       let res: Response;
-
       if (inputMode === "upload" && selectedFile) {
         const formData = new FormData();
         formData.append("telegram_id", tgId);
         formData.append("file", selectedFile);
-        setProgressStep("🔍 OCR va matn ajratilmoqda...");
-
-        res = await fetch("/api/quiz/parse", {
-          method: "POST",
-          body: formData,
-          signal: controller.signal,
-        });
+        setProgressStep("🔍 Matn ajratilmoqda...");
+        res = await fetch("/api/quiz/parse", { method: "POST", body: formData, signal: controller.signal });
       } else {
-        setProgressStep("🤖 AI Parsing va Validation...");
+        setProgressStep("🧠 Savollar tahlil qilinmoqda...");
         res = await fetch("/api/quiz/parse", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            telegram_id: tgId,
-            text: pastedText,
-            file_name: "Text_Input.txt",
-          }),
+          body: JSON.stringify({ telegram_id: tgId, text: pastedText, file_name: "Text_Input.txt" }),
           signal: controller.signal,
         });
       }
 
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || data.message || "Tahlil qilishda xatolik yuz berdi");
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || data.message || "Tahlil qilishda xatolik");
 
       const result: ParsedQuizResult = data.result;
       setParsedData(result);
       setQuestions(result.questions);
-      setConfig((prev) => ({
-        ...prev,
-        title: result.title || "Talaba AI Quiz",
-        rangeEnd: result.questions.length,
-        targetCount: Math.min(20, result.questions.length),
-      }));
+      setQuizTitle(result.title || "Talaba AI Quiz");
 
-      setBuilderStep("EDIT");
-      showToast(`✅ ${result.questions.length} ta savol ajratib olindi!`);
+      // Auto-select best batch size
+      const total = result.questions.length;
+      const autoBatch = BATCH_PRESETS.find(b => b <= total) || BATCH_PRESETS[1];
+      setBatchSize(autoBatch);
+
+      setBuilderStep("RESULT");
+      showToast(`✅ ${result.questions.length} ta savol topildi!`);
     } catch (err: any) {
       if (err.name !== "AbortError") {
-        const rawMsg = String(err?.message || err || "").toLowerCase();
-        let userMsg = "❌ Test faylini tahlil qilib bo'lmadi. Qayta urinib ko'ring.";
+        const rawMsg = String(err?.message || "").toLowerCase();
         if (rawMsg.includes("limit") || rawMsg.includes("403")) {
-          userMsg = "⚠️ Kunlik Quiz limiti tugagan. Cheksiz ishlatish uchun Premium tarifiga o'ting!";
+          showToast("⚠️ Kunlik Quiz limiti tugagan. Premium tarifga o'ting!");
         } else if (rawMsg.includes("empty") || rawMsg.includes("400")) {
-          userMsg = "📄 Fayl yoki matn bo'sh. Iltimos, boshqa fayl yuboring.";
-        } else if (rawMsg.includes("busy") || rawMsg.includes("429") || rawMsg.includes("503")) {
-          userMsg = "⚠️ AI xizmati vaqtincha band. Bir ozdan so'ng qayta urinib ko'ring.";
+          showToast("📄 Fayl yoki matn bo'sh. Boshqa fayl yuboring.");
+        } else {
+          showToast("❌ Tahlil qilib bo'lmadi. Qayta urinib ko'ring.");
         }
-        alert(userMsg);
       }
     } finally {
       setIsProcessing(false);
@@ -343,65 +233,32 @@ export default function QuizPage() {
     }
   };
 
-  const handleAutoBuild = async () => {
-    setIsProcessing(true);
-    setProgressStep("⚡ AI Auto Builder mos konfiguratsiya tanlamoqda...");
-    try {
-      const res = await fetch("/api/quiz/build", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          questions,
-          config,
-          autoBuild: true,
-          sourceFileName: parsedData?.sourceFileName,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.recommendation) {
-        const rec = data.recommendation;
-        setConfig(rec.recommendedConfig);
-        showToast(`✨ AI Tavsiyasi qo'llanildi: ${rec.reasoning}`);
-      }
-    } catch (err) {
-      console.error("AutoBuild error:", err);
-    } finally {
-      setIsProcessing(false);
-      setProgressStep("");
-    }
-  };
-
-  const handleApplyBuild = async () => {
-    setIsProcessing(true);
-    setProgressStep("⚙️ Quiz shakllantirilmoqda...");
-    try {
-      const res = await fetch("/api/quiz/build", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questions, config }),
-      });
-      const data = await res.json();
-      if (data.success && data.questions) {
-        setQuestions(data.questions);
-        setBuilderStep("PREVIEW");
-        setCurrentPreviewIdx(0);
-        setUserAnswers({});
-        setQuizSubmitted(false);
-      }
-    } catch (err: any) {
-      alert(err.message || "Quiz yaratishda xatolik");
-    } finally {
-      setIsProcessing(false);
-      setProgressStep("");
-    }
-  };
-
-  const handleSendToTelegram = async () => {
+  /* ── Send to Telegram ─────────────────────────────────────── */
+  const handleSendToTelegram = async (
+    overrideQuestions?: QuizQuestion[],
+    overrideConfig?: QuizConfig,
+    overrideTitle?: string
+  ) => {
     const tgId = telegramId || localStorage.getItem("telegram_user_id");
-    if (!tgId) {
-      alert("Telegram user ID topilmadi");
-      return;
-    }
+    if (!tgId) { alert("Telegram user ID topilmadi"); return; }
+
+    const sendQuestions = overrideQuestions || questions;
+    const sendTitle = overrideTitle || quizTitle || parsedData?.title || "TALABA AI Quiz";
+    const total = sendQuestions.length;
+    const effectiveBatch = overrideConfig?.multiTestBatchSize || batchSize;
+    const isMulti = total > effectiveBatch;
+
+    const sendConfig: QuizConfig = overrideConfig || {
+      title: sendTitle,
+      builderMode: isMulti ? "MULTI" : "SINGLE",
+      multiTestBatchSize: effectiveBatch,
+      selectionMode: "ALL",
+      shuffleQuestions,
+      shuffleOptions,
+      timerSeconds,
+      splitBatchSize: 0,
+      targetCount: total,
+    };
 
     setIsSendingTg(true);
     try {
@@ -410,50 +267,23 @@ export default function QuizPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           telegram_id: tgId,
-          title: config.title || parsedData?.title || "TALABA AI Quiz",
-          questions,
-          config,
+          title: sendTitle,
+          questions: sendQuestions,
+          config: sendConfig,
           sourceFileName: parsedData?.sourceFileName,
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || data.error || "Yuborishda xatolik");
-      }
+      if (!res.ok || !data.success) throw new Error(data.message || data.error || "Yuborishda xatolik");
       showToast(data.message || "✅ Telegram-ga muvaffaqiyatli yuborildi!");
     } catch (err: any) {
-      alert(err.message || "Xatolik yuz berdi");
+      showToast(err.message || "❌ Xatolik yuz berdi");
     } finally {
       setIsSendingTg(false);
     }
   };
 
-  const updateQuestionText = (idx: number, text: string) => {
-    const updated = [...questions];
-    updated[idx].text = text;
-    setQuestions(updated);
-  };
-
-  const updateOptionText = (qIdx: number, oIdx: number, text: string) => {
-    const updated = [...questions];
-    updated[qIdx].options[oIdx].text = text;
-    setQuestions(updated);
-  };
-
-  const setCorrectOption = (qIdx: number, optId: string) => {
-    const updated = [...questions];
-    updated[qIdx].options.forEach((o) => {
-      o.isCorrect = o.id === optId;
-    });
-    updated[qIdx].correctOptionId = optId;
-    setQuestions(updated);
-  };
-
-  const deleteQuestion = (idx: number) => {
-    const updated = questions.filter((_, i) => i !== idx);
-    setQuestions(updated);
-  };
-
+  /* ── Delete history ───────────────────────────────────────── */
   const handleDeleteHistory = async (id: string) => {
     const tgId = localStorage.getItem("telegram_user_id");
     if (!tgId) return;
@@ -461,17 +291,23 @@ export default function QuizPage() {
       const res = await fetch(`/api/quiz/history?id=${id}&telegram_id=${tgId}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
-        setHistoryList((prev) => prev.filter((item) => item.id !== id));
+        setHistoryList(prev => prev.filter(i => i.id !== id));
         showToast("🗑 Tarixdan o'chirildi");
       }
-    } catch (err) {
-      console.error(err);
-    }
+    } catch { }
   };
 
+  /* ── Derived ──────────────────────────────────────────────── */
+  const testCount = Math.max(1, Math.ceil(questions.length / batchSize));
+  const todayCount = historyList.filter(h => new Date(h.createdAt).toDateString() === new Date().toDateString()).length;
+  const telegramSentCount = historyList.filter(h => h.telegramMessageIds && h.telegramMessageIds.length > 0).length;
+
+  /* ─────────────────────────────────────────────────────────── */
+  /* RENDER                                                      */
+  /* ─────────────────────────────────────────────────────────── */
   return (
     <main className="min-h-screen bg-[#090d16] text-white font-sans pb-24 overflow-x-hidden">
-      {/* Top Header */}
+      {/* ── Header ── */}
       <header className="sticky top-0 z-30 bg-[#101624]/90 backdrop-blur-md border-b border-slate-800 px-2 sm:px-4 py-2 sm:py-3.5 flex items-center justify-between gap-1 sm:gap-2">
         <Link href="/" className="text-slate-400 flex items-center gap-1 text-xs sm:text-sm font-semibold hover:text-white transition shrink-0">
           <span>←</span> <span className="hidden sm:inline">Bosh sahifa</span>
@@ -479,42 +315,22 @@ export default function QuizPage() {
         <div
           onClick={() => setActiveTab("builder")}
           className="flex items-center gap-1 sm:gap-2 cursor-pointer select-none hover:opacity-90 transition min-w-0"
-          title="Quiz Builder'ga qaytish"
         >
           <span className="text-base sm:text-xl shrink-0">🧠</span>
           <h1 className="text-xs sm:text-base font-extrabold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent truncate">
-            Quiz Engine V2
+            Quiz Engine V3
           </h1>
-          {gamificationData.stats?.streakCount > 0 && (
-            <span className="hidden md:inline-block ml-1 text-[10px] sm:text-[11px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 animate-pulse shrink-0">
-              🔥 {gamificationData.stats.streakCount} Kun
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <button
-            onClick={() => {
-              setActiveTab("stats");
-              loadGamification();
-            }}
-            className={`text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition flex items-center gap-1 whitespace-nowrap ${
-              activeTab === "stats"
-                ? "bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 shadow-sm"
-                : "bg-violet-500/10 border border-violet-500/30 text-violet-300 hover:bg-violet-500/20"
-            }`}
+            onClick={() => setActiveTab("stats")}
+            className={`text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition flex items-center gap-1 whitespace-nowrap ${activeTab === "stats" ? "bg-cyan-500/20 border border-cyan-500/40 text-cyan-300" : "bg-violet-500/10 border border-violet-500/30 text-violet-300 hover:bg-violet-500/20"}`}
           >
-            <span>📊</span> <span className="hidden min-[360px]:inline">Statistika</span><span className="min-[360px]:hidden">Stats</span>
+            <span>📊</span> <span>Stats</span>
           </button>
           <button
-            onClick={() => {
-              setActiveTab("history");
-              loadHistory();
-            }}
-            className={`text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition flex items-center gap-1 whitespace-nowrap ${
-              activeTab === "history"
-                ? "bg-amber-500/20 border border-amber-500/40 text-amber-300 shadow-sm"
-                : "bg-violet-500/10 border border-violet-500/30 text-violet-300 hover:bg-violet-500/20"
-            }`}
+            onClick={() => { setActiveTab("history"); loadHistory(); }}
+            className={`text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition flex items-center gap-1 whitespace-nowrap ${activeTab === "history" ? "bg-amber-500/20 border border-amber-500/40 text-amber-300" : "bg-violet-500/10 border border-violet-500/30 text-violet-300 hover:bg-violet-500/20"}`}
           >
             <span>📜</span> Tarix {historyList.length > 0 && `(${historyList.length})`}
           </button>
@@ -523,114 +339,113 @@ export default function QuizPage() {
 
       <div className="max-w-xl mx-auto px-2.5 sm:px-4 py-3 sm:py-5">
 
-        {/* QUIZ BUILDER TAB CONTENT */}
+        {/* ── BUILDER TAB ── */}
         {activeTab === "builder" && (
-          <>
-            {/* Session Resume Prompt Banner — only in builder tab */}
+          <div className="space-y-4">
+            {/* Session Resume Banner */}
             {activeSessionPrompt && (
-              <div className="mb-5 bg-gradient-to-r from-violet-900/80 via-fuchsia-900/80 to-indigo-900/80 border border-violet-400 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col gap-3">
+              <div className="bg-gradient-to-r from-violet-900/80 via-fuchsia-900/80 to-indigo-900/80 border border-violet-400 rounded-2xl p-4 flex flex-col gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl sm:text-3xl">🔄</span>
+                  <span className="text-2xl">🔄</span>
                   <div>
-                    <h3 className="font-extrabold text-sm sm:text-base text-white">Chala qolgan Quiz topildi!</h3>
-                    <p className="text-[11px] sm:text-xs text-violet-200 mt-0.5">
-                      Fayl: <strong>{activeSessionPrompt.fileName || "Quiz"}</strong> ({activeSessionPrompt.questions?.length || 0} ta savol)
+                    <h3 className="font-extrabold text-sm text-white">Chala qolgan Quiz topildi!</h3>
+                    <p className="text-xs text-violet-200 mt-0.5">
+                      {activeSessionPrompt.fileName || "Quiz"} • {activeSessionPrompt.questions?.length || 0} ta savol
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2.5 pt-1">
+                <div className="flex gap-2">
                   <button
-                    onClick={resumeSession}
-                    className="flex-1 py-2 sm:py-2.5 rounded-xl font-extrabold text-slate-950 bg-gradient-to-r from-emerald-400 to-cyan-400 text-xs shadow-md active:scale-95 transition"
+                    onClick={() => {
+                      const s = activeSessionPrompt;
+                      if (s.questions?.length) {
+                        setQuestions(s.questions);
+                        const title = s.fileName ? s.fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ") : "Quiz";
+                        setParsedData({
+                          title,
+                          sourceFileName: s.fileName,
+                          rawText: s.rawText || "",
+                          questions: s.questions,
+                          overallValidation: { totalQuestions: s.questions.length, validQuestions: s.questions.length, flawedQuestions: 0, issues: [] },
+                          parserMethod: "RULE",
+                        });
+                        setQuizTitle(title);
+                        if (s.settings?.multiTestBatchSize) setBatchSize(s.settings.multiTestBatchSize);
+                        if (s.settings?.timerSeconds !== undefined) setTimerSeconds(s.settings.timerSeconds);
+                        setBuilderStep("RESULT");
+                        showToast("🔄 Sessiya tiklandi!");
+                      }
+                      setActiveSessionPrompt(null);
+                    }}
+                    className="flex-1 py-2 rounded-xl font-extrabold text-slate-950 bg-gradient-to-r from-emerald-400 to-cyan-400 text-xs active:scale-95 transition"
                   >
                     ▶️ Davom ettirish
                   </button>
                   <button
-                    onClick={startNewSession}
-                    className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-xs active:scale-95 transition"
+                    onClick={async () => {
+                      const tgId = telegramId || localStorage.getItem("telegram_user_id");
+                      if (tgId) { try { await fetch(`/api/quiz/session?telegram_id=${tgId}`, { method: "DELETE" }); } catch { } }
+                      setActiveSessionPrompt(null);
+                    }}
+                    className="px-4 py-2 rounded-xl font-bold bg-slate-800 text-slate-300 text-xs active:scale-95 transition"
                   >
-                    ➕ Yangi Quiz
+                    ➕ Yangi
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Builder inner content */}
-          <div className="space-y-4 sm:space-y-6">
-            {/* Step Indicator */}
-            <div className="flex items-center justify-between mb-4 sm:mb-6 bg-[#131b2c] p-1 sm:p-1.5 rounded-2xl border border-slate-800/80 text-[10px] sm:text-xs">
-              {[
-                { step: "INPUT", label: "1. Manba" },
-                { step: "EDIT", label: "2. Tahrir" },
-                { step: "CONFIG", label: "3. Sozlash" },
-                { step: "PREVIEW", label: "4. Quiz & Send" },
-              ].map((item) => (
-                <div
-                  key={item.step}
-                  onClick={() => {
-                    if (questions.length > 0) setBuilderStep(item.step as any);
-                  }}
-                  className={`flex-1 text-center py-1.5 sm:py-2 px-1 rounded-xl font-bold cursor-pointer transition truncate ${builderStep === item.step
-                    ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg"
-                    : questions.length > 0
-                      ? "text-slate-400 hover:text-slate-200"
-                      : "text-slate-600 cursor-not-allowed"
-                    }`}
-                >
-                  {item.label}
-                </div>
-              ))}
-            </div>
-
-            {/* Live Processing Card */}
+            {/* Processing bar */}
             {isProcessing && (
-              <div className="mb-4 sm:mb-6 bg-violet-950/40 border border-violet-500/40 rounded-2xl sm:rounded-3xl p-4 sm:p-5 text-center relative overflow-hidden animate-pulse">
-                <div className="text-2xl sm:text-3xl mb-2">⚙️</div>
-                <h3 className="font-extrabold text-xs sm:text-sm text-violet-300">{progressStep}</h3>
-                <p className="text-[11px] sm:text-xs text-slate-400 mt-1">AI tahlili va tayyorlash jarayoni davom etmoqda...</p>
-                <button
-                  onClick={handleCancel}
-                  className="mt-3 sm:mt-4 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-red-500/20 text-red-300 text-xs font-bold hover:bg-red-500/30 border border-red-500/40 transition"
-                >
-                  🛑 Bekor qilish
-                </button>
+              <div className="bg-violet-950/40 border border-violet-500/40 rounded-2xl p-5 text-center relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-violet-500/5 via-fuchsia-500/10 to-violet-500/5 animate-pulse" />
+                <div className="relative">
+                  <div className="text-3xl mb-2 animate-spin inline-block">⚙️</div>
+                  <h3 className="font-extrabold text-xs text-violet-300">{progressStep}</h3>
+                  <p className="text-[11px] text-slate-400 mt-1">Parser va AI tahlili davom etmoqda...</p>
+                  <button
+                    onClick={() => { abortController?.abort(); setIsProcessing(false); setProgressStep(""); showToast("🛑 Bekor qilindi."); }}
+                    className="mt-3 px-4 py-1.5 rounded-full bg-red-500/20 text-red-300 text-xs font-bold border border-red-500/40 hover:bg-red-500/30 transition"
+                  >
+                    🛑 Bekor qilish
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* STEP 1: INPUT */}
-            {builderStep === "INPUT" && (
-              <div className="space-y-4 sm:space-y-5">
-                {/* Tabs */}
+            {/* ── STEP: INPUT ── */}
+            {builderStep === "INPUT" && !isProcessing && (
+              <div className="space-y-4">
+                {/* Mode switcher */}
                 <div className="flex bg-[#121927] p-1 rounded-2xl border border-slate-800 text-xs font-bold">
                   <button
                     onClick={() => setInputMode("upload")}
-                    className={`flex-1 py-2 sm:py-2.5 rounded-xl transition ${inputMode === "upload" ? "bg-violet-600 text-white" : "text-slate-400"
-                      }`}
+                    className={`flex-1 py-2.5 rounded-xl transition ${inputMode === "upload" ? "bg-violet-600 text-white shadow" : "text-slate-400"}`}
                   >
                     📁 Fayl yuklash
                   </button>
                   <button
                     onClick={() => setInputMode("text")}
-                    className={`flex-1 py-2 sm:py-2.5 rounded-xl transition ${inputMode === "text" ? "bg-violet-600 text-white" : "text-slate-400"
-                      }`}
+                    className={`flex-1 py-2.5 rounded-xl transition ${inputMode === "text" ? "bg-violet-600 text-white shadow" : "text-slate-400"}`}
                   >
                     ✍️ Matn kiriting
                   </button>
                 </div>
 
+                {/* File dropzone */}
                 {inputMode === "upload" && (
                   <div
                     ref={dropzoneRef}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
-                    className="border-2 border-dashed border-violet-500/30 bg-[#121927]/60 hover:bg-[#121927] hover:border-violet-500/50 rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-center transition-all cursor-pointer select-none"
+                    className="border-2 border-dashed border-violet-500/30 bg-[#121927]/60 hover:bg-[#121927] hover:border-violet-500/60 rounded-3xl p-6 sm:p-10 text-center transition-all cursor-pointer group"
                   >
                     <input
                       type="file"
                       accept=".txt,.doc,.docx,.pdf,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.webp,.heic"
                       className="hidden"
                       id="file-upload-input"
-                      onChange={(e) => {
+                      onChange={e => {
                         if (e.target.files?.length) {
                           setSelectedFile(e.target.files[0]);
                           showToast(`📄 ${e.target.files[0].name} qo'shildi!`);
@@ -638,21 +453,20 @@ export default function QuizPage() {
                       }}
                     />
                     <label htmlFor="file-upload-input" className="cursor-pointer block">
-                      <div className="text-4xl mb-3">📄</div>
-                      <h3 className="font-extrabold text-base text-slate-100">Test faylini tanlang</h3>
-                      <p className="text-slate-400 text-xs mt-2">
-                        Qo'llab-quvvatlanadi: PDF, OCR PDF, DOCX, DOC, TXT, XLSX, CSV, JPG, PNG
-                      </p>
+                      <div className="text-5xl mb-3 group-hover:scale-110 transition">📄</div>
+                      <h3 className="font-extrabold text-base text-slate-100">Test faylini tashlang</h3>
+                      <p className="text-slate-400 text-xs mt-2">PDF · DOCX · TXT · XLSX · CSV · JPG · PNG</p>
                       <p className="text-slate-600 text-[11px] mt-1.5">
-                        📎 Bosing yoki sudrab tashlang • <kbd className="bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-[10px] font-mono text-slate-300">Ctrl+V</kbd> bilan nusxa qo'ying
+                        📎 Bosing yoki sudrang •{" "}
+                        <kbd className="bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-[10px] font-mono text-slate-300">Ctrl+V</kbd>
                       </p>
                       {selectedFile && (
                         <div className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
                           ✅ {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
                           <button
                             type="button"
-                            onClick={(e) => { e.preventDefault(); setSelectedFile(null); }}
-                            className="ml-1 text-emerald-400 hover:text-rose-400 transition"
+                            onClick={e => { e.preventDefault(); setSelectedFile(null); }}
+                            className="ml-1 hover:text-rose-400 transition"
                           >✕</button>
                         </div>
                       )}
@@ -660,695 +474,367 @@ export default function QuizPage() {
                   </div>
                 )}
 
+                {/* Text input */}
                 {inputMode === "text" && (
-                  <div>
-                    <textarea
-                      rows={8}
-                      placeholder="Test savollarini shunchaki bura yerga qo'ying (nusxalab yopishtiring)..."
-                      value={pastedText}
-                      onChange={(e) => setPastedText(e.target.value)}
-                      className="w-full bg-[#121927] border border-slate-800 rounded-2xl p-4 text-xs text-white focus:outline-none focus:border-violet-500 transition leading-relaxed font-mono"
-                    />
-                  </div>
+                  <textarea
+                    rows={8}
+                    placeholder="Test savollarini bu yerga nusxalab yopishtiing..."
+                    value={pastedText}
+                    onChange={e => setPastedText(e.target.value)}
+                    className="w-full bg-[#121927] border border-slate-800 rounded-2xl p-4 text-xs text-white focus:outline-none focus:border-violet-500 transition leading-relaxed font-mono"
+                  />
                 )}
 
                 <button
+                  id="btn-start-parse"
                   onClick={handleStartParse}
                   disabled={isProcessing}
-                  className="w-full py-4 rounded-2xl font-extrabold text-slate-900 bg-gradient-to-r from-violet-400 via-fuchsia-400 to-indigo-400 hover:opacity-95 active:scale-95 transition shadow-lg shadow-violet-500/25 text-sm"
+                  className="w-full py-4 rounded-2xl font-extrabold text-slate-900 bg-gradient-to-r from-violet-400 via-fuchsia-400 to-indigo-400 hover:opacity-95 active:scale-95 disabled:opacity-50 transition shadow-lg shadow-violet-500/25 text-sm"
                 >
-                  ⚡ Testni Tahlil Qilish (Hybrid Parser)
+                  ⚡ Testni Tahlil Qilish
                 </button>
               </div>
             )}
 
-            {/* STEP 2: EDIT & VALIDATE */}
-            {builderStep === "EDIT" && (
-              <div className="space-y-5">
-                {/* Header statistics */}
-                <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-slate-400 block">Topilgan savollar:</span>
-                    <strong className="text-base text-violet-400 font-extrabold">{questions.length} ta</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">Algoritm:</span>
-                    <strong className="text-emerald-400 font-extrabold">{parsedData?.parserMethod || "HYBRID"}</strong>
-                  </div>
-                  <button
-                    onClick={() => setBuilderStep("CONFIG")}
-                    className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs transition"
-                  >
-                    Keyingisi: Sozlash →
-                  </button>
-                </div>
-
-                {/* Questions List Editor */}
-                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-                  {questions.map((q, qIdx) => (
-                    <div key={q.id || qIdx} className="bg-[#121927] border border-slate-800/80 rounded-2xl p-4 space-y-3">
-                      <div className="flex justify-between items-start gap-2">
-                        <span className="bg-violet-500/20 text-violet-300 font-mono font-bold text-xs px-2.5 py-1 rounded-lg">
-                          #{qIdx + 1}
-                        </span>
-                        <button
-                          onClick={() => deleteQuestion(qIdx)}
-                          className="text-red-400 hover:text-red-300 text-xs font-bold px-2 py-0.5 rounded"
-                        >
-                          ✕ O'chirish
-                        </button>
-                      </div>
-
-                      <textarea
-                        rows={2}
-                        value={q.text}
-                        onChange={(e) => updateQuestionText(qIdx, e.target.value)}
-                        className="w-full bg-[#090d16] border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 font-semibold focus:outline-none focus:border-violet-500"
-                      />
-
-                      {/* Options */}
-                      <div className="space-y-2 pt-1">
-                        {q.options.map((opt, oIdx) => (
-                          <div key={opt.id || oIdx} className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setCorrectOption(qIdx, opt.id)}
-                              className={`w-7 h-7 rounded-lg text-xs font-extrabold flex items-center justify-center border transition ${opt.isCorrect
-                                ? "bg-emerald-500 border-emerald-400 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.4)]"
-                                : "bg-[#090d16] border-slate-700 text-slate-400 hover:border-slate-500"
-                                }`}
-                            >
-                              {opt.id}
-                            </button>
-                            <input
-                              type="text"
-                              value={opt.text}
-                              onChange={(e) => updateOptionText(qIdx, oIdx, e.target.value)}
-                              className="flex-1 bg-[#090d16] border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-violet-500"
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* AI Explanation warning badge */}
-                      {q.explanation && (
-                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 text-[11px] text-amber-300 mt-2">
-                          💡 <strong>AI Izohi:</strong> {q.explanation}
-                        </div>
-                      )}
+            {/* ── STEP: RESULT ── */}
+            {builderStep === "RESULT" && !isProcessing && (
+              <div className="space-y-4">
+                {/* Summary card */}
+                <div className="bg-gradient-to-br from-violet-900/50 via-fuchsia-900/30 to-indigo-900/50 border border-violet-500/40 rounded-3xl p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <span className="text-[11px] text-violet-300 font-bold uppercase tracking-wider">✅ Tahlil yakunlandi</span>
+                      <h2 className="font-extrabold text-lg text-white leading-tight mt-0.5">{quizTitle}</h2>
                     </div>
-                  ))}
-                </div>
-
-                <div className="flex gap-2.5 pt-2">
-                  <button
-                    onClick={() => setBuilderStep("INPUT")}
-                    className="flex-1 py-3.5 rounded-2xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-xs"
-                  >
-                    ← Manbaga O'tish
-                  </button>
-                  <button
-                    onClick={() => setBuilderStep("CONFIG")}
-                    className="flex-1 py-3.5 rounded-2xl font-extrabold text-slate-900 bg-violet-400 hover:bg-violet-300 transition text-xs shadow-md"
-                  >
-                    ⚙️ Sozlamalarga O'tish →
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: CONFIG & AUTO BUILDER */}
-            {builderStep === "CONFIG" && (
-              <div className="space-y-5">
-                {/* Auto Builder Banner */}
-                <div className="bg-gradient-to-r from-violet-900/40 via-fuchsia-900/40 to-indigo-900/40 border border-violet-500/40 rounded-3xl p-5 flex justify-between items-center">
-                  <div>
-                    <h3 className="font-extrabold text-sm text-violet-200">⚡ AI Auto Builder</h3>
-                    <p className="text-slate-400 text-xs mt-0.5">Bir bosishda optimal quiz parametrlarini aniqlang</p>
-                  </div>
-                  <button
-                    onClick={handleAutoBuild}
-                    className="px-4 py-2.5 rounded-xl font-extrabold text-slate-900 bg-gradient-to-r from-violet-300 to-fuchsia-300 hover:opacity-90 transition text-xs shadow-md"
-                  >
-                    🪄 Auto Build
-                  </button>
-                </div>
-
-                <div className="bg-[#121927] border border-slate-800 rounded-3xl p-5 space-y-4 text-xs">
-                  {/* Builder Mode Segment Selector */}
-                  <div>
-                    <label className="text-slate-400 font-bold block mb-1.5">🎛 Builder Rejimi:</label>
-                    <div className="grid grid-cols-2 gap-2 bg-[#090d16] p-1 rounded-2xl border border-slate-800 text-xs font-bold">
-                      <button
-                        type="button"
-                        onClick={() => setConfig({ ...config, builderMode: "SINGLE" })}
-                        className={`py-2 rounded-xl transition ${
-                          config.builderMode !== "MULTI"
-                            ? "bg-violet-600 text-white shadow-sm"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        1️⃣ SINGLE TEST
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfig({ ...config, builderMode: "MULTI" })}
-                        className={`py-2 rounded-xl transition ${
-                          config.builderMode === "MULTI"
-                            ? "bg-violet-600 text-white shadow-sm"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        📦 MULTI TEST (To'plam)
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-slate-400 font-bold block mb-1">Quiz Nomi:</label>
-                    <input
-                      type="text"
-                      value={config.title}
-                      onChange={(e) => setConfig({ ...config, title: e.target.value })}
-                      className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-bold focus:outline-none focus:border-violet-500"
-                    />
-                  </div>
-
-                  {config.builderMode === "MULTI" ? (
-                    <div className="bg-violet-950/30 border border-violet-500/30 rounded-2xl p-3.5 space-y-3">
-                      <div>
-                        <label className="text-violet-300 font-bold block mb-1.5">
-                          📑 Har bir test nechta savoldan iborat bo'lsin?
-                        </label>
-                        <div className="flex flex-wrap gap-1.5 mb-2">
-                          {[20, 25, 30, 40, 50, 100].map((bSize) => (
-                            <button
-                              key={bSize}
-                              type="button"
-                              onClick={() => setConfig({ ...config, multiTestBatchSize: bSize })}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                                (config.multiTestBatchSize || 25) === bSize
-                                  ? "bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-md"
-                                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                              }`}
-                            >
-                              {bSize} tadan
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Live Calculation Preview */}
-                      <div className="bg-[#090d16] border border-violet-500/20 rounded-xl p-3 text-[11px] text-violet-200 font-mono space-y-1">
-                        <div className="flex justify-between border-b border-slate-800 pb-1 font-extrabold text-white">
-                          <span>📦 Jami testlar:</span>
-                          <span className="text-emerald-400">
-                            {Math.ceil(questions.length / (config.multiTestBatchSize || 25))} ta test
-                          </span>
-                        </div>
-                        <div className="text-slate-400 pt-0.5">
-                          {questions.length} ta savol ➔ har birida {config.multiTestBatchSize || 25} tadan
-                        </div>
-                        <div className="text-slate-500 text-[10px] italic">
-                          Test 1 (1–{Math.min(questions.length, config.multiTestBatchSize || 25)}), Test 2 ({Math.min(questions.length, (config.multiTestBatchSize || 25) + 1)}–{Math.min(questions.length, (config.multiTestBatchSize || 25) * 2)})...
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div>
-                        <label className="text-slate-400 font-bold block mb-1">Tanlov Rejimi:</label>
-                        <select
-                          value={config.selectionMode}
-                          onChange={(e) => setConfig({ ...config, selectionMode: e.target.value as any })}
-                          className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-violet-500"
-                        >
-                          <option value="ALL">Barcha savollar ({questions.length} ta)</option>
-                          <option value="SMART_RANDOM">🧠 Smart Random (AI Saralash)</option>
-                          <option value="RANDOM">🎲 Tasodifiy (Random)</option>
-                          <option value="RANGE">🔢 Oraliq boyicha (Range)</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-slate-400 font-bold block mb-1">Qancha savol tanlansin?</label>
-                        <div className="flex flex-wrap gap-1.5 mb-2">
-                          {[5, 10, 15, 20, 25, 30, 40, 50, 100, questions.length]
-                            .filter((v, idx, self) => v <= questions.length && self.indexOf(v) === idx)
-                            .map((countVal) => (
-                              <button
-                                key={countVal}
-                                type="button"
-                                onClick={() => setConfig({ ...config, targetCount: countVal })}
-                                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                                  (config.targetCount || questions.length) === countVal
-                                    ? "bg-violet-600 text-white shadow-sm"
-                                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                                }`}
-                              >
-                                {countVal === questions.length ? `Hammasi (${countVal})` : `${countVal} ta`}
-                              </button>
-                            ))}
-                        </div>
-                        <input
-                          type="number"
-                          min={1}
-                          max={questions.length}
-                          value={config.targetCount || questions.length}
-                          onChange={(e) => setConfig({ ...config, targetCount: Math.min(questions.length, Math.max(1, Number(e.target.value))) })}
-                          className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-bold text-xs"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  {/* Shuffling Switches */}
-                  <div className="grid grid-cols-2 gap-3 border-t border-slate-800/80 pt-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={config.shuffleQuestions}
-                        onChange={(e) => setConfig({ ...config, shuffleQuestions: e.target.checked })}
-                        className="accent-violet-500 w-4 h-4"
-                      />
-                      <span className="font-semibold text-slate-300">Savollarni aralashtirish</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={config.shuffleOptions}
-                        onChange={(e) => setConfig({ ...config, shuffleOptions: e.target.checked })}
-                        className="accent-violet-500 w-4 h-4"
-                      />
-                      <span className="font-semibold text-slate-300">Variantlarni aralashtirish</span>
-                    </label>
-                  </div>
-
-                  {/* Timer */}
-                  <div className="border-t border-slate-800/80 pt-3">
-                    <label className="text-slate-400 font-bold block mb-1">⏱ Taymer (har bir savolga soniya):</label>
-                    <div className="flex gap-2">
-                      {[0, 15, 30, 60].map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setConfig({ ...config, timerSeconds: t })}
-                          className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition ${config.timerSeconds === t
-                            ? "bg-violet-600 border-violet-400 text-white"
-                            : "bg-[#090d16] border-slate-800 text-slate-400"
-                            }`}
-                        >
-                          {t === 0 ? "Cheksiz" : `${t}s`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Split */}
-                  <div className="border-t border-slate-800/80 pt-3">
-                    <label className="text-slate-400 font-bold block mb-1">✂️ Quiz Split (Bo'laklarga bo'lish):</label>
-                    <select
-                      value={config.splitBatchSize || 0}
-                      onChange={(e) => setConfig({ ...config, splitBatchSize: Number(e.target.value) })}
-                      className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold"
+                    <button
+                      id="btn-new-quiz"
+                      onClick={resetBuilder}
+                      className="text-slate-500 hover:text-slate-300 text-xs font-bold px-2 py-1 rounded-lg hover:bg-slate-800/80 transition"
                     >
-                      <option value={0}>Bo'linmasin (Yagona quiz)</option>
-                      <option value={30}>Har 30 ta savoldan bo'lish</option>
-                      <option value={50}>Har 50 ta savoldan bo'lish</option>
-                    </select>
+                      ✕ Yangi
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-black/20 rounded-2xl p-3">
+                      <div className="text-xl font-extrabold text-emerald-400">{questions.length}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Jami savol</div>
+                    </div>
+                    <div className="bg-black/20 rounded-2xl p-3">
+                      <div className="text-xl font-extrabold text-violet-300">{testCount}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Test soni</div>
+                    </div>
+                    <div className="bg-black/20 rounded-2xl p-3">
+                      <div className="text-xl font-extrabold text-cyan-300">{parsedData?.parserMethod || "RULE"}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Algoritm</div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex gap-2.5 pt-2">
-                  <button
-                    onClick={() => setBuilderStep("EDIT")}
-                    className="flex-1 py-3.5 rounded-2xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-xs"
-                  >
-                    ← Tahrirlashga Qaytish
-                  </button>
-                  <button
-                    onClick={handleApplyBuild}
-                    className="flex-1 py-3.5 rounded-2xl font-extrabold text-slate-900 bg-gradient-to-r from-emerald-400 to-cyan-400 hover:opacity-90 transition text-xs shadow-lg shadow-emerald-400/20"
-                  >
-                    🚀 Shakllantirish va Preview →
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: PREVIEW & TELEGRAM SEND */}
-            {builderStep === "PREVIEW" && (
-              <div className="space-y-5">
-                {/* Header info */}
-                <div className="bg-[#121927] border border-slate-800 rounded-3xl p-5 flex items-center justify-between">
+                {/* Batch size picker */}
+                <div className="bg-[#121927] border border-slate-800 rounded-3xl p-5 space-y-3">
                   <div>
-                    <h2 className="font-extrabold text-base text-slate-100">{config.title || "Quiz"}</h2>
-                    <p className="text-slate-400 text-xs mt-0.5">{questions.length} ta savol tayyor</p>
+                    <label className="text-sm font-extrabold text-slate-100 block mb-0.5">📦 Har bir test nechta savoldan?</label>
+                    <p className="text-xs text-slate-400">
+                      {questions.length} ÷ {batchSize} = <strong className="text-emerald-400">{testCount} ta test</strong>
+                    </p>
                   </div>
-                  <button
-                    onClick={handleSendToTelegram}
-                    disabled={isSendingTg}
-                    className="px-5 py-3 rounded-2xl font-extrabold text-slate-950 bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-400 hover:opacity-90 active:scale-95 transition text-xs shadow-lg shadow-cyan-400/30 flex items-center gap-1.5"
-                  >
-                    {isSendingTg ? "⏳ Yuborilmoqda..." : "✈️ Telegram-ga Yuborish"}
-                  </button>
+                  <div className="grid grid-cols-3 gap-2">
+                    {BATCH_PRESETS.map(b => {
+                      const cnt = Math.ceil(questions.length / b);
+                      const isDisabled = b > questions.length && b !== BATCH_PRESETS[0];
+                      return (
+                        <button
+                          key={b}
+                          id={`btn-batch-${b}`}
+                          disabled={isDisabled}
+                          onClick={() => setBatchSize(b)}
+                          className={`py-3.5 rounded-2xl font-bold text-xs transition flex flex-col items-center gap-0.5 ${
+                            batchSize === b
+                              ? "bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white shadow-lg shadow-violet-500/30 scale-105"
+                              : isDisabled
+                                ? "bg-slate-800/30 text-slate-700 cursor-not-allowed"
+                                : "bg-[#090d16] border border-slate-800 text-slate-300 hover:border-violet-500/50 hover:text-white"
+                          }`}
+                        >
+                          <span className="text-lg font-extrabold">{b}</span>
+                          <span className="text-[10px] opacity-70">{cnt > 0 ? `${cnt} test` : "-"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {/* Interactive Web Quiz Preview */}
-                {questions.length > 0 && currentPreviewIdx < questions.length && (
-                  <div className="bg-[#121927] border border-slate-800 rounded-3xl p-6 space-y-4 relative">
-                    <div className="flex justify-between items-center text-xs font-mono text-slate-400">
-                      <span>Savol {currentPreviewIdx + 1} / {questions.length}</span>
-                      {config.timerSeconds > 0 && <span>⏱ {config.timerSeconds}s</span>}
-                    </div>
-
-                    <h3 className="font-extrabold text-base text-slate-100 leading-snug">
-                      {questions[currentPreviewIdx].text}
-                    </h3>
-
-                    <div className="space-y-2.5 pt-2">
-                      {questions[currentPreviewIdx].options.map((opt) => {
-                        const isSelected = userAnswers[currentPreviewIdx] === opt.id;
-                        let optionStyle = "bg-[#090d16] border-slate-800 text-slate-200 hover:border-slate-600";
-
-                        if (quizSubmitted) {
-                          if (opt.isCorrect) {
-                            optionStyle = "bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold";
-                          } else if (isSelected && !opt.isCorrect) {
-                            optionStyle = "bg-red-500/20 border-red-500 text-red-300";
-                          }
-                        } else if (isSelected) {
-                          optionStyle = "bg-violet-600/30 border-violet-500 text-violet-200 font-bold";
-                        }
-
-                        return (
-                          <div
-                            key={opt.id}
-                            onClick={() => {
-                              if (!quizSubmitted) {
-                                setUserAnswers({ ...userAnswers, [currentPreviewIdx]: opt.id });
-                              }
-                            }}
-                            className={`p-3.5 rounded-2xl border text-xs font-medium cursor-pointer transition flex items-center gap-3 ${optionStyle}`}
-                          >
-                            <span className="w-6 h-6 rounded-lg bg-slate-800 text-slate-300 text-center leading-6 font-bold font-mono">
-                              {opt.id}
-                            </span>
-                            <span className="flex-1">{opt.text}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Question explanation */}
-                    {quizSubmitted && questions[currentPreviewIdx].explanation && (
-                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 text-xs text-amber-300 mt-2">
-                        💡 <strong>Izoh:</strong> {questions[currentPreviewIdx].explanation}
-                      </div>
-                    )}
-
-                    {/* Navigation controls */}
-                    <div className="flex justify-between items-center pt-3 border-t border-slate-800/80">
+                {/* Timer picker */}
+                <div className="bg-[#121927] border border-slate-800 rounded-3xl p-5 space-y-3">
+                  <label className="text-sm font-extrabold text-slate-100 block">⏱ Taymer (har bir savolga)</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {TIMER_PRESETS.map(t => (
                       <button
-                        disabled={currentPreviewIdx === 0}
-                        onClick={() => setCurrentPreviewIdx((prev) => prev - 1)}
-                        className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold disabled:opacity-40"
+                        key={t.value}
+                        id={`btn-timer-${t.value}`}
+                        onClick={() => setTimerSeconds(t.value)}
+                        className={`py-3.5 rounded-2xl font-bold text-xs transition ${
+                          timerSeconds === t.value
+                            ? "bg-gradient-to-br from-cyan-500 to-sky-600 text-white shadow-lg shadow-cyan-500/30 scale-105"
+                            : "bg-[#090d16] border border-slate-800 text-slate-300 hover:border-cyan-500/50 hover:text-white"
+                        }`}
                       >
-                        ← Oldingisi
+                        {t.label}
                       </button>
-
-                      {!quizSubmitted ? (
-                        <button
-                          onClick={() => setQuizSubmitted(true)}
-                          className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-extrabold"
-                        >
-                          ✓ Tekshirish
-                        </button>
-                      ) : (
-                        <button
-                          disabled={currentPreviewIdx === questions.length - 1}
-                          onClick={() => setCurrentPreviewIdx((prev) => prev + 1)}
-                          className="px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold disabled:opacity-40"
-                        >
-                          Keyingisi →
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          </>
-        )}
-
-            {/* HISTORY TAB */}
-            {activeTab === "history" && (
-              <div className="space-y-4 mt-2">
-                <div className="flex justify-between items-center">
-                  <h2 className="font-extrabold text-base text-slate-100 flex items-center gap-2">
-                    <span>📜</span> Quizlar Tarixi
-                  </h2>
-                  <button
-                    onClick={() => setActiveTab("builder")}
-                    className="text-xs text-violet-400 font-bold hover:underline"
-                  >
-                    ← Quiz Builder
-                  </button>
-                </div>
-
-                {loadingHistory ? (
-                  <div className="text-center py-8 text-slate-400 text-xs">⏳ Yuklanmoqda...</div>
-                ) : historyList.length === 0 ? (
-                  <div className="bg-[#121927] border border-slate-800 rounded-3xl p-8 text-center text-slate-400 text-xs space-y-2">
-                    <span className="text-3xl">📭</span>
-                    <h3 className="font-extrabold text-sm text-slate-200">Hozircha hech qanday quiz saqlanmagan</h3>
-                    <p className="text-slate-400">Yangi quiz yaratish uchun Quiz Builder'ga o'ting.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {historyList.map((item) => (
-                      <div key={item.id} className="bg-[#121927] border border-slate-800 rounded-3xl p-5 space-y-3">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h4 className="font-extrabold text-slate-100 text-sm">{item.title}</h4>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              Manba: <strong>{item.sourceFileName || "Fayl/Matn"}</strong> • {item.questionCount} ta savol
-                            </p>
-                            <p className="text-[11px] text-slate-500 mt-0.5">
-                              🗓 {new Date(item.createdAt).toLocaleString("uz-UZ")}
-                            </p>
-                          </div>
-                          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                            ✓ Saqlangan
-                          </span>
-                        </div>
-
-                        {/* Actions: Ko'rish, Telegramga yuborish, Qayta yaratish, O'chirish */}
-                        <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-800/80">
-                          <button
-                            onClick={() => {
-                              setQuestions(item.questions);
-                              setParsedData({
-                                title: item.title,
-                                sourceFileName: item.sourceFileName,
-                                rawText: "",
-                                questions: item.questions,
-                                overallValidation: {
-                                  totalQuestions: item.questionCount,
-                                  validQuestions: item.questionCount,
-                                  flawedQuestions: 0,
-                                  issues: [],
-                                },
-                                parserMethod: "RULE",
-                              });
-                              if (item.settings) setConfig(item.settings);
-                              setBuilderStep("PREVIEW");
-                              setActiveTab("builder");
-                              showToast(`👁 "${item.title}" ko'rish uchun ochildi!`);
-                            }}
-                            className="py-2 rounded-xl bg-slate-800/90 hover:bg-slate-800 font-bold text-slate-200 text-[11px] flex items-center justify-center gap-1"
-                          >
-                            <span>👁</span> Ko'rish
-                          </button>
-                          <button
-                            onClick={async () => {
-                              const tgId = telegramId || localStorage.getItem("telegram_user_id");
-                              if (!tgId) {
-                                alert("Telegram user ID topilmadi");
-                                return;
-                              }
-                              setIsSendingTg(true);
-                              try {
-                                const res = await fetch("/api/quiz/send-telegram", {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({
-                                    telegram_id: tgId,
-                                    title: item.title,
-                                    questions: item.questions,
-                                    config: item.settings,
-                                    sourceFileName: item.sourceFileName,
-                                  }),
-                                });
-                                const data = await res.json();
-                                if (data.success) {
-                                  showToast("📤 Telegram-ga muvaffaqiyatli yuborildi!");
-                                } else {
-                                  alert(`Xatolik: ${data.message || data.error}`);
-                                }
-                              } catch (err: any) {
-                                alert(err.message || "Xatolik yuz berdi");
-                              } finally {
-                                setIsSendingTg(false);
-                              }
-                            }}
-                            className="py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 font-bold text-sky-300 text-[11px] flex items-center justify-center gap-1"
-                          >
-                            <span>📤</span> Yuborish
-                          </button>
-                          <button
-                            onClick={() => {
-                              setQuestions(item.questions);
-                              setParsedData({
-                                title: item.title,
-                                sourceFileName: item.sourceFileName,
-                                rawText: "",
-                                questions: item.questions,
-                                overallValidation: {
-                                  totalQuestions: item.questionCount,
-                                  validQuestions: item.questionCount,
-                                  flawedQuestions: 0,
-                                  issues: [],
-                                },
-                                parserMethod: "RULE",
-                              });
-                              if (item.settings) setConfig(item.settings);
-                              setBuilderStep("CONFIG");
-                              setActiveTab("builder");
-                              showToast(`🔁 "${item.title}" qayta yaratish uchun sozlamalarga o'tdi!`);
-                            }}
-                            className="py-2 rounded-xl bg-violet-500/20 hover:bg-violet-500/30 font-bold text-violet-300 text-[11px] flex items-center justify-center gap-1"
-                          >
-                            <span>🔁</span> Qayta
-                          </button>
-                          <button
-                            onClick={() => handleDeleteHistory(item.id)}
-                            className="py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 font-bold text-rose-300 text-[11px] flex items-center justify-center gap-1"
-                          >
-                            <span>🗑</span> O'chirish
-                          </button>
-                        </div>
-                      </div>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* STATISTIKA TAB */}
-            {activeTab === "stats" && (
-              <div className="space-y-5 mt-2">
-                <h2 className="font-extrabold text-base text-slate-100 flex items-center gap-2">
-                  <span>📊</span> Quiz Tizimi Statistikasi & Limit Holati
-                </h2>
-
-                {/* Account & Limit Status Card */}
-                <div className="bg-gradient-to-r from-violet-950/60 via-slate-900 to-indigo-950/60 border border-violet-500/40 rounded-3xl p-5 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-violet-300 font-bold uppercase tracking-wider">Tarif & Limit Holati</span>
-                    <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                      {gamificationData.stats?.isPremium ? "PRO Premium (Cheksiz)" : "BEPUL (FREE)"}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div>
-                      <div className="text-[11px] text-slate-400">Kunlik Limit Ishlatilishi</div>
-                      <div className="font-extrabold text-sm text-slate-100 mt-0.5">
-                        {gamificationData.stats?.isPremium ? "Cheksiz ∞" : `${gamificationData.stats?.totalQuizzes || 0} / 5 ta`}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] text-slate-400">Qolgan Bepul Limit</div>
-                      <div className="font-extrabold text-sm text-cyan-300 mt-0.5">
-                        {gamificationData.stats?.isPremium ? "Cheksiz ∞" : `${Math.max(0, 5 - (gamificationData.stats?.totalQuizzes || 0))} ta`}
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
-                {/* Performance & Usage Metrics Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
-                    <span className="text-2xl">📈</span>
-                    <div className="font-extrabold text-lg text-slate-100 mt-1">
-                      {historyList.length}
+                {/* Advanced toggle */}
+                <div className="bg-[#121927] border border-slate-800 rounded-3xl overflow-hidden">
+                  <button
+                    id="btn-advanced-toggle"
+                    onClick={() => setShowAdvanced(v => !v)}
+                    className="w-full px-5 py-4 flex items-center justify-between text-xs font-bold text-slate-400 hover:text-slate-200 transition"
+                  >
+                    <span>⚙️ Kengaytirilgan sozlamalar</span>
+                    <span className={`text-slate-500 transition-transform duration-200 ${showAdvanced ? "rotate-180" : ""}`}>▼</span>
+                  </button>
+                  {showAdvanced && (
+                    <div className="px-5 pb-5 space-y-4 border-t border-slate-800">
+                      <div className="grid grid-cols-2 gap-3 pt-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={shuffleQuestions}
+                            onChange={e => setShuffleQuestions(e.target.checked)}
+                            className="accent-violet-500 w-4 h-4"
+                          />
+                          <span className="text-xs font-semibold text-slate-300">Savollar shuffle</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={shuffleOptions}
+                            onChange={e => setShuffleOptions(e.target.checked)}
+                            className="accent-violet-500 w-4 h-4"
+                          />
+                          <span className="text-xs font-semibold text-slate-300">Variantlar shuffle</span>
+                        </label>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 font-bold block mb-1.5">Quiz nomi:</label>
+                        <input
+                          type="text"
+                          value={quizTitle}
+                          onChange={e => setQuizTitle(e.target.value)}
+                          className="w-full bg-[#090d16] border border-slate-800 rounded-xl px-3 py-2.5 text-white text-xs font-bold focus:outline-none focus:border-violet-500 transition"
+                        />
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-400 font-semibold">Jami Yaratilgan</div>
-                  </div>
-                  <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
-                    <span className="text-2xl">📅</span>
-                    <div className="font-extrabold text-lg text-amber-300 mt-1">
-                      {historyList.filter((h) => new Date(h.createdAt).toDateString() === new Date().toDateString()).length}
-                    </div>
-                    <div className="text-[11px] text-slate-400 font-semibold">Bugun Yaratilgan</div>
-                  </div>
-                  <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
-                    <span className="text-2xl">📤</span>
-                    <div className="font-extrabold text-lg text-sky-400 mt-1">
-                      {historyList.filter((h) => h.telegramMessageIds && h.telegramMessageIds.length > 0).length}
-                    </div>
-                    <div className="text-[11px] text-slate-400 font-semibold">Telegram Polls</div>
-                  </div>
-                  <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
-                    <span className="text-2xl">⚡</span>
-                    <div className="font-extrabold text-lg text-emerald-400 mt-1">~1.5s</div>
-                    <div className="text-[11px] text-slate-400 font-semibold">O'rtacha Vaqt</div>
-                  </div>
-                  <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
-                    <span className="text-2xl">🛡</span>
-                    <div className="font-extrabold text-lg text-cyan-400 mt-1">85%</div>
-                    <div className="text-[11px] text-slate-400 font-semibold">AI Tejamkorlik</div>
-                  </div>
-                  <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
-                    <span className="text-2xl">🎯</span>
-                    <div className="font-extrabold text-lg text-violet-400 mt-1">99.8%</div>
-                    <div className="text-[11px] text-slate-400 font-semibold">Muvaffaqiyat Stavkasi</div>
-                  </div>
+                  )}
                 </div>
 
-                {/* Parser Efficiency Breakdown */}
-                <div className="bg-[#121927] border border-slate-800 rounded-3xl p-5 space-y-3">
-                  <h3 className="font-extrabold text-sm text-slate-200">⚙️ Parser va OCR Ishlash Stavkasi</h3>
-                  <div className="space-y-2 text-xs">
-                    <div>
-                      <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                        <span>Rule Engine Parser (Lokal parsing)</span>
-                        <span className="font-extrabold text-emerald-400">92%</span>
-                      </div>
-                      <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-400 rounded-full" style={{ width: "92%" }}></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                        <span>Gemini AI Fallback Parser</span>
-                        <span className="font-extrabold text-violet-400">8%</span>
-                      </div>
-                      <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-violet-400 rounded-full" style={{ width: "8%" }}></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Send to Telegram */}
+                <button
+                  id="btn-send-telegram"
+                  onClick={() => handleSendToTelegram()}
+                  disabled={isSendingTg || questions.length === 0}
+                  className="w-full py-4 rounded-2xl font-extrabold text-slate-950 bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-400 hover:opacity-95 active:scale-95 disabled:opacity-50 transition shadow-lg shadow-emerald-500/25 text-sm flex items-center justify-center gap-2"
+                >
+                  {isSendingTg
+                    ? <><span className="animate-spin inline-block">⏳</span> Yuborilmoqda...</>
+                    : <>✈️ Telegram-ga Yuborish {testCount > 1 ? `(${testCount} ta test)` : `(${questions.length} savol)`}</>
+                  }
+                </button>
+
+                <button
+                  onClick={resetBuilder}
+                  className="w-full py-2.5 rounded-2xl font-bold bg-slate-800/60 hover:bg-slate-800 text-slate-400 text-xs transition"
+                >
+                  ← Orqaga (yangi fayl)
+                </button>
               </div>
             )}
           </div>
+        )}
 
-      {/* Toast popup */}
+        {/* ── HISTORY TAB ── */}
+        {activeTab === "history" && (
+          <div className="space-y-4 mt-2">
+            <div className="flex justify-between items-center">
+              <h2 className="font-extrabold text-base text-slate-100 flex items-center gap-2">
+                <span>📜</span> Quizlar Tarixi
+              </h2>
+              <button onClick={() => setActiveTab("builder")} className="text-xs text-violet-400 font-bold hover:underline">
+                ← Builder
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div className="text-center py-12 text-slate-400 text-xs">⏳ Yuklanmoqda...</div>
+            ) : historyList.length === 0 ? (
+              <div className="bg-[#121927] border border-slate-800 rounded-3xl p-10 text-center space-y-3">
+                <span className="text-4xl">📭</span>
+                <h3 className="font-extrabold text-sm text-slate-200">Hozircha quizlar yo'q</h3>
+                <p className="text-xs text-slate-400">Quiz yaratish uchun Builder'ga o'ting.</p>
+                <button onClick={() => setActiveTab("builder")} className="mt-2 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">
+                  Quiz Yaratish →
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {historyList.map(item => (
+                  <div key={item.id} className="bg-[#121927] border border-slate-800 rounded-3xl p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-extrabold text-slate-100 text-sm">{item.title}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {item.questionCount} ta savol{item.settings?.multiTestBatchSize ? ` · ${Math.ceil(item.questionCount / item.settings.multiTestBatchSize)} test` : ""}
+                          {item.settings?.timerSeconds ? ` · ${item.settings.timerSeconds}s` : ""}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          🗓 {new Date(item.createdAt).toLocaleString("uz-UZ")}
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shrink-0">
+                        ✓
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-800/80">
+                      <button
+                        onClick={() => {
+                          const qs = item.questions;
+                          const title = item.title;
+                          setQuestions(qs);
+                          setParsedData({ title, sourceFileName: item.sourceFileName, rawText: "", questions: qs, overallValidation: { totalQuestions: item.questionCount, validQuestions: item.questionCount, flawedQuestions: 0, issues: [] }, parserMethod: "RULE" });
+                          setQuizTitle(title);
+                          if (item.settings?.multiTestBatchSize) setBatchSize(item.settings.multiTestBatchSize);
+                          if (item.settings?.timerSeconds !== undefined) setTimerSeconds(item.settings.timerSeconds);
+                          setBuilderStep("RESULT");
+                          setActiveTab("builder");
+                          showToast(`🔁 "${title}" qayta sozlamalarda ochildi!`);
+                        }}
+                        className="py-2.5 rounded-xl bg-violet-500/20 hover:bg-violet-500/30 font-bold text-violet-300 text-[11px] flex items-center justify-center gap-1"
+                      >
+                        <span>🔁</span> Qayta
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setIsSendingTg(true);
+                          try {
+                            await handleSendToTelegram(item.questions, item.settings || undefined, item.title);
+                          } finally {
+                            setIsSendingTg(false);
+                          }
+                        }}
+                        className="py-2.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 font-bold text-sky-300 text-[11px] flex items-center justify-center gap-1"
+                      >
+                        <span>📤</span> Yuborish
+                      </button>
+                      <button
+                        onClick={() => handleDeleteHistory(item.id)}
+                        className="py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 font-bold text-rose-300 text-[11px] flex items-center justify-center gap-1"
+                      >
+                        <span>🗑</span> O'chirish
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── STATS TAB ── */}
+        {activeTab === "stats" && (
+          <div className="space-y-5 mt-2">
+            <h2 className="font-extrabold text-base text-slate-100 flex items-center gap-2">
+              <span>📊</span> Quiz Statistikasi
+            </h2>
+
+            {/* Limit & account card */}
+            <div className="bg-gradient-to-r from-violet-950/60 via-slate-900 to-indigo-950/60 border border-violet-500/40 rounded-3xl p-5 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-violet-300 font-bold uppercase tracking-wider">Tarif & Limit</span>
+                <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                  {statsData?.isPremium ? "PRO Premium ∞" : "BEPUL (FREE)"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[11px] text-slate-400">Bugungi limit</div>
+                  <div className="font-extrabold text-sm text-slate-100 mt-0.5">
+                    {statsData?.isPremium ? "Cheksiz ∞" : `${statsData?.dailyUsed || todayCount} / 5 ta`}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-400">Qolgan limit</div>
+                  <div className="font-extrabold text-sm text-cyan-300 mt-0.5">
+                    {statsData?.isPremium ? "Cheksiz ∞" : `${Math.max(0, 5 - (statsData?.dailyUsed || todayCount))} ta`}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Metrics grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
+                <span className="text-2xl">📈</span>
+                <div className="font-extrabold text-2xl text-slate-100 mt-1">{historyList.length}</div>
+                <div className="text-[11px] text-slate-400 font-semibold">Jami Quiz</div>
+              </div>
+              <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
+                <span className="text-2xl">📅</span>
+                <div className="font-extrabold text-2xl text-amber-300 mt-1">{todayCount}</div>
+                <div className="text-[11px] text-slate-400 font-semibold">Bugun</div>
+              </div>
+              <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
+                <span className="text-2xl">📤</span>
+                <div className="font-extrabold text-2xl text-sky-400 mt-1">{telegramSentCount}</div>
+                <div className="text-[11px] text-slate-400 font-semibold">Telegram Poll</div>
+              </div>
+              <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
+                <span className="text-2xl">🎯</span>
+                <div className="font-extrabold text-2xl text-violet-400 mt-1">
+                  {historyList.reduce((s, h) => s + (h.questionCount || 0), 0)}
+                </div>
+                <div className="text-[11px] text-slate-400 font-semibold">Jami Savol</div>
+              </div>
+              <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
+                <span className="text-2xl">⚡</span>
+                <div className="font-extrabold text-2xl text-emerald-400 mt-1">~1.5s</div>
+                <div className="text-[11px] text-slate-400 font-semibold">O'rtacha Vaqt</div>
+              </div>
+              <div className="bg-[#121927] border border-slate-800 rounded-2xl p-4 text-center">
+                <span className="text-2xl">🛡</span>
+                <div className="font-extrabold text-2xl text-cyan-400 mt-1">85%</div>
+                <div className="text-[11px] text-slate-400 font-semibold">AI Tejamkorlik</div>
+              </div>
+            </div>
+
+            {/* Parser breakdown */}
+            <div className="bg-[#121927] border border-slate-800 rounded-3xl p-5 space-y-3">
+              <h3 className="font-extrabold text-sm text-slate-200">⚙️ Parser ishlash statistikasi</h3>
+              <div className="space-y-3 text-xs">
+                {[
+                  { label: "Rule Engine Parser (lokal)", pct: 92, color: "bg-emerald-400", textColor: "text-emerald-400" },
+                  { label: "Gemini AI Fallback Parser", pct: 8, color: "bg-violet-400", textColor: "text-violet-400" },
+                ].map(item => (
+                  <div key={item.label}>
+                    <div className="flex justify-between text-[11px] text-slate-400 mb-1.5">
+                      <span>{item.label}</span>
+                      <span className={`font-extrabold ${item.textColor}`}>{item.pct}%</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                      <div className={`h-full ${item.color} rounded-full`} style={{ width: `${item.pct}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Toast */}
       {toastMsg && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1e293b] border border-violet-500/50 text-white px-5 py-3 rounded-2xl shadow-2xl text-xs text-center animate-bounce">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1e293b] border border-violet-500/50 text-white px-5 py-3 rounded-2xl shadow-2xl text-xs text-center max-w-xs">
           {toastMsg}
         </div>
       )}
