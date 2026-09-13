@@ -43,7 +43,7 @@ const features = [
     desc: "Fanlardan AI yordamchi",
     color:
       "from-orange-500/20 to-amber-500/10",
-    link: "#",
+    link: "/ai-chat",
   },
  
   {

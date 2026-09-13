@@ -157,8 +157,8 @@ export default function PremiumPage() {
   const [uploading, setUploading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [paymentSettings, setPaymentSettings] = useState<{ card_holder: string; card_number: string }>({
-    card_holder: "",
-    card_number: "",
+    card_holder: "SUXROB NARKABILOV",
+    card_number: "9860350144459038",
   });
 
   const fetchPaymentSettings = useCallback(async () => {
@@ -167,8 +167,8 @@ export default function PremiumPage() {
       const data = await res.json();
       if (data.success && data.settings) {
         setPaymentSettings({
-          card_holder: data.settings.card_holder || "",
-          card_number: data.settings.card_number || "",
+          card_holder: data.settings.card_holder || "SUXROB NARKABILOV",
+          card_number: data.settings.card_number || "9860350144459038",
         });
       }
     } catch (err) {
@@ -179,6 +179,12 @@ export default function PremiumPage() {
   useEffect(() => {
     fetchPaymentSettings();
   }, [fetchPaymentSettings]);
+
+  const formatCardNumber = (num: string) => {
+    if (!num) return "";
+    const cleaned = num.replace(/\D/g, "");
+    return cleaned.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
+  };
 
   const activePlanDetails = PRICING_PLANS.find((plan) => plan.id === selectedPlan);
 
@@ -194,11 +200,38 @@ export default function PremiumPage() {
     setShowModal(true);
   };
 
+  const fallbackCopyText = (text: string) => {
+    try {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    } catch (e) {
+      console.error("Fallback copy failed:", e);
+    }
+  };
+
   const copyCardNumber = () => {
-    if (!paymentSettings.card_number) return;
-    navigator.clipboard.writeText(paymentSettings.card_number.replace(/\s+/g, ""));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
+    const rawNumber = (paymentSettings.card_number || "9860350144459038").replace(/\s+/g, "");
+    if (!rawNumber) return;
+    if (typeof navigator !== "undefined" && navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(rawNumber)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 3000);
+        })
+        .catch(() => {
+          fallbackCopyText(rawNumber);
+        });
+    } else {
+      fallbackCopyText(rawNumber);
+    }
   };
 
   const handleUploadProof = async () => {
@@ -385,7 +418,9 @@ export default function PremiumPage() {
                     <div className="border-t border-slate-700/60 pt-3">
                       <span className="text-slate-400 text-[10px] uppercase font-bold block mb-1">Karta raqami (Humo / Uzcard)</span>
                       <div className="flex items-center justify-between bg-[#101622] px-3 py-2 rounded-xl border border-slate-700">
-                        <span className="font-mono font-black text-base text-amber-400 tracking-wider">{paymentSettings.card_number}</span>
+                        <span className="font-mono font-black text-base text-amber-400 tracking-wider">
+                          {formatCardNumber(paymentSettings.card_number || "9860350144459038")}
+                        </span>
                         <button
                           onClick={copyCardNumber}
                           className="px-2.5 py-1 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 rounded-lg text-xs font-bold transition-all active:scale-95"
@@ -393,7 +428,9 @@ export default function PremiumPage() {
                           {copied ? "✓ Nusxalandi" : "📋 Nusxalash"}
                         </button>
                       </div>
-                      <span className="text-slate-500 text-[10px] block mt-1">Qabul qiluvchi: {paymentSettings.card_holder}</span>
+                      <span className="text-slate-500 text-[10px] block mt-1">
+                        Qabul qiluvchi: {paymentSettings.card_holder || "SUXROB NARKABILOV"}
+                      </span>
                     </div>
                   </div>
                 )}

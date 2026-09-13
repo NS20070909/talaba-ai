@@ -10,8 +10,8 @@ export async function GET() {
       {
         success: true,
         settings: {
-          card_holder: settings.card_holder || "",
-          card_number: settings.card_number || "",
+          card_holder: settings.card_holder || "SUXROB NARKABILOV",
+          card_number: settings.card_number || "9860350144459038",
         },
       },
       {
@@ -23,8 +23,14 @@ export async function GET() {
   } catch (error: any) {
     console.error("Get payment settings API error:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
+      {
+        success: true,
+        settings: {
+          card_holder: "SUXROB NARKABILOV",
+          card_number: "9860350144459038",
+        },
+      },
+      { status: 200 }
     );
   }
 }
