@@ -35,9 +35,11 @@ export interface UsageStats {
   referatUsedToday: number;
   translationUsedToday: number;
   quizUsedToday: number;
+  liveSecondsToday?: number;
+  flashReviewUsedToday?: number;
+  chatMessagesToday?: number;
 
   lastResetDate: Date;
-
   createdAt: Date;
   updatedAt: Date;
 }

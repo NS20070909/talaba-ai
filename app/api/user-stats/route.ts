@@ -60,6 +60,14 @@ export async function GET(req: Request) {
         referatLimit: limits.referatPerDay ?? 0,
         translationUsed: stats.translationUsedToday,
         translationLimit: limits.translationPerDay ?? 2,
+        liveMinutesLimit: limits.liveMinutesPerDay ?? 20,
+        liveSecondsUsed: stats.liveSecondsToday ?? 0,
+        liveSecondsRemaining: Math.max(0, (limits.liveMinutesPerDay ?? 20) * 60 - (stats.liveSecondsToday ?? 0)),
+        flashReviewLimit: limits.unlimited ? 999 : (limits.flashReviewPerDay ?? 5),
+        flashReviewUsed: stats.flashReviewUsedToday ?? 0,
+        quizLimit: limits.unlimited ? 999 : (limits.quizPerDay ?? 5),
+        quizUsed: stats.quizUsedToday ?? 0,
+        chatUnlimited: true,
       },
     });
   } catch (error) {

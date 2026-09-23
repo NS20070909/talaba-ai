@@ -45,15 +45,6 @@ const features = [
       "from-orange-500/20 to-amber-500/10",
     link: "/ai-chat",
   },
- 
-  {
-    icon: "📝",
-    title: "5 Daqiqada Tayyor",
-desc: "Qisqa konspekt va tayyorlash",
-    color:
-      "from-pink-500/20 to-rose-500/10",
-    link: "#",
-  },
 ];
 
 export default function Home() {

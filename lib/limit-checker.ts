@@ -226,3 +226,124 @@ export async function incrementQuiz(telegramId: number): Promise<void> {
   });
 }
 
+// ── AI Study Mentor Limits: Live Voice, Flash Review, and AI Chat ─────────
+
+export interface LiveCheckResult {
+  allowed: boolean;
+  remainingSeconds: number;
+  limitMinutes: number;
+  usedSeconds: number;
+  banned?: boolean;
+}
+
+export async function canUseLive(telegramId: number): Promise<LiveCheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) {
+    return {
+      allowed: false,
+      remainingSeconds: 0,
+      limitMinutes: 0,
+      usedSeconds: 0,
+      banned: guard.result?.banned,
+    };
+  }
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
+
+  const limitMinutes = limits.liveMinutesPerDay ?? 20;
+  const limitSeconds = limitMinutes * 60;
+
+  const stats = await getOrResetUsage(telegramId);
+  const usedSeconds = stats.liveSecondsToday || 0;
+  const remainingSeconds = Math.max(0, limitSeconds - usedSeconds);
+
+  return {
+    allowed: remainingSeconds > 0,
+    remainingSeconds,
+    limitMinutes,
+    usedSeconds,
+  };
+}
+
+export async function incrementLiveSeconds(telegramId: number, seconds: number): Promise<void> {
+  if (seconds <= 0) return;
+  const stats = await getOrResetUsage(telegramId);
+  const current = stats.liveSecondsToday || 0;
+  await updateUsageStats(telegramId, {
+    liveSecondsToday: current + Math.round(seconds),
+  });
+}
+
+export interface FlashReviewCheckResult {
+  allowed: boolean;
+  remaining: number;
+  limit: number;
+  used: number;
+  banned?: boolean;
+}
+
+export async function canUseFlashReview(telegramId: number): Promise<FlashReviewCheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) {
+    return {
+      allowed: false,
+      remaining: 0,
+      limit: 0,
+      used: 0,
+      banned: guard.result?.banned,
+    };
+  }
+
+  const user = await getUser(telegramId);
+  const plan: PlanType = user ? user.plan : "FREE";
+  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
+
+  if (limits.unlimited) {
+    return {
+      allowed: true,
+      remaining: Infinity,
+      limit: 999,
+      used: 0,
+    };
+  }
+
+  const limit = limits.flashReviewPerDay ?? 5;
+  const stats = await getOrResetUsage(telegramId);
+  const used = stats.flashReviewUsedToday || 0;
+  const remaining = Math.max(0, limit - used);
+
+  return {
+    allowed: remaining > 0,
+    remaining,
+    limit,
+    used,
+  };
+}
+
+export async function incrementFlashReview(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    flashReviewUsedToday: (stats.flashReviewUsedToday || 0) + 1,
+  });
+}
+
+export async function canUseAiChat(telegramId: number): Promise<CheckResult> {
+  const guard = await guardCheck(telegramId);
+  if (guard.blocked) return guard.result!;
+  // AI Chat is user-facing unlimited for both FREE and PREMIUM users
+  return {
+    allowed: true,
+    remaining: Infinity,
+  };
+}
+
+export async function incrementAiChatMessages(telegramId: number): Promise<void> {
+  const stats = await getOrResetUsage(telegramId);
+  await updateUsageStats(telegramId, {
+    chatMessagesToday: (stats.chatMessagesToday || 0) + 1,
+  });
+}
+
+

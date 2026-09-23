@@ -21,15 +21,28 @@ function isMissingColumnError(error: any, columnName: string): boolean {
   return msg.includes(columnName.toLowerCase()) || msg.includes("schema cache") || msg.includes("could not find");
 }
 
+declare global {
+  var __talaba_usage_overlay__: Map<number, Partial<UsageStats>> | undefined;
+}
+
+const usageOverlay: Map<number, Partial<UsageStats>> =
+  globalThis.__talaba_usage_overlay__ ||
+  (globalThis.__talaba_usage_overlay__ = new Map<number, Partial<UsageStats>>());
+
 function mapUsageStats(row: any): UsageStats {
+  const telegramId = Number(row.telegram_id);
+  const overlay = usageOverlay.get(telegramId);
   return {
-    telegramId: Number(row.telegram_id),
+    telegramId,
     pptUsedToday: row.ppt_used_today ?? 0,
     pdfUsedToday: row.pdf_used_today ?? 0,
     scanUsedToday: row.scan_used_today ?? 0,
     referatUsedToday: row.referat_used_today ?? 0,
     translationUsedToday: row.translation_used_today ?? 0,
-    quizUsedToday: row.quiz_used_today ?? 0,
+    quizUsedToday: overlay?.quizUsedToday ?? row.quiz_used_today ?? 0,
+    liveSecondsToday: overlay?.liveSecondsToday ?? row.live_seconds_today ?? 0,
+    flashReviewUsedToday: overlay?.flashReviewUsedToday ?? row.flash_review_used_today ?? 0,
+    chatMessagesToday: overlay?.chatMessagesToday ?? row.chat_messages_today ?? 0,
     lastResetDate: new Date(row.last_reset_date),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -178,6 +191,10 @@ export async function getUsageStats(telegramId: number): Promise<UsageStats> {
     scan_used_today: 0,
     referat_used_today: 0,
     translation_used_today: 0,
+    quiz_used_today: 0,
+    live_seconds_today: 0,
+    flash_review_used_today: 0,
+    chat_messages_today: 0,
     last_reset_date: new Date().toISOString(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -189,8 +206,13 @@ export async function getUsageStats(telegramId: number): Promise<UsageStats> {
     .select("*")
     .single();
 
-  if (insertError && isMissingColumnError(insertError, "translation_used_today")) {
-    delete insertPayload.translation_used_today;
+  const optionalCols = ["live_seconds_today", "flash_review_used_today", "chat_messages_today", "translation_used_today", "quiz_used_today"];
+  while (insertError && optionalCols.some((col) => isMissingColumnError(insertError, col) && col in insertPayload)) {
+    for (const col of optionalCols) {
+      if (isMissingColumnError(insertError, col)) {
+        delete insertPayload[col];
+      }
+    }
     const retryRes = await supabase
       .from("usage_stats")
       .insert(insertPayload)
@@ -224,12 +246,24 @@ export async function updateUsageStats(
 ): Promise<UsageStats> {
   await getUsageStats(telegramId);
 
+  // Update in-memory overlay so values are never lost if column is missing in DB
+  const currentOverlay = usageOverlay.get(telegramId) || {};
+  if (updates.quizUsedToday !== undefined) currentOverlay.quizUsedToday = updates.quizUsedToday;
+  if (updates.liveSecondsToday !== undefined) currentOverlay.liveSecondsToday = updates.liveSecondsToday;
+  if (updates.flashReviewUsedToday !== undefined) currentOverlay.flashReviewUsedToday = updates.flashReviewUsedToday;
+  if (updates.chatMessagesToday !== undefined) currentOverlay.chatMessagesToday = updates.chatMessagesToday;
+  usageOverlay.set(telegramId, currentOverlay);
+
   const dbUpdates: any = {};
   if (updates.pptUsedToday !== undefined) dbUpdates.ppt_used_today = updates.pptUsedToday;
   if (updates.pdfUsedToday !== undefined) dbUpdates.pdf_used_today = updates.pdfUsedToday;
   if (updates.scanUsedToday !== undefined) dbUpdates.scan_used_today = updates.scanUsedToday;
   if (updates.referatUsedToday !== undefined) dbUpdates.referat_used_today = updates.referatUsedToday;
   if (updates.translationUsedToday !== undefined) dbUpdates.translation_used_today = updates.translationUsedToday;
+  if (updates.quizUsedToday !== undefined) dbUpdates.quiz_used_today = updates.quizUsedToday;
+  if (updates.liveSecondsToday !== undefined) dbUpdates.live_seconds_today = updates.liveSecondsToday;
+  if (updates.flashReviewUsedToday !== undefined) dbUpdates.flash_review_used_today = updates.flashReviewUsedToday;
+  if (updates.chatMessagesToday !== undefined) dbUpdates.chat_messages_today = updates.chatMessagesToday;
   dbUpdates.updated_at = new Date().toISOString();
 
   const supabase = getSupabase();
@@ -240,8 +274,13 @@ export async function updateUsageStats(
     .select("*")
     .single();
 
-  if (error && isMissingColumnError(error, "translation_used_today") && dbUpdates.translation_used_today !== undefined) {
-    delete dbUpdates.translation_used_today;
+  const optionalCols = ["live_seconds_today", "flash_review_used_today", "chat_messages_today", "translation_used_today", "quiz_used_today"];
+  while (error && optionalCols.some((col) => isMissingColumnError(error, col) && col in dbUpdates)) {
+    for (const col of optionalCols) {
+      if (isMissingColumnError(error, col)) {
+        delete dbUpdates[col];
+      }
+    }
     const remainingKeys = Object.keys(dbUpdates).filter((k) => k !== "updated_at");
     if (remainingKeys.length === 0) {
       return await getUsageStats(telegramId);
@@ -266,6 +305,7 @@ export async function updateUsageStats(
 
 export async function resetUsageStats(telegramId: number): Promise<UsageStats> {
   await getUsageStats(telegramId);
+  usageOverlay.delete(telegramId);
 
   const supabase = getSupabase();
   const resetPayload: any = {
@@ -274,6 +314,10 @@ export async function resetUsageStats(telegramId: number): Promise<UsageStats> {
     scan_used_today: 0,
     referat_used_today: 0,
     translation_used_today: 0,
+    quiz_used_today: 0,
+    live_seconds_today: 0,
+    flash_review_used_today: 0,
+    chat_messages_today: 0,
     last_reset_date: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -285,8 +329,13 @@ export async function resetUsageStats(telegramId: number): Promise<UsageStats> {
     .select("*")
     .single();
 
-  if (error && isMissingColumnError(error, "translation_used_today")) {
-    delete resetPayload.translation_used_today;
+  const optionalCols = ["live_seconds_today", "flash_review_used_today", "chat_messages_today", "translation_used_today", "quiz_used_today"];
+  while (error && optionalCols.some((col) => isMissingColumnError(error, col) && col in resetPayload)) {
+    for (const col of optionalCols) {
+      if (isMissingColumnError(error, col)) {
+        delete resetPayload[col];
+      }
+    }
     const retryRes = await supabase
       .from("usage_stats")
       .update(resetPayload)

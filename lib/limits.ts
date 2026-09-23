@@ -8,6 +8,9 @@ export interface PlanLimits {
   quizPerDay?: number;
   referatMinPages?: number;
   referatMaxPages?: number;
+  liveMinutesPerDay?: number;
+  flashReviewPerDay?: number;
+  chatUnlimited?: boolean;
   unlimited?: boolean;
 }
 
@@ -22,6 +25,9 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     quizPerDay: 5,
     referatMinPages: 3,
     referatMaxPages: 7,
+    liveMinutesPerDay: 20,
+    flashReviewPerDay: 5,
+    chatUnlimited: true,
   },
   STARTER: {
     durationDays: 15,
@@ -32,6 +38,9 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     translationPerDay: 6,
     referatMinPages: 5,
     referatMaxPages: 10,
+    liveMinutesPerDay: 30,
+    flashReviewPerDay: 15,
+    chatUnlimited: true,
   },
   STUDENT: {
     durationDays: 30,
@@ -42,6 +51,9 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     translationPerDay: 12,
     referatMinPages: 5,
     referatMaxPages: 15,
+    liveMinutesPerDay: 45,
+    flashReviewPerDay: 30,
+    chatUnlimited: true,
   },
   PRO: {
     durationDays: 30,
@@ -52,11 +64,17 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     translationPerDay: 30,
     referatMinPages: 5,
     referatMaxPages: 30,
+    liveMinutesPerDay: 60,
+    flashReviewPerDay: 60,
+    chatUnlimited: true,
   },
   PREMIUM: {
     unlimited: true,
     referatMinPages: 5,
     referatMaxPages: 50,
+    liveMinutesPerDay: 60,
+    flashReviewPerDay: 999,
+    chatUnlimited: true,
   },
 
   // ── New duration-based plans ─────────────────────────────────────────────
@@ -69,6 +87,9 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     translationPerDay: 5,
     referatMinPages: 5,
     referatMaxPages: 10,
+    liveMinutesPerDay: 30,
+    flashReviewPerDay: 15,
+    chatUnlimited: true,
   },
   WEEK: {
     durationDays: 7,
@@ -79,6 +100,9 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     translationPerDay: 50,
     referatMinPages: 5,
     referatMaxPages: 15,
+    liveMinutesPerDay: 45,
+    flashReviewPerDay: 30,
+    chatUnlimited: true,
   },
   MONTH: {
     durationDays: 30,
@@ -89,6 +113,9 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     translationPerDay: 300,
     referatMinPages: 5,
     referatMaxPages: 50,
+    liveMinutesPerDay: 60,
+    flashReviewPerDay: 60,
+    chatUnlimited: true,
   },
   QUARTER: {
     durationDays: 90,
@@ -99,12 +126,18 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
     translationPerDay: 1000,
     referatMinPages: 5,
     referatMaxPages: 30,
+    liveMinutesPerDay: 60,
+    flashReviewPerDay: 100,
+    chatUnlimited: true,
   },
   YEAR: {
     durationDays: 365,
     unlimited: true,
     referatMinPages: 5,
     referatMaxPages: 50,
+    liveMinutesPerDay: 60,
+    flashReviewPerDay: 999,
+    chatUnlimited: true,
   },
 };
 
