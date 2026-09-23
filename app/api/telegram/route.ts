@@ -2602,24 +2602,121 @@ bot.on("message", async (ctx, next) => {
         }
       }
     } else if (state === "owner:waiting_for_bc_specific_id") {
-      const targetId = Number(text.trim());
-      if (isNaN(targetId) || targetId <= 0) {
-        await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat raqam kiriting.");
+      // Strict: only positive integers, no floats, no negatives, no NaN
+      const trimmed = text.trim();
+      // digits-only AND not all zeros (e.g. "0", "00" are invalid)
+      const isValidId = /^\d+$/.test(trimmed) && !/^0+$/.test(trimmed);
+      if (!isValidId) {
+        await ctx.reply("❌ Noto'g'ri Telegram ID. Faqat musbat butun son (masalan: 888999222) kiriting.");
       } else {
-        await setBotState(userId, `owner:waiting_for_bc_specific_msg_${targetId}`);
-        await ctx.replyWithHTML(`✅ Target ID qabul qilindi: <code>${targetId}</code>\n\nIltimos, endi yubormoqchi bo'lgan xabaringizni kiriting (HTML qo'llab-quvvatlanadi):`);
+        // Store as raw string to avoid Number precision loss for large IDs
+        await setBotState(userId, `owner:waiting_for_bc_specific_msg_${trimmed}`);
+        await ctx.replyWithHTML(
+          `✅ Target ID qabul qilindi: <code>${trimmed}</code>\n\n` +
+          `Iltimos, endi yubormoqchi bo'lgan xabaringizni kiriting (HTML qo'llab-quvvatlanadi):`
+        );
       }
     } else if (state.startsWith("owner:waiting_for_bc_specific_msg_")) {
-      const targetIdStr = state.replace("owner:waiting_for_bc_specific_msg_", "");
-      const targetId = Number(targetIdStr);
-      if (!text || text.trim().length === 0) {
+      // Extract target ID as string (never parse with Number to avoid precision loss)
+      const chatIdStr = state.replace("owner:waiting_for_bc_specific_msg_", "").trim();
+      const messageText = text?.trim() ?? "";
+
+      if (!messageText) {
         await ctx.reply("❌ Xabar bo'sh bo'lishi mumkin emas.");
       } else {
+        // Always clear state regardless of outcome
+        await deleteBotState(userId);
+
+        // Pre-check: does this chat exist and is the bot able to reach it?
+        let chatCheckOk = false;
+        let chatCheckError = "";
         try {
-          await bot.telegram.sendMessage(targetId, text.trim(), { parse_mode: "HTML" });
-          await ctx.replyWithHTML(`✅ Xabar muvaffaqiyatli yuborildi!\n\nTarget ID: <code>${targetId}</code>`);
-        } catch (err: any) {
-          await ctx.reply(`❌ Xabar yuborib bo'lmadi.\nSabab: ${err.message}`);
+          await bot.telegram.getChat(chatIdStr);
+          chatCheckOk = true;
+        } catch (checkErr: any) {
+          const checkMsg = String(checkErr?.response?.description || checkErr?.message || "").toLowerCase();
+          console.log(`[BC_DIRECT] getChat status=FAIL chat_id=${chatIdStr} description=${checkErr?.response?.description || checkErr?.message}`);
+          if (checkMsg.includes("chat not found") || checkMsg.includes("user not found")) {
+            chatCheckError = "not_found";
+          } else if (checkMsg.includes("bot was blocked") || checkMsg.includes("kicked by the user")) {
+            chatCheckError = "blocked";
+          } else if (checkMsg.includes("user is deactivated")) {
+            chatCheckError = "deactivated";
+          } else {
+            chatCheckError = "other";
+          }
+        }
+
+        if (!chatCheckOk) {
+          if (chatCheckError === "not_found") {
+            await ctx.replyWithHTML(
+              `❌ <b>Xabar yuborib bo'lmadi</b>\n\n` +
+              `🔍 <b>Sabab:</b> Chat topilmadi\n\n` +
+              `⚠️ <b>Eng ko'p uchraydigan sabab:</b>\n` +
+              `Bu foydalanuvchi botga hali <code>/start</code> qilmagan.\n` +
+              `Bot faqat avval muloqot boshlagan foydalanuvchilarga xabar yubora oladi.\n\n` +
+              `🆔 <b>Target ID:</b> <code>${chatIdStr}</code>`
+            );
+          } else if (chatCheckError === "blocked") {
+            await ctx.replyWithHTML(
+              `❌ <b>Xabar yuborib bo'lmadi</b>\n\n` +
+              `🚫 <b>Sabab:</b> Foydalanuvchi botni bloklagan\n\n` +
+              `🆔 <b>Target ID:</b> <code>${chatIdStr}</code>`
+            );
+          } else if (chatCheckError === "deactivated") {
+            await ctx.replyWithHTML(
+              `❌ <b>Xabar yuborib bo'lmadi</b>\n\n` +
+              `👻 <b>Sabab:</b> Foydalanuvchi hisobi o'chirilgan (deactivated)\n\n` +
+              `🆔 <b>Target ID:</b> <code>${chatIdStr}</code>`
+            );
+          } else {
+            await ctx.replyWithHTML(
+              `❌ <b>Xabar yuborib bo'lmadi</b>\n\n` +
+              `⚠️ <b>Sabab:</b> Chat tekshirishda xatolik yuz berdi\n\n` +
+              `🆔 <b>Target ID:</b> <code>${chatIdStr}</code>`
+            );
+          }
+        } else {
+          // Chat exists — attempt to send
+          try {
+            await bot.telegram.sendMessage(chatIdStr, messageText, { parse_mode: "HTML" });
+            console.log(`[BC_DIRECT] sendMessage OK chat_id=${chatIdStr}`);
+            await ctx.replyWithHTML(
+              `✅ <b>Xabar muvaffaqiyatli yuborildi!</b>\n\n` +
+              `🆔 <b>Target ID:</b> <code>${chatIdStr}</code>`
+            );
+          } catch (sendErr: any) {
+            const errCode: number = sendErr?.response?.error_code ?? 0;
+            const errDesc: string = String(sendErr?.response?.description || sendErr?.message || "");
+            const errDescLower = errDesc.toLowerCase();
+            console.log(`[BC_DIRECT] sendMessage FAIL chat_id=${chatIdStr} error_code=${errCode} description=${errDesc}`);
+
+            let friendlyMsg: string;
+            if (errCode === 429 || errDescLower.includes("too many requests")) {
+              const retryAfter = sendErr?.response?.parameters?.retry_after ?? "bir oz";
+              friendlyMsg = `⏳ <b>Rate limit.</b> ${retryAfter} soniyadan keyin qayta urinib ko'ring.`;
+            } else if (errDescLower.includes("can't parse") || errDescLower.includes("bad request: can't parse entities")) {
+              friendlyMsg =
+                `📝 <b>HTML format xatosi.</b>\n\n` +
+                `Xabaringizda noto'g'ri HTML teglari bor.\n` +
+                `Masalan: <code>&lt;b&gt;</code> ochilgan lekin <code>&lt;/b&gt;</code> yopilmagan.\n\n` +
+                `Xabarni qaytadan to'g'ri HTML bilan yuboring.`;
+            } else if (errDescLower.includes("bot was blocked") || errDescLower.includes("kicked by the user")) {
+              friendlyMsg = `🚫 <b>Foydalanuvchi botni bloklagan.</b>`;
+            } else if (errDescLower.includes("user is deactivated")) {
+              friendlyMsg = `👻 <b>Foydalanuvchi hisobi o'chirilgan.</b>`;
+            } else if (errCode === 401 || errDescLower.includes("unauthorized")) {
+              friendlyMsg = `🔑 <b>Bot token xatosi.</b> Token noto'g'ri yoki eskirgan.`;
+            } else {
+              friendlyMsg = `⚠️ <b>Xatolik:</b> ${errDesc}`;
+            }
+
+            await ctx.replyWithHTML(
+              `❌ <b>Xabar yuborib bo'lmadi</b>\n\n` +
+              `${friendlyMsg}\n\n` +
+              `🆔 <b>Target ID:</b> <code>${chatIdStr}</code>`
+            );
+          }
         }
       }
     } else if (state.startsWith("owner:waiting_for_bc_")) {
