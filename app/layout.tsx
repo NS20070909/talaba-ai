@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import TelegramInitializer from "@/components/TelegramInitializer";
 import "./globals.css";
 
 const geistSans = {
@@ -27,41 +28,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
 
-        {/* Telegram WebApp */}
-        <Script src="https://telegram.org/js/telegram-web-app.js" />
-
-        <Script id="telegram-user">
-          {`
-            if (window.Telegram?.WebApp) {
-              const tg = window.Telegram.WebApp;
-
-              tg.expand();
-
-              const user = tg.initDataUnsafe?.user;
-
-              if (user && user.id) {
-                localStorage.setItem(
-                  "telegram_user_id",
-                  user.id.toString()
-                );
-
-                fetch("/api/sync-user", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    id: user.id,
-                    first_name: user.first_name || "Telegram User",
-                    username: user.username || ""
-                  }),
-                }).catch(function(err) {
-                  console.error("Failed to sync user:", err);
-                });
-              }
-            }
-          `}
-        </Script>
+        {/* Telegram WebApp script loaded before interaction */}
+        <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
+        <TelegramInitializer />
 
         {children}
       </body>

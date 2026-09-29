@@ -6,7 +6,8 @@ import { NextResponse } from "next/server";
 import PptxGenJS from "pptxgenjs";
 import { generateOutline } from "@/app/talaba-tools/ppt/actions";
 import { sendFileToTelegram } from "@/app/api/telegram/route";
-import { guardCheck, canUsePPT, incrementPPT } from "@/lib/limit-checker";
+import { canUsePPT, incrementPPT } from "@/lib/limit-checker";
+import { getVerifiedTelegramUser } from "@/lib/telegram-auth";
 import axios from "axios";
 
 // PEXELS IMAGE — capped at 4s to stay within Vercel budget
@@ -93,31 +94,31 @@ export async function POST(
     const body =
       await req.json();
 
-    const telegramUserId =
-      body.telegram_user_id;
-
     const sendToTelegram =
       body.send_to_telegram;
 
-    const telegramId = Number(telegramUserId);
-    if (!telegramId || isNaN(telegramId)) {
-      return NextResponse.json({ error: "telegram_user_id is required" }, { status: 400 });
-    }
-
-    const guard = await guardCheck(telegramId);
-    if (guard.blocked && guard.result?.banned) {
+    const auth = await getVerifiedTelegramUser(req, body);
+    if (!auth.authenticated || !auth.telegramId) {
       return NextResponse.json(
-        {
-          success: false,
-          code: "BANNED",
-          message: "🚫 Siz bloklangansiz",
-        },
-        { status: 403 }
+        { success: false, error: "UNAUTHORIZED", message: "Telegram orqali qayta kiring" },
+        { status: 401 }
       );
     }
+    const telegramId = auth.telegramId;
+    const telegramUserId = telegramId;
 
     const limitCheck = await canUsePPT(telegramId);
     if (!limitCheck.allowed) {
+      if (limitCheck.banned) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "BANNED",
+            message: "🚫 Siz bloklangansiz",
+          },
+          { status: 403 }
+        );
+      }
       return NextResponse.json(
         {
           success: false,
@@ -751,20 +752,13 @@ else if (
 
      // CONTENT
 else if (
-  item.layoutType ===
-"premium-content"||
-
-  item.layoutType ===
-    "split-insight" ||
-
-  item.layoutType ===
-    "feature-grid" ||
-
-  item.layoutType ===
-    "vertical-timeline" ||
-
-  item.layoutType ===
-    "statistics-highlight"
+  item.layoutType === "premium-content" ||
+  item.layoutType === "split-insight" ||
+  item.layoutType === "feature-grid" ||
+  item.layoutType === "vertical-timeline" ||
+  item.layoutType === "statistics-highlight" ||
+  item.layoutType === "comparison" ||
+  item.layoutType === "horizontal-steps"
 ) {
         slide.addText(
           item.title ||
@@ -1127,6 +1121,68 @@ if (imageUrl) {
 y: 1.45,
 w: 1.1,
 h: 0.9,
+  });
+}
+
+// REAL COMPARISON
+if (item.layoutType === "comparison") {
+  // Left Comparison Card
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 0.8,
+    y: 2.0,
+    w: 5.6,
+    h: 4.8,
+    rectRadius: 0.12,
+    fill: { color: "000000", transparency: 50 },
+    line: { color: theme.accent, width: 1.5 },
+  });
+  // Right Comparison Card
+  slide.addShape(pptx.ShapeType.roundRect, {
+    x: 6.8,
+    y: 2.0,
+    w: 5.6,
+    h: 4.8,
+    rectRadius: 0.12,
+    fill: { color: "000000", transparency: 50 },
+    line: { color: "FFFFFF", transparency: 80, width: 1.5 },
+  });
+}
+
+// REAL HORIZONTAL STEPS
+if (item.layoutType === "horizontal-steps") {
+  const steps = [1, 2, 3, 4];
+  const stepWidth = 2.4;
+  const startX = 0.8;
+  const stepY = 5.4;
+  steps.forEach((step, idx) => {
+    const x = startX + idx * (stepWidth + 0.6);
+    slide.addShape(pptx.ShapeType.ellipse, {
+      x,
+      y: stepY,
+      w: 0.45,
+      h: 0.45,
+      fill: { color: theme.accent },
+      line: { color: theme.accent },
+    });
+    slide.addText(`${step}`, {
+      x: x - 0.05,
+      y: stepY + 0.05,
+      w: 0.55,
+      h: 0.35,
+      fontSize: 12,
+      bold: true,
+      color: "000000",
+      align: "center",
+    });
+    if (idx < steps.length - 1) {
+      slide.addShape(pptx.ShapeType.line, {
+        x: x + 0.45,
+        y: stepY + 0.22,
+        w: 2.5,
+        h: 0,
+        line: { color: theme.accent, width: 2 },
+      });
+    }
   });
 }
    }
@@ -1517,6 +1573,7 @@ else {
 
       return NextResponse.json({
         success: true,
+        outline,
       });
     }
 
@@ -1527,6 +1584,7 @@ else {
     return NextResponse.json({
       success: true,
       downloadUrl,
+      outline,
     });
   } catch (
     error

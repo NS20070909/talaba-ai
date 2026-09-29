@@ -1,20 +1,17 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getUser } from "@/lib/storage";
 import { PLAN_LIMITS } from "@/lib/limits";
-import { guardCheck, canUseReferat, incrementReferat } from "@/lib/limit-checker";
+import { guardCheck, canUseReferat } from "@/lib/limit-checker";
+import { getVerifiedTelegramUser } from "@/lib/telegram-auth";
 import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
 
-export const maxDuration = 60;
+export const maxDuration = 35;
 export const dynamic = "force-dynamic";
 
 const MODEL_CHAIN = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
   "gemini-3.6-flash",
-  "gemini-3.5-flash",
   "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-flash-latest",
 ];
 
 function cleanJson(text: string): string {
@@ -22,31 +19,49 @@ function cleanJson(text: string): string {
   if (cleaned.startsWith("```json")) cleaned = cleaned.substring(7);
   if (cleaned.startsWith("```")) cleaned = cleaned.substring(3);
   if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length - 3);
-  return cleaned.trim();
+  cleaned = cleaned.trim();
+
+  // Extract outer JSON object if extra text exists
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleaned = jsonMatch[0];
+  }
+  return cleaned;
 }
 
 export async function POST(req: NextRequest) {
-  console.log("[API] Request received: POST /api/referat-outline");
   try {
-    const { topic, subject, language, pages, telegram_user_id } = await req.json();
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Yaroqsiz so'rov ma'lumotlari." },
+        { status: 400 }
+      );
+    }
+
+    const { topic, subject, language, pages } = body;
 
     if (!topic || !subject || !language) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields: topic, subject, or language",
+          error: "Barcha maydonlarni to'ldiring: topic, subject, yoki language yetishmayapti",
         },
         { status: 400 }
       );
     }
 
-    const telegramId = Number(telegram_user_id);
-    if (!telegramId || isNaN(telegramId)) {
+    const auth = await getVerifiedTelegramUser(req, body);
+    if (!auth.authenticated || !auth.telegramId) {
       return NextResponse.json(
-        { success: false, error: "telegram_user_id is required" },
-        { status: 400 }
+        { success: false, error: "Avtorizatsiya talab qilinadi. Telegram orqali kiring." },
+        { status: 401 }
       );
     }
+
+    const telegramId = auth.telegramId;
 
     const guard = await guardCheck(telegramId);
     if (guard.blocked) {
@@ -60,7 +75,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Backend validation of pages count
-    let requestedMaxPages = 4; // default to FREE
+    let requestedMaxPages = 4;
     if (typeof pages === "string") {
       if (pages.toLowerCase() === "cheksiz") {
         requestedMaxPages = Infinity;
@@ -76,16 +91,11 @@ export async function POST(req: NextRequest) {
       requestedMaxPages = pages;
     }
 
-    let planMinLimit = 3; // default to FREE
-    let planMaxLimit = 4; // default to FREE
-    let planName = "FREE";
-    if (telegramId && !isNaN(telegramId)) {
-      const user = await getUser(telegramId);
-      planName = user ? user.plan : "FREE";
-      const limits = PLAN_LIMITS[planName] || PLAN_LIMITS.FREE;
-      planMinLimit = limits.referatMinPages ?? 3;
-      planMaxLimit = limits.unlimited ? Infinity : (limits.referatMaxPages ?? 4);
-    }
+    const user = guard.user;
+    const planName = user ? user.plan : "FREE";
+    const limits = PLAN_LIMITS[planName] || PLAN_LIMITS.FREE;
+    const planMinLimit = limits.referatMinPages ?? 3;
+    const planMaxLimit = limits.unlimited ? Infinity : (limits.referatMaxPages ?? 4);
 
     if (requestedMaxPages > planMaxLimit || requestedMaxPages < planMinLimit) {
       return NextResponse.json(
@@ -103,13 +113,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Sizning bugungi referat yaratish limitingiz tugagan. Keyingi oyda yana urinib ko'ring.",
+          error: "Sizning bugungi referat yaratish limitingiz tugagan. Ertaga yangilanadi yoki tarifingizni oshiring.",
         },
         { status: 403 }
       );
     }
 
-    const apiKey = process.env.REFERAT_GEMINI_API_KEY;
+    const apiKey = process.env.REFERAT_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
         {
@@ -155,12 +165,13 @@ Requirements:
       apiKey,
       modelChain: MODEL_CHAIN,
       prompt,
+      perModelTimeoutMs: 8000,
+      maxRetriesPerModel: 1,
+      maxTotalMs: 26000,
     });
+
     const cleaned = cleanJson(rawText);
     const parsedData = JSON.parse(cleaned);
-
-    // Note: incrementReferat is intentionally NOT called here.
-    // Usage is incremented strictly on successful completed DOCX generation in /api/write-referat.
 
     return NextResponse.json({
       success: true,
@@ -169,13 +180,30 @@ Requirements:
       outline: parsedData.outline,
     });
   } catch (error: any) {
-    console.error("[Gemini] Referat Outline Error:", error);
+    const errorMsg = error?.message || "";
+    console.error("[Referat Outline] Error:", errorMsg);
+
+    const isTimeout =
+      errorMsg.includes("Timeout") ||
+      errorMsg.includes("timeout") ||
+      errorMsg.includes("abort");
+
+    if (isTimeout) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "⏳ Reja tuzish vaqti tugadi (server band). Iltimos, qayta urinib ko'ring.",
+        },
+        { status: 504 }
+      );
+    }
+
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to generate outline",
+        error: error.message || "Referat rejasini tuzishda xatolik yuz berdi",
       },
-      { status: 500 }
+      { status: 503 }
     );
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { getTelegramContext } from "@/lib/client/telegram";
 
 interface UsageStats {
   plan: string;
@@ -21,17 +22,24 @@ export default function UsageStatsWidget() {
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
-      const userId = localStorage.getItem("telegram_user_id");
+      const tgCtx = getTelegramContext();
+      const userId = tgCtx.user?.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
+
       if (!userId) {
-        setError("Telegram ID topilmadi");
-        setLoading(false);
+        // Wait for telegram-user-ready event if not loaded yet
         return;
+      }
+
+      const headers: Record<string, string> = {};
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
       }
 
       // cache: no-store ensures fresh data on every call
       const res = await fetch(`/api/user-stats?telegram_id=${userId}&t=${Date.now()}`, {
+        headers,
         cache: "no-store",
       });
       const data = await res.json();
@@ -39,7 +47,9 @@ export default function UsageStatsWidget() {
       if (data.success) {
         setStats(data.stats);
         setError(null);
-        localStorage.removeItem("user_stats_dirty");
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("user_stats_dirty");
+        }
       } else {
         setError(data.message || "Xatolik yuz berdi");
       }
@@ -49,34 +59,38 @@ export default function UsageStatsWidget() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchStats();
 
     const handleRefresh = () => fetchStats();
+    const handleUserReady = () => fetchStats();
     const checkDirtyAndRefresh = () => {
-      if (localStorage.getItem("user_stats_dirty") === "true") {
+      if (typeof window !== "undefined" && localStorage.getItem("user_stats_dirty") === "true") {
         fetchStats();
       }
     };
 
     window.addEventListener("refetch-stats", handleRefresh);
+    window.addEventListener("telegram-user-ready", handleUserReady);
     window.addEventListener("focus", checkDirtyAndRefresh);
     window.addEventListener("pageshow", handleRefresh);
-    document.addEventListener("visibilitychange", checkDirtyAndRefresh);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") checkDirtyAndRefresh();
+    });
 
-    const interval = setInterval(checkDirtyAndRefresh, 1000);
+    // Relaxed 15s dirty check instead of 1s tight loop
+    const interval = setInterval(checkDirtyAndRefresh, 15000);
 
     return () => {
       window.removeEventListener("refetch-stats", handleRefresh);
+      window.removeEventListener("telegram-user-ready", handleUserReady);
       window.removeEventListener("focus", checkDirtyAndRefresh);
       window.removeEventListener("pageshow", handleRefresh);
-      document.removeEventListener("visibilitychange", checkDirtyAndRefresh);
       clearInterval(interval);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchStats]);
 
   if (loading) {
     return (

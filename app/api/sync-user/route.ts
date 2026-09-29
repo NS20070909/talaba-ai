@@ -1,19 +1,35 @@
 import { NextResponse } from "next/server";
 import { saveOrUpdateUser } from "@/lib/storage";
+import { getVerifiedTelegramUser } from "@/lib/telegram-auth";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { id, first_name, username } = body;
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {}
 
-    if (!id) {
-      return NextResponse.json({ success: false, error: "Missing telegram id" }, { status: 400 });
+    const auth = await getVerifiedTelegramUser(req, body);
+
+    if (!auth.authenticated || !auth.telegramId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "UNAUTHORIZED_INVALID_INIT_DATA",
+          message: "Telegram autentifikatsiyasi tasdiqlanmadi.",
+        },
+        { status: 401 }
+      );
     }
 
+    const telegramId = auth.telegramId;
+    const firstName = auth.user?.firstName || body.first_name || "Telegram User";
+    const username = auth.user?.username || body.username || undefined;
+
     const user = await saveOrUpdateUser(
-      Number(id),
-      first_name || "Telegram User",
-      username || undefined
+      telegramId,
+      firstName,
+      username
     );
 
     return NextResponse.json({ success: true, user });

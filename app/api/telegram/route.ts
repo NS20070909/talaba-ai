@@ -2915,6 +2915,15 @@ bot.on("message", async (ctx, next) => {
 export async function POST(
   req: Request
 ) {
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (webhookSecret) {
+    const receivedSecret = req.headers.get("x-telegram-bot-api-secret-token");
+    if (receivedSecret !== webhookSecret) {
+      console.warn("[Telegram Webhook] Unauthorized update: secret token mismatch");
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   const body = await req.json();
 
   ensureTelegramCommandsRegistered().catch(() => {});

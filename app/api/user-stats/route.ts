@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { getUser } from "@/lib/storage";
-import { getOrResetUsage } from "@/lib/limit-checker";
+import { guardCheck } from "@/lib/limit-checker";
 import { PLAN_LIMITS } from "@/lib/limits";
 import { PlanType } from "@/lib/user";
-import { checkAndExpirePremium } from "@/lib/admin";
+import { getVerifiedTelegramUser } from "@/lib/telegram-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,37 +11,27 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const telegramIdParam = searchParams.get("telegram_id");
 
-    if (!telegramIdParam) {
+    const auth = await getVerifiedTelegramUser(req, { telegram_user_id: telegramIdParam });
+    let telegramId = auth.telegramId || (telegramIdParam ? Number(telegramIdParam) : undefined);
+
+    if (!telegramId || isNaN(telegramId)) {
       return NextResponse.json(
         { success: false, error: "MISSING_TELEGRAM_ID", message: "telegram_id parameter is required." },
         { status: 400 }
       );
     }
 
-    const telegramId = Number(telegramIdParam);
-    if (isNaN(telegramId)) {
+    // Consolidated single-pass guard check (ban, premium expiry, daily reset)
+    const guard = await guardCheck(telegramId);
+    if (guard.blocked && guard.result?.banned) {
       return NextResponse.json(
-        { success: false, error: "INVALID_TELEGRAM_ID", message: "telegram_id must be a valid number." },
-        { status: 400 }
+        { success: false, error: "BANNED", message: "🚫 Siz bloklangansiz" },
+        { status: 403 }
       );
     }
 
-    // 1. Get user to check plan type
-    const user = await getUser(telegramId);
-
-    // 2. Auto-expire premium if past deadline
-    if (user && user.plan !== "FREE") {
-      await checkAndExpirePremium(telegramId);
-    }
-
-    // 3. Re-fetch user after potential expiry
-    const freshUser = user && user.plan !== "FREE" ? await getUser(telegramId) : user;
-    const plan: PlanType = freshUser ? freshUser.plan : "FREE";
-
-    // 4. Get current daily usage stats (handling day-based resets)
-    const stats = await getOrResetUsage(telegramId);
-
-    // 5. Get plan limits
+    const plan: PlanType = guard.user ? guard.user.plan : "FREE";
+    const stats = guard.stats;
     const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
 
     return NextResponse.json({

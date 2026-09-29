@@ -1,63 +1,11 @@
 import { NextResponse } from "next/server";
-import { guardCheck, canUseScan, incrementScan } from "@/lib/limit-checker";
+import { canUseScan, incrementScan } from "@/lib/limit-checker";
+import { getVerifiedTelegramUser } from "@/lib/telegram-auth";
+import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
 
-export const maxDuration = 60;
+export const maxDuration = 45;
 
-export async function POST(
-  req: Request
-) {
-  try {
-    const {
-      image,
-      telegram_user_id,
-    } =
-      await req.json();
-
-    if (!image) {
-      return NextResponse.json(
-        {
-          result:
-            "❌ Rasm topilmadi",
-        },
-        {
-          status:
-            400,
-        }
-      );
-    }
-
-    const telegramId = Number(telegram_user_id);
-    if (!telegramId || isNaN(telegramId)) {
-      return NextResponse.json({ error: "telegram_user_id is required" }, { status: 400 });
-    }
-
-    const guard = await guardCheck(telegramId);
-    if (guard.blocked && guard.result?.banned) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: "BANNED",
-          message: "🚫 Siz bloklangansiz",
-        },
-        { status: 403 }
-      );
-    }
-
-    const limitCheck = await canUseScan(telegramId);
-    if (!limitCheck.allowed) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "LIMIT_REACHED",
-          message: "Sizning kunlik Scan limiti tugagan.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
-
-    const prompt = `
+const PROMPT_TEMPLATE = `
 Sen TALABA AI uchun PROFESSIONAL SHPARGALKA AI'san.
 
 SENING VAZIFANG:
@@ -136,65 +84,141 @@ FORMATNI BUZMA.
 RASMNI DIQQAT BILAN O‘QI.
 `;
 
+export async function POST(req: Request) {
+  try {
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { result: "❌ Yaroqsiz so'rov ma'lumotlari (JSON parsing error)" },
+        { status: 400 }
+      );
+    }
+
+    const { image } = body;
+    if (!image || typeof image !== "string") {
+      return NextResponse.json(
+        { result: "❌ Rasm topilmadi yoki noto'g'ri format" },
+        { status: 400 }
+      );
+    }
+
+    // Authenticate user via HMAC initData or fallback
+    const auth = await getVerifiedTelegramUser(req, body);
+    if (!auth.authenticated || !auth.telegramId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "UNAUTHORIZED",
+          result: "❌ Avtorizatsiya xatosi. Iltimos, Telegram orqali qayta kiring.",
+        },
+        { status: 401 }
+      );
+    }
+
+    const telegramId = auth.telegramId;
+
+    // Fast single-pass limit check
+    const limitCheck = await canUseScan(telegramId);
+    if (!limitCheck.allowed) {
+      if (limitCheck.banned) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "BANNED",
+            result: "🚫 Siz bloklangansiz",
+          },
+          { status: 403 }
+        );
+      }
+      return NextResponse.json(
+        {
+          success: false,
+          error: "LIMIT_REACHED",
+          result: "⚠️ Sizning kunlik Scan limiti tugagan. Ertaga yangilanadi yoki Premium rejasiga o'ting.",
+        },
+        { status: 403 }
+      );
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { result: "❌ GEMINI_API_KEY sozlanmagan" },
+        { result: "❌ Server sozlanmagan: GEMINI_API_KEY topilmadi" },
         { status: 500 }
       );
     }
 
-    const { runGeminiWithFallback } = await import("@/lib/ai-fallback-runner");
+    // Sanitize image base64
+    let cleanImageBase64 = image;
+    let mimeType = "image/jpeg";
+    if (image.startsWith("data:")) {
+      const match = image.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        cleanImageBase64 = match[2];
+      }
+    }
+
+    // Bounded fallback execution: 10s per model, max 32s total budget
     const { text: responseText } = await runGeminiWithFallback({
       apiKey,
-     modelChain: [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-flash-latest",
-  "gemini-2.0-flash",
-],
+      modelChain: [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+      ],
       prompt: [
-        prompt,
+        PROMPT_TEMPLATE,
         {
           inlineData: {
-            mimeType: "image/jpeg",
-            data: image,
+            mimeType,
+            data: cleanImageBase64,
           },
         },
       ],
+      perModelTimeoutMs: 10000,
+      maxRetriesPerModel: 1,
+      maxTotalMs: 32000,
     });
 
-    if (telegramId && !isNaN(telegramId)) {
-      await incrementScan(telegramId);
+    // Increment scan usage only after successful response
+    await incrementScan(telegramId);
+
+    return NextResponse.json({
+      success: true,
+      result: responseText,
+    });
+  } catch (error: any) {
+    const errorMsg = error?.message || "";
+    console.error("❌ /api/analyze error:", errorMsg);
+
+    const isTimeout =
+      errorMsg.includes("Timeout") ||
+      errorMsg.includes("timeout") ||
+      errorMsg.includes("abort") ||
+      errorMsg.includes("Total timeout budget exceeded");
+
+    if (isTimeout) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "TIMEOUT",
+          result: "⏳ Tahlil qilish vaqti tugadi (server band). Iltimos, qayta urinib ko'ring yoki rasm hajmini kichikroq qiling.",
+        },
+        { status: 504 }
+      );
     }
 
     return NextResponse.json(
       {
-        result:
-          responseText,
-      }
-    );
-  } catch (
-    error
-  ) {
-    console.log(
-      "❌ API ERROR:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        result:
-          "❌ AI vaqtincha ishlamayapti. Qayta urinib ko‘ring.",
+        success: false,
+        error: "AI_ERROR",
+        result: "❌ AI xizmati vaqtincha band. Bir necha soniyadan so'ng qayta urinib ko'ring.",
       },
-      {
-        status:
-          500,
-      }
+      { status: 503 }
     );
   }
 }

@@ -2,16 +2,17 @@ import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 import { incrementAiChatMessages, guardCheck } from "@/lib/limit-checker";
 import { checkRateLimit } from "@/lib/rate-limiter";
+import { getVerifiedTelegramUser } from "@/lib/telegram-auth";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 45;
 
 const TEXT_MODELS = [
   process.env.GEMINI_TEXT_MODEL || "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
   "gemini-3.5-flash",
   "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
-  "gemini-3.6-flash",
 ];
 
 const SYSTEM_PROMPTS: Record<string, string> = {
@@ -90,6 +91,25 @@ function isChatMessage(value: unknown): value is ChatMessage {
   );
 }
 
+async function callWithTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Timeout (${label}) after ${ms}ms`));
+    }, ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 export async function POST(request: Request) {
   let isWebSearch = false;
   try {
@@ -101,18 +121,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Yaroqsiz so'rov ma'lumotlari." }, { status: 400 });
+    }
+
     const rawMessages: unknown[] = Array.isArray(body.messages) ? body.messages : [];
     const messages = rawMessages.filter(isChatMessage).slice(-16);
     const mode = typeof body.mode === "string" && SYSTEM_PROMPTS[body.mode] ? body.mode : "general";
     const webSearch = Boolean(body.webSearch);
     isWebSearch = webSearch;
-    const telegramId = body.telegram_id ? Number(body.telegram_id) : undefined;
 
-    // 1. Security Rate Limiting (Max 15 requests per 60 seconds per user/ip)
+    // Telegram authentication
+    const auth = await getVerifiedTelegramUser(request, body);
+    const telegramId = auth.telegramId;
+
+    // 1. Security Rate Limiting (Max 20 requests per 60 seconds)
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
     const rateLimitKey = telegramId && !isNaN(telegramId) && telegramId > 0 ? `user:${telegramId}` : `ip:${ip}`;
-    const rateResult = checkRateLimit(rateLimitKey, 15, 60_000);
+    const rateResult = checkRateLimit(rateLimitKey, 20, 60_000);
     if (!rateResult.allowed) {
       return NextResponse.json(
         { error: "Juda ko'p so'rov yuborildi. Birozdan keyin qayta urinib ko'ring." },
@@ -153,7 +182,6 @@ export async function POST(request: Request) {
     };
 
     if (webSearch) {
-      // Enable real Google Search grounding
       requestConfig.tools = [{ googleSearch: {} }];
     }
 
@@ -163,9 +191,22 @@ export async function POST(request: Request) {
     let usedModel = TEXT_MODELS[0];
     let lastErr: any = null;
 
+    const startTime = Date.now();
+    const MAX_TOTAL_BUDGET_MS = 32000;
+    const PER_MODEL_TIMEOUT_MS = 8500;
+
     for (const model of TEXT_MODELS) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= MAX_TOTAL_BUDGET_MS) {
+        console.warn(`[AI Chat] Total budget exceeded (${elapsed}ms >= ${MAX_TOTAL_BUDGET_MS}ms). Breaking chain.`);
+        break;
+      }
+
+      const remainingBudget = MAX_TOTAL_BUDGET_MS - elapsed;
+      const currentTimeout = Math.min(PER_MODEL_TIMEOUT_MS, remainingBudget);
+
       try {
-        response = await ai.models.generateContent({
+        const generatePromise = ai.models.generateContent({
           model,
           contents: messages.map((message, idx) => {
             const isLatest = idx === messages.length - 1;
@@ -186,13 +227,15 @@ export async function POST(request: Request) {
           }),
           config: requestConfig,
         });
+
+        response = await callWithTimeout(generatePromise, currentTimeout, model);
         usedModel = model;
-        if (response.text?.trim()) {
+        if (response?.text?.trim()) {
           break;
         }
       } catch (err: any) {
         lastErr = err;
-        console.warn(`[AI Chat] Model ${model} failed (${err?.status || err?.statusCode || "err"}):`, err?.message || err);
+        console.warn(`[AI Chat] Model ${model} failed (${err?.message || "unknown"}).`);
       }
     }
 
@@ -250,13 +293,24 @@ export async function POST(request: Request) {
       grounded: sources.length > 0,
     });
   } catch (error: any) {
-    console.error("[AI Chat] Text generation failed:", error);
+    const errorMsg = error?.message || "";
+    console.error("[AI Chat] Generation failed:", errorMsg);
 
-    const is503 = error?.status === 503 ||
-      error?.statusCode === 503 ||
-      error?.message?.includes("503") ||
-      error?.message?.includes("UNAVAILABLE") ||
-      error?.message?.includes("high demand");
+    const isTimeout =
+      errorMsg.includes("Timeout") ||
+      errorMsg.includes("timeout") ||
+      errorMsg.includes("abort");
+
+    if (isTimeout) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "TIMEOUT",
+          message: "⏳ AI javob berish vaqti tugadi (server band). Iltimos, qayta urinib ko'ring.",
+        },
+        { status: 504 }
+      );
+    }
 
     if (isWebSearch) {
       return NextResponse.json(
@@ -269,25 +323,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (is503) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "SERVICE_UNAVAILABLE",
-          message: "⚠️ AI hozir band. Iltimos, bir necha soniyadan keyin qayta urinib ko‘ring.",
-        },
-        { status: 503 },
-      );
-    }
-
     return NextResponse.json(
       {
         success: false,
-        error: "GENERATION_FAILED",
-        message: "AI hozircha javob bera olmadi. Iltimos, qayta urinib ko'ring.",
+        error: "SERVICE_UNAVAILABLE",
+        message: "⚠️ AI hozir band yoki xizmatda uzilish mavjud. Iltimos, bir necha soniyadan keyin qayta urinib ko‘ring.",
       },
-      { status: 502 },
+      { status: 503 },
     );
   }
 }
-

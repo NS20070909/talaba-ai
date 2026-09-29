@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import UsageStatsWidget from "@/components/UsageStatsWidget";
+import { getTelegramContext } from "@/lib/client/telegram";
 
 const features = [
   {
@@ -51,44 +52,27 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
-
-    // Telegram user id save
-    const tg =
-      (
-        window as typeof window & {
-          Telegram?: {
-            WebApp?: {
-              initDataUnsafe?: {
-                user?: {
-                  id?: number;
-                };
-              };
-            };
-          };
-        }
-      ).Telegram?.WebApp;
-
-    const userId =
-      tg?.initDataUnsafe
-        ?.user?.id;
-
-    if (userId) {
-      localStorage.setItem(
-        "telegram_user_id",
-        String(userId)
-      );
+    const params = new URLSearchParams(window.location.search);
+    const ctx = getTelegramContext();
+    if (ctx.id) {
+      localStorage.setItem("telegram_user_id", String(ctx.id));
     }
 
-    if (
-      params.get("tab") ===
-      "scan"
-    ) {
+    const onUserReady = (e: any) => {
+      if (e?.detail?.id) {
+        localStorage.setItem("telegram_user_id", String(e.detail.id));
+      }
+    };
+
+    window.addEventListener("telegram-user-ready", onUserReady);
+
+    if (params.get("tab") === "scan") {
       router.push("/scan");
     }
+
+    return () => {
+      window.removeEventListener("telegram-user-ready", onUserReady);
+    };
   }, [router]);
 
   return (

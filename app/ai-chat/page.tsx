@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import LiveCard from "@/components/ai-chat/LiveCard";
 import LiveRoomModal from "@/components/ai-chat/LiveRoomModal";
+import { getTelegramContext } from "@/lib/client/telegram";
 
 type ChatAttachment = {
   name: string;
@@ -413,28 +414,30 @@ export default function AiChatPage() {
       }
     };
 
-    try {
-      let resolvedId: string | null = null;
-      const tg = (window as any).Telegram?.WebApp;
-      const userId = tg?.initDataUnsafe?.user?.id;
-      if (userId) {
-        resolvedId = String(userId);
-        localStorage.setItem("telegram_user_id", resolvedId);
-      } else {
-        resolvedId = localStorage.getItem("telegram_user_id");
-      }
+    const initAndFetch = () => {
+      try {
+        const tgCtx = getTelegramContext();
+        const resolvedId = tgCtx.user?.id ? String(tgCtx.user.id) : (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
 
-      if (resolvedId) {
-        fetchUserStats(resolvedId);
-      }
+        if (resolvedId) {
+          fetchUserStats(resolvedId);
+        }
 
-      const savedPersona = localStorage.getItem("talaba_live_persona");
-      if (savedPersona === "zilola" || savedPersona === "olim") {
-        setLivePersona(savedPersona);
+        const savedPersona = typeof window !== "undefined" ? localStorage.getItem("talaba_live_persona") : null;
+        if (savedPersona === "zilola" || savedPersona === "olim") {
+          setLivePersona(savedPersona);
+        }
+      } catch {
+        // Ignore
       }
-    } catch {
-      // Ignore
-    }
+    };
+
+    initAndFetch();
+    window.addEventListener("telegram-user-ready", initAndFetch);
+
+    return () => {
+      window.removeEventListener("telegram-user-ready", initAndFetch);
+    };
   }, []);
 
   const showToast = (msg: string, duration = 3000) => {
@@ -527,14 +530,20 @@ export default function AiChatPage() {
     }));
 
     try {
-      const telegramId = localStorage.getItem("telegram_user_id");
+      const tgCtx = getTelegramContext();
+      const telegramId = tgCtx.user?.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
       const res = await fetch("/api/ai-chat/flash-review", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           text: message.text,
           topic: activeMode,
           telegram_id: telegramId ? Number(telegramId) : undefined,
+          init_data: tgCtx.initData || undefined,
         }),
       });
 
@@ -642,15 +651,22 @@ export default function AiChatPage() {
     setIsSearchingWeb(useSearch);
 
     try {
-      const telegramId = localStorage.getItem("telegram_user_id");
+      const tgCtx = getTelegramContext();
+      const telegramId = tgCtx.user?.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
+
       const response = await fetch("/api/ai-chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           messages: nextMessages.map(({ role, text }) => ({ role, text })),
           mode: currentMode,
           webSearch: useSearch,
           telegram_id: telegramId ? Number(telegramId) : undefined,
+          init_data: tgCtx.initData || undefined,
           attachment: currentAttachment
             ? {
                 name: currentAttachment.name,

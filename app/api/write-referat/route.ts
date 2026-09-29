@@ -4,14 +4,13 @@ import { getUser } from "@/lib/storage";
 import { PLAN_LIMITS } from "@/lib/limits";
 import { Document, Paragraph, TextRun, ImageRun, Packer, AlignmentType, Table, TableRow, TableCell, WidthType } from "docx";
 import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
+import { getVerifiedTelegramUser } from "@/lib/telegram-auth";
 
 const MODEL_CHAIN = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
   "gemini-3.6-flash",
-  "gemini-3.5-flash",
   "gemini-3.5-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-flash-latest",
 ];
 
 export interface CoverData {
@@ -509,10 +508,11 @@ export async function POST(req: NextRequest) {
       return new NextResponse("Topic is required", { status: 400 });
     }
 
-    const telegramId = Number(telegram_user_id);
-    if (!telegramId || isNaN(telegramId)) {
-      return new NextResponse("telegram_user_id is required", { status: 400 });
+    const auth = await getVerifiedTelegramUser(req, body);
+    if (!auth.authenticated || !auth.telegramId) {
+      return new NextResponse("Avtorizatsiya talab qilinadi. Telegram orqali kiring.", { status: 401 });
     }
+    const telegramId = auth.telegramId;
 
     const guard = await guardCheck(telegramId);
     if (guard.blocked) {
@@ -618,6 +618,9 @@ ${outlineContext}`;
           apiKey,
           modelChain: MODEL_CHAIN,
           prompt: sectionPrompt,
+          perModelTimeoutMs: 10000,
+          maxRetriesPerModel: 1,
+          maxTotalMs: 22000,
         });
         const trimmed = text.trim();
         if (!trimmed) {
@@ -706,6 +709,9 @@ Write ONLY tables in proper markdown table format (using | pipes). Each table mu
 Also write 1 brief process flow (3-5 steps with → arrows) if relevant.
 If tables are genuinely not applicable, write a brief statistical comparison instead.
 Keep this section concise and data-focused.`,
+        perModelTimeoutMs: 8000,
+        maxRetriesPerModel: 1,
+        maxTotalMs: 16000,
       });
       tablesText = tablesRaw.trim();
     } catch (err: any) {

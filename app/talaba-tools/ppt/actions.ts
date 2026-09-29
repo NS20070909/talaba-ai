@@ -13,14 +13,10 @@ type GenerateOutlineParams = {
 import { runGeminiWithFallback } from "@/lib/ai-fallback-runner";
 
 const GEMINI_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
   "gemini-3.6-flash",
-  "gemini-3.5-flash",
   "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-pro",
-  "gemini-flash-latest",
 ];
 
 const OPENROUTER_MODELS = [
@@ -31,9 +27,9 @@ const OPENROUTER_MODELS = [
 ];
 
 async function tryGemini(prompt: string) {
-  const apiKey = process.env.GEMINI_PPT_API_KEY;
+  const apiKey = process.env.GEMINI_PPT_API_KEY || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.error("GEMINI_PPT_API_KEY missing");
+    console.warn("GEMINI_PPT_API_KEY / GEMINI_API_KEY missing");
     return null;
   }
 
@@ -42,7 +38,9 @@ async function tryGemini(prompt: string) {
       apiKey,
       modelChain: GEMINI_MODELS,
       prompt,
-      timeoutMs: 30000,
+      perModelTimeoutMs: 8000,
+      maxRetriesPerModel: 1,
+      maxTotalMs: 25000,
     });
     return text;
   } catch (error) {
@@ -51,97 +49,56 @@ async function tryGemini(prompt: string) {
   }
 }
 
-async function tryOpenRouter(
-  prompt: string
-) {
+async function tryOpenRouter(prompt: string) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+
   for (const model of OPENROUTER_MODELS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7000);
+
     try {
-      console.log(
-        `Trying OpenRouter: ${model}`
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "system",
+                content: PPT_SYSTEM_PROMPT,
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+          }),
+          signal: controller.signal,
+        }
       );
 
-      const response =
-        await fetch(
-          "https://openrouter.ai/api/v1/chat/completions",
-          {
-            method:
-              "POST",
-            headers: {
-              Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-              "Content-Type":
-                "application/json",
-            },
-            body:
-              JSON.stringify({
-                model,
-                messages: [
-                  {
-                    role:
-                      "system",
-                    content:
-                      PPT_SYSTEM_PROMPT,
-                  },
-                  {
-                    role:
-                      "user",
-                    content:
-                      prompt,
-                  },
-                ],
-              }),
-          }
-        );
+      if (!response.ok) {
+        continue;
+      }
 
-      const data =
-  await response.json();
-
-console.log(
-  "OR STATUS:",
-  response.status
-);
-
-console.log(
-  "OR RESPONSE:",
-  JSON.stringify(
-    data,
-    null,
-    2
-  )
-);
-
-if (
-  !response.ok
-) {
-  throw new Error(
-    data?.error
-      ?.message ||
-      "OpenRouter failed"
-  );
-}
-
-
-
-      const text =
-        data?.choices?.[0]
-          ?.message
-          ?.content;
-
+      const data = await response.json();
+      const text = data?.choices?.[0]?.message?.content;
       if (text) {
-        console.log(
-          `Success OR: ${model}`
-        );
-
         return text;
       }
-    } catch (
-  error: any
-) {
-  console.error(
-    `Failed OR: ${model}`,
-    error?.message ||
-      error
-  );
-}
+    } catch (error: any) {
+      console.warn(`[OpenRouter] ${model} attempt failed:`, error?.message || error);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   return null;

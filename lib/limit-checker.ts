@@ -1,29 +1,47 @@
-import { getUser, getUsageStats, updateUsageStats, resetUsageStats } from "./storage";
+import { getUser, getUsageStats, updateUsageStats, resetUsageStats, updateUser } from "./storage";
 import { PLAN_LIMITS } from "./limits";
-import { UsageStats, PlanType } from "./user";
-import { isBanned, checkAndExpirePremium } from "./admin";
+import { UsageStats, PlanType, User } from "./user";
+import { isBanned } from "./admin";
 
-export async function checkDailyReset(telegramId: number): Promise<void> {
+interface GuardCacheEntry {
+  timestamp: number;
+  data: {
+    blocked: boolean;
+    result?: CheckResult;
+    user: User | null;
+    stats: UsageStats;
+  };
+}
+
+// In-memory 3-second request-scoped cache to prevent duplicate roundtrips
+const guardCache = new Map<number, GuardCacheEntry>();
+
+export function invalidateGuardCache(telegramId: number): void {
+  guardCache.delete(telegramId);
+}
+
+// Helper to get stats, resetting them if it's a new day (single DB pass when no reset needed)
+export async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
   const stats = await getUsageStats(telegramId);
   const now = new Date();
   const lastReset = new Date(stats.lastResetDate);
-  
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
+
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   });
-  
+
   if (formatter.format(now) !== formatter.format(lastReset)) {
     await resetUsageStats(telegramId);
+    return await getUsageStats(telegramId);
   }
+  return stats;
 }
 
-// Helper to get stats, resetting them if it's a new day
-export async function getOrResetUsage(telegramId: number): Promise<UsageStats> {
-  await checkDailyReset(telegramId);
-  return await getUsageStats(telegramId);
+export async function checkDailyReset(telegramId: number): Promise<void> {
+  await getOrResetUsage(telegramId);
 }
 
 export interface CheckResult {
@@ -32,22 +50,52 @@ export interface CheckResult {
   banned?: boolean;
 }
 
-// ── Shared guard: runs ban check + premium expiry before every limit check ──
+// ── Shared guard: runs ban check + premium expiry + daily reset in a single pass ──
 
-export async function guardCheck(telegramId: number): Promise<{ blocked: boolean; result?: CheckResult }> {
+export async function guardCheck(telegramId: number): Promise<{
+  blocked: boolean;
+  result?: CheckResult;
+  user: User | null;
+  stats: UsageStats;
+}> {
+  const now = Date.now();
+  const cached = guardCache.get(telegramId);
+  if (cached && now - cached.timestamp < 3000) {
+    return cached.data;
+  }
+
   // 1. Ban check
   const banned = await isBanned(telegramId);
   if (banned) {
-    return { blocked: true, result: { allowed: false, remaining: 0, banned: true } };
+    const blockedRes = {
+      blocked: true,
+      result: { allowed: false, remaining: 0, banned: true },
+      user: null,
+      stats: null as any,
+    };
+    guardCache.set(telegramId, { timestamp: now, data: blockedRes });
+    return blockedRes;
   }
 
-  // 2. Auto-expire premium if past premium_until date
-  await checkAndExpirePremium(telegramId);
+  // 2. User & auto-expire premium
+  let user = await getUser(telegramId);
+  if (user && user.plan !== "FREE" && user.premiumUntil) {
+    if (new Date() > user.premiumUntil) {
+      await updateUser(telegramId, { plan: "FREE", premiumUntil: null });
+      user = { ...user, plan: "FREE", premiumUntil: null };
+    }
+  }
 
-  // 3. Check and apply daily reset
-  await checkDailyReset(telegramId);
+  // 3. Stats & daily reset (single pass)
+  const stats = await getOrResetUsage(telegramId);
 
-  return { blocked: false };
+  const res = {
+    blocked: false,
+    user,
+    stats,
+  };
+  guardCache.set(telegramId, { timestamp: now, data: res });
+  return res;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,18 +104,18 @@ export async function canUsePPT(telegramId: number): Promise<CheckResult> {
   const guard = await guardCheck(telegramId);
   if (guard.blocked) return guard.result!;
 
-  const user = await getUser(telegramId);
+  const user = guard.user;
   const plan: PlanType = user ? user.plan : "FREE";
-  
+
   const limits = PLAN_LIMITS[plan];
   if (limits?.unlimited) {
     return { allowed: true, remaining: Infinity };
   }
-  
-  const stats = await getOrResetUsage(telegramId);
+
+  const stats = guard.stats;
   const limit = limits?.pptPerDay || 0;
-  const remaining = Math.max(0, limit - stats.pptUsedToday);
-  
+  const remaining = Math.max(0, limit - (stats.pptUsedToday || 0));
+
   return {
     allowed: remaining > 0,
     remaining,
@@ -78,18 +126,18 @@ export async function canUsePDF(telegramId: number): Promise<CheckResult> {
   const guard = await guardCheck(telegramId);
   if (guard.blocked) return guard.result!;
 
-  const user = await getUser(telegramId);
+  const user = guard.user;
   const plan: PlanType = user ? user.plan : "FREE";
-  
+
   const limits = PLAN_LIMITS[plan];
   if (limits?.unlimited) {
     return { allowed: true, remaining: Infinity };
   }
-  
-  const stats = await getOrResetUsage(telegramId);
+
+  const stats = guard.stats;
   const limit = limits?.pdfPerDay || 0;
-  const remaining = Math.max(0, limit - stats.pdfUsedToday);
-  
+  const remaining = Math.max(0, limit - (stats.pdfUsedToday || 0));
+
   return {
     allowed: remaining > 0,
     remaining,
@@ -100,18 +148,18 @@ export async function canUseScan(telegramId: number): Promise<CheckResult> {
   const guard = await guardCheck(telegramId);
   if (guard.blocked) return guard.result!;
 
-  const user = await getUser(telegramId);
+  const user = guard.user;
   const plan: PlanType = user ? user.plan : "FREE";
-  
+
   const limits = PLAN_LIMITS[plan];
   if (limits?.unlimited) {
     return { allowed: true, remaining: Infinity };
   }
-  
-  const stats = await getOrResetUsage(telegramId);
+
+  const stats = guard.stats;
   const limit = limits?.scanPerDay || 0;
-  const remaining = Math.max(0, limit - stats.scanUsedToday);
-  
+  const remaining = Math.max(0, limit - (stats.scanUsedToday || 0));
+
   return {
     allowed: remaining > 0,
     remaining,
@@ -121,40 +169,43 @@ export async function canUseScan(telegramId: number): Promise<CheckResult> {
 export async function incrementPPT(telegramId: number): Promise<void> {
   const stats = await getOrResetUsage(telegramId);
   await updateUsageStats(telegramId, {
-    pptUsedToday: stats.pptUsedToday + 1,
+    pptUsedToday: (stats.pptUsedToday || 0) + 1,
   });
+  invalidateGuardCache(telegramId);
 }
 
 export async function incrementPDF(telegramId: number): Promise<void> {
   const stats = await getOrResetUsage(telegramId);
   await updateUsageStats(telegramId, {
-    pdfUsedToday: stats.pdfUsedToday + 1,
+    pdfUsedToday: (stats.pdfUsedToday || 0) + 1,
   });
+  invalidateGuardCache(telegramId);
 }
 
 export async function incrementScan(telegramId: number): Promise<void> {
   const stats = await getOrResetUsage(telegramId);
   await updateUsageStats(telegramId, {
-    scanUsedToday: stats.scanUsedToday + 1,
+    scanUsedToday: (stats.scanUsedToday || 0) + 1,
   });
+  invalidateGuardCache(telegramId);
 }
 
 export async function canUseReferat(telegramId: number): Promise<CheckResult> {
   const guard = await guardCheck(telegramId);
   if (guard.blocked) return guard.result!;
 
-  const user = await getUser(telegramId);
+  const user = guard.user;
   const plan: PlanType = user ? user.plan : "FREE";
-  
+
   const limits = PLAN_LIMITS[plan];
   if (limits?.unlimited) {
     return { allowed: true, remaining: Infinity };
   }
-  
-  const stats = await getOrResetUsage(telegramId);
+
+  const stats = guard.stats;
   const limit = limits?.referatPerDay || 0;
-  const remaining = Math.max(0, limit - stats.referatUsedToday);
-  
+  const remaining = Math.max(0, limit - (stats.referatUsedToday || 0));
+
   return {
     allowed: remaining > 0,
     remaining,
@@ -164,15 +215,16 @@ export async function canUseReferat(telegramId: number): Promise<CheckResult> {
 export async function incrementReferat(telegramId: number): Promise<void> {
   const stats = await getOrResetUsage(telegramId);
   await updateUsageStats(telegramId, {
-    referatUsedToday: stats.referatUsedToday + 1,
+    referatUsedToday: (stats.referatUsedToday || 0) + 1,
   });
+  invalidateGuardCache(telegramId);
 }
 
 export async function canUseTranslation(telegramId: number): Promise<CheckResult> {
   const guard = await guardCheck(telegramId);
   if (guard.blocked) return guard.result!;
 
-  const user = await getUser(telegramId);
+  const user = guard.user;
   const plan: PlanType = user ? user.plan : "FREE";
 
   const limits = PLAN_LIMITS[plan];
@@ -180,9 +232,9 @@ export async function canUseTranslation(telegramId: number): Promise<CheckResult
     return { allowed: true, remaining: Infinity };
   }
 
-  const stats = await getOrResetUsage(telegramId);
+  const stats = guard.stats;
   const limit = limits?.translationPerDay ?? 2;
-  const remaining = Math.max(0, limit - stats.translationUsedToday);
+  const remaining = Math.max(0, limit - (stats.translationUsedToday || 0));
 
   return {
     allowed: remaining > 0,
@@ -193,15 +245,16 @@ export async function canUseTranslation(telegramId: number): Promise<CheckResult
 export async function incrementTranslation(telegramId: number): Promise<void> {
   const stats = await getOrResetUsage(telegramId);
   await updateUsageStats(telegramId, {
-    translationUsedToday: stats.translationUsedToday + 1,
+    translationUsedToday: (stats.translationUsedToday || 0) + 1,
   });
+  invalidateGuardCache(telegramId);
 }
 
 export async function canUseQuiz(telegramId: number): Promise<CheckResult> {
   const guard = await guardCheck(telegramId);
   if (guard.blocked) return guard.result!;
 
-  const user = await getUser(telegramId);
+  const user = guard.user;
   const plan: PlanType = user ? user.plan : "FREE";
 
   const limits = PLAN_LIMITS[plan];
@@ -209,7 +262,7 @@ export async function canUseQuiz(telegramId: number): Promise<CheckResult> {
     return { allowed: true, remaining: Infinity };
   }
 
-  const stats = await getOrResetUsage(telegramId);
+  const stats = guard.stats;
   const limit = limits?.quizPerDay ?? 5;
   const remaining = Math.max(0, limit - (stats.quizUsedToday || 0));
 
@@ -224,6 +277,7 @@ export async function incrementQuiz(telegramId: number): Promise<void> {
   await updateUsageStats(telegramId, {
     quizUsedToday: (stats.quizUsedToday || 0) + 1,
   });
+  invalidateGuardCache(telegramId);
 }
 
 // ── AI Study Mentor Limits: Live Voice, Flash Review, and AI Chat ─────────
@@ -248,14 +302,14 @@ export async function canUseLive(telegramId: number): Promise<LiveCheckResult> {
     };
   }
 
-  const user = await getUser(telegramId);
+  const user = guard.user;
   const plan: PlanType = user ? user.plan : "FREE";
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
 
   const limitMinutes = limits.liveMinutesPerDay ?? 20;
   const limitSeconds = limitMinutes * 60;
 
-  const stats = await getOrResetUsage(telegramId);
+  const stats = guard.stats;
   const usedSeconds = stats.liveSecondsToday || 0;
   const remainingSeconds = Math.max(0, limitSeconds - usedSeconds);
 
@@ -274,6 +328,7 @@ export async function incrementLiveSeconds(telegramId: number, seconds: number):
   await updateUsageStats(telegramId, {
     liveSecondsToday: current + Math.round(seconds),
   });
+  invalidateGuardCache(telegramId);
 }
 
 export interface FlashReviewCheckResult {
@@ -296,7 +351,7 @@ export async function canUseFlashReview(telegramId: number): Promise<FlashReview
     };
   }
 
-  const user = await getUser(telegramId);
+  const user = guard.user;
   const plan: PlanType = user ? user.plan : "FREE";
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.FREE;
 
@@ -310,7 +365,7 @@ export async function canUseFlashReview(telegramId: number): Promise<FlashReview
   }
 
   const limit = limits.flashReviewPerDay ?? 5;
-  const stats = await getOrResetUsage(telegramId);
+  const stats = guard.stats;
   const used = stats.flashReviewUsedToday || 0;
   const remaining = Math.max(0, limit - used);
 
@@ -327,6 +382,7 @@ export async function incrementFlashReview(telegramId: number): Promise<void> {
   await updateUsageStats(telegramId, {
     flashReviewUsedToday: (stats.flashReviewUsedToday || 0) + 1,
   });
+  invalidateGuardCache(telegramId);
 }
 
 export async function canUseAiChat(telegramId: number): Promise<CheckResult> {
@@ -344,6 +400,5 @@ export async function incrementAiChatMessages(telegramId: number): Promise<void>
   await updateUsageStats(telegramId, {
     chatMessagesToday: (stats.chatMessagesToday || 0) + 1,
   });
+  invalidateGuardCache(telegramId);
 }
-
-

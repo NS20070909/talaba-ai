@@ -96,35 +96,42 @@ export async function createUser(
 
   const user = mapUser(data);
 
-  // Notify Owner
-  try {
-    const { count: totalUsers } = await supabase
-      .from("users")
-      .select("*", { count: "exact", head: true });
+  // Notify Owner asynchronously without blocking createUser response
+  (async () => {
+    try {
+      const { count: totalUsers } = await supabase
+        .from("users")
+        .select("*", { count: "exact", head: true });
 
-    const usernameDisplay = username ? `@${username}` : "yo'q";
-    const currentTime = new Date().toLocaleString("uz-UZ", {
-      timeZone: "Asia/Tashkent",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+      const usernameDisplay = username ? `@${username}` : "yo'q";
+      const currentTime = new Date().toLocaleString("uz-UZ", {
+        timeZone: "Asia/Tashkent",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
 
-    const ownerMsg = `🆕 Yangi foydalanuvchi\n\n` +
-      `👤 Ism: ${firstName}\n` +
-      `📛 Username: ${usernameDisplay}\n` +
-      `🆔 ID: ${telegramId}\n\n` +
-      `📅 Vaqt: ${currentTime}\n\n` +
-      `👥 Jami userlar: ${totalUsers || 0}`;
+      const ownerMsg =
+        `🆕 Yangi foydalanuvchi\n\n` +
+        `👤 Ism: ${firstName}\n` +
+        `📛 Username: ${usernameDisplay}\n` +
+        `🆔 ID: ${telegramId}\n\n` +
+        `📅 Vaqt: ${currentTime}\n\n` +
+        `👥 Jami userlar: ${totalUsers || 0}`;
 
-    await bot.telegram.sendMessage(6630030492, ownerMsg);
-  } catch (err) {
-    // catch errors silently
-    console.error("Owner notification failed:", err);
-  }
+      await Promise.race([
+        bot.telegram.sendMessage(6630030492, ownerMsg),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Owner notification timeout")), 3500)
+        ),
+      ]);
+    } catch (err) {
+      console.warn("Owner notification failed (non-fatal):", err instanceof Error ? err.message : err);
+    }
+  })().catch(() => {});
 
   return user;
 }
