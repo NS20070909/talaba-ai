@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { getTelegramContext, waitForTelegramContext } from "@/lib/client/telegram";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -252,12 +253,23 @@ export default function WriteReferatPage() {
   // ── Plan data ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const userId = localStorage.getItem("telegram_user_id");
-    if (!userId) return;
-    fetch(`/api/user-stats?telegram_id=${userId}`)
-      .then((r) => r.json())
-      .then((d) => { if (d.success && d.stats) setUserPlan(d.stats.plan || "FREE"); })
-      .catch(() => {});
+    const loadUserPlan = () => {
+      const tgCtx = getTelegramContext();
+      const userId = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
+      if (!userId) return;
+      const headers: Record<string, string> = {};
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
+      fetch(`/api/user-stats?telegram_id=${userId}`, { headers })
+        .then((r) => r.json())
+        .then((d) => { if (d.success && d.stats) setUserPlan(d.stats.plan || "FREE"); })
+        .catch(() => {});
+    };
+
+    loadUserPlan();
+    window.addEventListener("telegram-user-ready", loadUserPlan);
+    return () => window.removeEventListener("telegram-user-ready", loadUserPlan);
   }, []);
 
   useEffect(() => {
@@ -351,6 +363,20 @@ export default function WriteReferatPage() {
     e.preventDefault();
     if (!topic.trim() || inFlight.current) return;
 
+    let tgCtx = getTelegramContext();
+    if (!tgCtx.initData) {
+      setLoading(true);
+      setLoadingMessage("⏳ Telegram ma'lumotlari yuklanmoqda...");
+      tgCtx = await waitForTelegramContext(2000);
+    }
+
+    const isDev = process.env.NODE_ENV !== "production";
+    if (!tgCtx.initData && (!isDev || !tgCtx.id)) {
+      setLoading(false);
+      setError("Avtorizatsiya talab qilinadi. Telegram orqali qayta kiring.");
+      return;
+    }
+
     inFlight.current = true;
     setShowOutline(false);
     setResult(null);
@@ -362,20 +388,28 @@ export default function WriteReferatPage() {
     setLoading(true);
     setLoadingMessage("Tayyorlanmoqda...");
 
-    const telegramUserId = localStorage.getItem("telegram_user_id");
+    const telegramUserId = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
 
     try {
       setLoadingMessage("Mundarija yaratilmoqda...");
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
+
       const res = await fetch("/api/referat-outline", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           topic: topic.trim(),
           subject: getSubjectName(),
           language,
           pages: pagesCount,
-          telegram_user_id: telegramUserId,
+          telegram_user_id: telegramUserId ? Number(telegramUserId) : undefined,
+          init_data: tgCtx.initData || undefined,
         }),
       });
 
@@ -410,12 +444,25 @@ export default function WriteReferatPage() {
   const fetchDocxBlob = async (): Promise<Blob> => {
     if (cachedBlob.current) return cachedBlob.current;
 
-    const telegramUserId = localStorage.getItem("telegram_user_id");
-    if (!telegramUserId) throw new Error("Telegram ID topilmadi. Iltimos, Telegram orqali qayta kiring.");
+    let tgCtx = getTelegramContext();
+    if (!tgCtx.initData) {
+      tgCtx = await waitForTelegramContext(1500);
+    }
+
+    const telegramUserId = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
+    const isDev = process.env.NODE_ENV !== "production";
+    if (!tgCtx.initData && (!isDev || !telegramUserId)) {
+      throw new Error("Avtorizatsiya talab qilinadi. Telegram orqali qayta kiring.");
+    }
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (tgCtx.initData) {
+      headers["x-telegram-init-data"] = tgCtx.initData;
+    }
 
     const res = await fetch("/api/write-referat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         topic: topic.trim(),
         subject: getSubjectName(),
@@ -431,7 +478,8 @@ export default function WriteReferatPage() {
         student_name: studentName.trim(),
         teacher_name: teacherName.trim(),
         city: city.trim() || "Toshkent",
-        telegram_user_id: telegramUserId,
+        telegram_user_id: telegramUserId ? Number(telegramUserId) : undefined,
+        init_data: tgCtx.initData || undefined,
       }),
     });
 
@@ -492,7 +540,8 @@ export default function WriteReferatPage() {
   const handleSendTelegram = async () => {
     if (!result || inFlight.current || telegramSent) return;
 
-    const telegramUserId = localStorage.getItem("telegram_user_id");
+    const tgCtx = getTelegramContext();
+    const telegramUserId = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
     if (!telegramUserId) {
       setError("Telegram ID topilmadi. Iltimos, Telegram orqali qayta kiring.");
       return;
@@ -532,12 +581,18 @@ export default function WriteReferatPage() {
       }
       const base64 = btoa(binary);
 
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
+
       const res = await fetch("/api/send-referat-telegram", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           fileBase64: base64,
-          telegram_user_id: telegramUserId,
+          telegram_user_id: telegramUserId ? Number(telegramUserId) : undefined,
+          init_data: tgCtx.initData || undefined,
           caption: `✅ "${result.title}" referati tayyor!\n\n📄 Til: ${language.toUpperCase()}\n📏 Hajm: ${pagesVal} bet\n\n🤖 TalabaAI tomonidan yaratildi.`,
         }),
       });
@@ -570,11 +625,18 @@ export default function WriteReferatPage() {
   const handleGeneratePPT = async () => {
     if (!result || generatingPPT) return; // PPT is fully independent — no inFlight check
 
-    const telegramUserId = localStorage.getItem("telegram_user_id");
-    if (!telegramUserId) {
-      setPptError("Telegram ID topilmadi. Iltimos Telegram orqali qayta kiring.");
+    let tgCtx = getTelegramContext();
+    if (!tgCtx.initData) {
+      tgCtx = await waitForTelegramContext(1500);
+    }
+
+    const isDev = process.env.NODE_ENV !== "production";
+    if (!tgCtx.initData && (!isDev || !tgCtx.id)) {
+      setPptError("Avtorizatsiya talab qilinadi. Telegram orqali qayta kiring.");
       return;
     }
+
+    const telegramUserId = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
 
     setGeneratingPPT(true);
     setPptProgress(10);
@@ -588,16 +650,24 @@ export default function WriteReferatPage() {
     try {
       const slideCount = Math.min(10, Math.max(5, pagesCount + 2));
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
+
       const res = await fetch("/api/generate-ppt", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           topic: result.title || topic.trim(),
           slides: slideCount,
           language,
           style: "modern",
           outline: editableOutline, // pass existing referat outline for consistent slide structure
-          telegram_user_id: telegramUserId,
+          telegram_user_id: telegramUserId ? Number(telegramUserId) : undefined,
+          init_data: tgCtx.initData || undefined,
         }),
       });
 
@@ -643,19 +713,26 @@ export default function WriteReferatPage() {
     // PPT Telegram is fully independent — uses its own sendingPPTTel guard
     if (!pptUrl || pptTelegramSent || sendingPPTTel) return;
 
-    const telegramUserId = localStorage.getItem("telegram_user_id");
+    const tgCtx = getTelegramContext();
+    const telegramUserId = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
     if (!telegramUserId) return;
 
     setSendingPPTTel(true);
     setPptError(null);
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
+
       const res = await fetch("/api/send-ppt-telegram", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           fileUrl: pptUrl,
-          telegram_user_id: telegramUserId,
+          telegram_user_id: telegramUserId ? Number(telegramUserId) : undefined,
+          init_data: tgCtx.initData || undefined,
         }),
       });
 
@@ -680,7 +757,8 @@ export default function WriteReferatPage() {
     setErr: (v: string | null) => void
   ) => {
     if (!result) return;
-    const telegramUserId = localStorage.getItem("telegram_user_id");
+    const tgCtx = getTelegramContext();
+    const telegramUserId = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
     if (!telegramUserId) { setErr("Telegram ID topilmadi."); return; }
 
     setLoading(true);
@@ -688,16 +766,22 @@ export default function WriteReferatPage() {
     setText(null);
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
+
       const res = await fetch("/api/referat-study-pack", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           type,
           topic: result.title || topic.trim(),
           subject: getSubjectName(),
           language,
           outline: editableOutline,
-          telegram_user_id: telegramUserId,
+          telegram_user_id: telegramUserId ? Number(telegramUserId) : undefined,
+          init_data: tgCtx.initData || undefined,
         }),
       });
       const parsed = await safeJson(res);

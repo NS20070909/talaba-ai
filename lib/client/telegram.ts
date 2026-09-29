@@ -36,8 +36,31 @@ export function getTelegramContext(): TelegramContext {
   }
 
   const tg = (window as any).Telegram?.WebApp;
-  const user = tg?.initDataUnsafe?.user;
-  const initData = tg?.initData || "";
+  let user = tg?.initDataUnsafe?.user;
+  let initData = tg?.initData || "";
+
+  if (initData) {
+    try {
+      sessionStorage.setItem("tg_init_data", initData);
+    } catch {}
+  } else {
+    try {
+      const cached = sessionStorage.getItem("tg_init_data");
+      if (cached) initData = cached;
+    } catch {}
+  }
+
+  // Fallback: extract user from initData if initDataUnsafe is not yet set
+  if (!user && initData) {
+    try {
+      const sp = new URLSearchParams(initData);
+      const userStr = sp.get("user");
+      if (userStr) {
+        user = JSON.parse(userStr);
+      }
+    } catch {}
+  }
+
   const isTelegramWebApp = Boolean(tg && (initData || user));
 
   if (user && user.id) {
@@ -180,3 +203,59 @@ export function initTelegramWebApp(): () => void {
     clearInterval(timer);
   };
 }
+
+/**
+ * Asynchronously waits until Telegram context (specifically initData) is available,
+ * or times out after maxWaitMs.
+ */
+export async function waitForTelegramContext(maxWaitMs = 2000): Promise<TelegramContext> {
+  if (typeof window === "undefined") {
+    return getTelegramContext();
+  }
+
+  const immediate = getTelegramContext();
+  if (immediate.initData) {
+    return immediate;
+  }
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timer) clearInterval(timer);
+      if (timeout) clearTimeout(timeout);
+      window.removeEventListener("telegram-user-ready", handleReady as EventListener);
+    };
+
+    const done = (ctx: TelegramContext) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(ctx);
+    };
+
+    const handleReady = (e: CustomEvent<TelegramContext>) => {
+      if (e.detail?.initData) {
+        done(e.detail);
+      } else {
+        done(getTelegramContext());
+      }
+    };
+
+    window.addEventListener("telegram-user-ready", handleReady as EventListener);
+
+    timer = setInterval(() => {
+      const ctx = getTelegramContext();
+      if (ctx.initData) {
+        done(ctx);
+      }
+    }, 100);
+
+    timeout = setTimeout(() => {
+      done(getTelegramContext());
+    }, maxWaitMs);
+  });
+}
+

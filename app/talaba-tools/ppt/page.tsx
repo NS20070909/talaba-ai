@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getTelegramContext, waitForTelegramContext } from "@/lib/client/telegram";
 
 
 export default function PPTPage() {
@@ -14,6 +15,8 @@ export default function PPTPage() {
 
   const [loading, setLoading] =
     useState(false);
+  const [loadingText, setLoadingText] =
+    useState("AI tayyorlanmoqda...");
     const [generatedOutline,
 setGeneratedOutline] =
 useState<any[]>([]);
@@ -28,167 +31,136 @@ useState<any[]>([]);
   const [limitReached, setLimitReached] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const handleGenerate =
-async () => {
-  if (!topic.trim())
-    return;
+  useEffect(() => {
+    const onReady = () => {
+      getTelegramContext();
+    };
+    window.addEventListener("telegram-user-ready", onReady);
+    return () => window.removeEventListener("telegram-user-ready", onReady);
+  }, []);
 
-  setLoading(true);
-  setOutline([]);
-  setShowTelegramButton(false);
-  setLimitReached(false);
-  setErrorMsg("");
+  const handleGenerate = async () => {
+    if (!topic.trim()) return;
 
-  try {
-    const telegram_user_id = localStorage.getItem("telegram_user_id");
-    const response =
-      await fetch(
-        "/api/generate-ppt",
-        {
-          method:
-            "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body:
-            JSON.stringify({
-              topic,
-              slides,
-              language,
-              style,
-              telegram_user_id,
-            }),
-        }
-      );
-
-    const data =
-      await response.json();
-
-    if (
-      data.success
-    ) {
-      setDownloadUrl(
-        data.downloadUrl
-      );
-
-      setShowTelegramButton(
-        true
-      );
-
-      setOutline(
-        data.outline ||
-          []
-      );
-
-      setGeneratedOutline(
-        data.outline ||
-          []
-      );
-    } else if (data.error === "LIMIT_REACHED") {
-      setLimitReached(true);
-    } else if (data.code === "BANNED" || data.message) {
-      setErrorMsg(data.message);
+    let tgCtx = getTelegramContext();
+    if (!tgCtx.initData) {
+      setLoading(true);
+      setLoadingText("⏳ Telegram ma'lumotlari yuklanmoqda...");
+      tgCtx = await waitForTelegramContext(2000);
     }
-  } catch (
-    error
-  ) {
-    console.error(
-      "PPT Error:",
-      error
-    );
-  } finally {
-    setLoading(
-      false
-    );
-  }
-};
+
+    const isDev = process.env.NODE_ENV !== "production";
+    if (!tgCtx.initData && (!isDev || !tgCtx.id)) {
+      setLoading(false);
+      setErrorMsg("Telegram orqali qayta kiring");
+      return;
+    }
+
+    setLoading(true);
+    setLoadingText("AI tayyorlanmoqda...");
+    setOutline([]);
+    setShowTelegramButton(false);
+    setLimitReached(false);
+    setErrorMsg("");
+
+    try {
+      const telegram_user_id = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
+      }
+
+      const response = await fetch("/api/generate-ppt", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          topic,
+          slides,
+          language,
+          style,
+          telegram_user_id: telegram_user_id ? Number(telegram_user_id) : undefined,
+          init_data: tgCtx.initData || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setDownloadUrl(data.downloadUrl);
+        setShowTelegramButton(true);
+        setOutline(data.outline || []);
+        setGeneratedOutline(data.outline || []);
+      } else if (data.error === "LIMIT_REACHED") {
+        setLimitReached(true);
+      } else if (data.code === "BANNED" || data.message) {
+        setErrorMsg(data.message);
+      } else if (data.error) {
+        setErrorMsg(data.error);
+      }
+    } catch (error) {
+      console.error("PPT Error:", error);
+      setErrorMsg("Slayd yaratishda xatolik yuz berdi");
+    } finally {
+      setLoading(false);
+      setLoadingText("AI tayyorlanmoqda...");
+    }
+  };
 
   const handleUpgradeClick = () => {
     window.location.href = "/premium";
   };
 
-const handleTelegramSend =
-  async () => {
+  const handleTelegramSend = async () => {
     try {
       setLoading(true);
 
-      const tg =
-        (window as any)
-          ?.Telegram
-          ?.WebApp;
-
-      tg?.ready();
-
-      const userId =
-        tg?.initDataUnsafe
-          ?.user?.id;
+      const tgCtx = getTelegramContext();
+      const userId = tgCtx.id || tgCtx.user?.id || (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user?.id;
 
       if (!userId) {
-        alert(
-          "Telegram ichidan oching"
-        );
+        alert("Telegram ichidan oching");
         return;
       }
 
       if (!downloadUrl) {
-        alert(
-          "Avval PPT yarating"
-        );
+        alert("Avval PPT yarating");
         return;
       }
 
-      const response =
-        await fetch(
-          "/api/send-ppt-telegram",
-          {
-            method:
-              "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body:
-              JSON.stringify({
-                fileUrl:
-                  downloadUrl,
-                telegram_user_id:
-                  userId,
-              }),
-          }
-        );
-
-      const data =
-        await response.json();
-
-      if (
-        data.success
-      ) {
-        alert(
-          "✅ PPT Telegram chatga yuborildi"
-        );
-      } else {
-        alert(
-          "❌ Telegramga yuborishda xatolik"
-        );
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (tgCtx.initData) {
+        headers["x-telegram-init-data"] = tgCtx.initData;
       }
-    } catch (
-      error
-    ) {
-      console.error(
-        error
-      );
 
-      alert(
-        "❌ Telegramga yuborishda xatolik"
-      );
+      const response = await fetch("/api/send-ppt-telegram", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          fileUrl: downloadUrl,
+          telegram_user_id: userId,
+          init_data: tgCtx.initData || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert("✅ PPT Telegram chatga yuborildi");
+      } else {
+        alert("❌ Telegramga yuborishda xatolik");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("❌ Telegramga yuborishda xatolik");
     } finally {
-      setLoading(
-        false
-      );
+      setLoading(false);
     }
   };
+
   return (
     <>
     <style>{`
@@ -394,7 +366,7 @@ const handleTelegramSend =
           {loading ? (
             <div className="flex items-center justify-center gap-2">
               <div className="h-5 w-5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-              AI tayyorlanmoqda...
+              {loadingText}
             </div>
           ) : (
             "✨ AI Slayd Yaratish"
