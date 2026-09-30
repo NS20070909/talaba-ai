@@ -619,7 +619,7 @@ ${outlineContext}`;
           modelChain: MODEL_CHAIN,
           prompt: sectionPrompt,
           perModelTimeoutMs: 10000,
-          maxRetriesPerModel: 1,
+          maxRetriesPerModel: 0,
           maxTotalMs: 22000,
         });
         const trimmed = text.trim();
@@ -710,7 +710,7 @@ Also write 1 brief process flow (3-5 steps with → arrows) if relevant.
 If tables are genuinely not applicable, write a brief statistical comparison instead.
 Keep this section concise and data-focused.`,
         perModelTimeoutMs: 15000,
-        maxRetriesPerModel: 1,
+        maxRetriesPerModel: 0,
         maxTotalMs: 16000,
       });
       tablesText = tablesRaw.trim();
@@ -823,4 +823,5 @@ Keep this section concise and data-focused.`,
     return new NextResponse("Referat yaratishda xatolik yuz berdi.", { status: 500 });
   }
 }
+
 
