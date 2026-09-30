@@ -39,7 +39,7 @@ async function tryGemini(prompt: string) {
       modelChain: GEMINI_MODELS,
       prompt,
       perModelTimeoutMs: 15000,
-      maxRetriesPerModel: 1,
+      maxRetriesPerModel: 0,
       maxTotalMs: 25000,
     });
     return text;
@@ -457,3 +457,5 @@ try {
     };
   }
 }
+
+
