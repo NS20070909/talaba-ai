@@ -166,7 +166,7 @@ Requirements:
       modelChain: MODEL_CHAIN,
       prompt,
       perModelTimeoutMs: 15000,
-      maxRetriesPerModel: 1,
+      maxRetriesPerModel: 0,
       maxTotalMs: 26000,
     });
 
@@ -207,4 +207,5 @@ Requirements:
     );
   }
 }
+
 
