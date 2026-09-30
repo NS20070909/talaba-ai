@@ -8,10 +8,15 @@ export const maxDuration = 35;
 export const dynamic = "force-dynamic";
 
 const MODEL_CHAIN = [
-  "gemini-3.8-flash",
   "gemini-3.7-flash",
   "gemini-3.6-flash",
   "gemini-3.5-flash-lite",
+  "gemini-3-flash-preview",
+  "gemini-3.1-flash-lite-preview",
+  "gemini-3.1-flash-lite",
+  "gemini-flash-lite-latest",
+  "gemma-4-26b-a4b-it",
+  "gemini-3.8-flash",
 ];
 
 function cleanJson(text: string): string {
@@ -167,7 +172,7 @@ Requirements:
       prompt,
       perModelTimeoutMs: 15000,
       maxRetriesPerModel: 0,
-      maxTotalMs: 26000,
+      maxTotalMs: 32000,
     });
 
     const cleaned = cleanJson(rawText);
@@ -207,5 +212,7 @@ Requirements:
     );
   }
 }
+
+
 
 
