@@ -38,7 +38,7 @@ async function tryGemini(prompt: string) {
       apiKey,
       modelChain: GEMINI_MODELS,
       prompt,
-      perModelTimeoutMs: 8000,
+      perModelTimeoutMs: 15000,
       maxRetriesPerModel: 1,
       maxTotalMs: 25000,
     });

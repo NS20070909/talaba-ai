@@ -709,7 +709,7 @@ Write ONLY tables in proper markdown table format (using | pipes). Each table mu
 Also write 1 brief process flow (3-5 steps with → arrows) if relevant.
 If tables are genuinely not applicable, write a brief statistical comparison instead.
 Keep this section concise and data-focused.`,
-        perModelTimeoutMs: 8000,
+        perModelTimeoutMs: 15000,
         maxRetriesPerModel: 1,
         maxTotalMs: 16000,
       });
@@ -823,3 +823,4 @@ Keep this section concise and data-focused.`,
     return new NextResponse("Referat yaratishda xatolik yuz berdi.", { status: 500 });
   }
 }
+

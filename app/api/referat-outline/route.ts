@@ -165,7 +165,7 @@ Requirements:
       apiKey,
       modelChain: MODEL_CHAIN,
       prompt,
-      perModelTimeoutMs: 8000,
+      perModelTimeoutMs: 15000,
       maxRetriesPerModel: 1,
       maxTotalMs: 26000,
     });
@@ -207,3 +207,4 @@ Requirements:
     );
   }
 }
+

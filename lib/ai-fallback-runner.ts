@@ -146,7 +146,7 @@ export async function runGeminiWithFallback(options: GeminiRunnerOptions): Promi
     maxTotalMs = 38000,
   } = options;
 
-  const timeoutMs = options.perModelTimeoutMs ?? options.timeoutMs ?? 12000;
+  const timeoutMs = options.perModelTimeoutMs ?? options.timeoutMs ?? 15000;
   const maxAttemptsPerModel = options.maxRetriesPerModel !== undefined
     ? options.maxRetriesPerModel + 1
     : (options.maxAttemptsPerModel ?? 1);
