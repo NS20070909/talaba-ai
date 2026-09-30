@@ -193,10 +193,17 @@ export default function WriteReferatPage() {
   const [editingText,     setEditingText]     = useState("");
   const [newItemText,     setNewItemText]     = useState("");
 
-  // DOCX generation phase
-  const [generatingDocx, setGeneratingDocx] = useState(false);
-  const [docxStageIdx,   setDocxStageIdx]   = useState(0);
-  const docxStageTimer   = useRef<ReturnType<typeof setInterval> | null>(null);
+  // DOCX generation phase — true only while /api/write-referat is being called
+  const [generatingDocx,  setGeneratingDocx]  = useState(false);
+  const [docxStageIdx,    setDocxStageIdx]    = useState(0);
+  const docxStageTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Telegram send busy flag (independent from generatingDocx)
+  const [isSendingTG,     setIsSendingTG]     = useState(false);
+
+  // Separate error tracking per action so they don't bleed into each other
+  const [downloadError,   setDownloadError]   = useState<string | null>(null);
+  const [telegramError,   setTelegramError]   = useState<string | null>(null);
 
   // Cached DOCX blob — reused for both download and Telegram send to avoid double generation
   const cachedBlob = useRef<Blob | null>(null);
@@ -494,15 +501,27 @@ export default function WriteReferatPage() {
     return blob;
   };
 
-  // ── Step 2a: Download ──────────────────────────────────────────────────────
+  // ── Step 2: Full DOCX generation (called once after outline review) ──────────
+  // This is the ONLY function that calls /api/write-referat.
+  // After this completes and blob is cached, Download and Telegram never touch the AI.
 
-  const handleDownloadDocx = async () => {
-    if (!result || inFlight.current) return;
+  const handleGenerateFullDocx = async () => {
+    if (!result || inFlight.current || docxReady) return;
+
+    let tgCtx = getTelegramContext();
+    if (!tgCtx.initData) {
+      tgCtx = await waitForTelegramContext(1500);
+    }
+    const isDev = process.env.NODE_ENV !== "production";
+    if (!tgCtx.initData && (!isDev || !tgCtx.id)) {
+      setDownloadError("Avtorizatsiya talab qilinadi. Telegram orqali qayta kiring.");
+      return;
+    }
 
     inFlight.current = true;
     generatingDocxRef.current = true;
     setGeneratingDocx(true);
-    setDocxReady(false);
+    setDownloadError(null);
     setError(null);
     startDocxStageTimer();
 
@@ -511,23 +530,13 @@ export default function WriteReferatPage() {
     try {
       const blob = await fetchDocxBlob();
       stopDocxStageTimer();
-
-      const url = window.URL.createObjectURL(blob);
-      const a   = document.createElement("a");
-      a.href     = url;
-      a.download = `TalabaAI-Referat-${Date.now()}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-
       setGenerationTime(Date.now() - t0);
       setDocxReady(true);
       window.dispatchEvent(new CustomEvent("refetch-stats"));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Noma'lum xato";
       stopDocxStageTimer();
-      setError(friendlyError(msg));
+      setDownloadError(friendlyError(msg));
     } finally {
       generatingDocxRef.current = false;
       setGeneratingDocx(false);
@@ -535,45 +544,53 @@ export default function WriteReferatPage() {
     }
   };
 
-  // ── Step 2b: Send to Telegram ─────────────────────────────────────────────
+  // ── Step 2a: Download — synchronous, ONLY reads cachedBlob, never calls any API ──
+
+  const handleDownloadDocx = () => {
+    if (!cachedBlob.current) {
+      setDownloadError("Avval referatni to'liq yarating.");
+      return;
+    }
+    setDownloadError(null);
+    try {
+      const url = window.URL.createObjectURL(cachedBlob.current);
+      const a   = document.createElement("a");
+      a.href     = url;
+      a.download = `TalabaAI-Referat-${Date.now()}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Noma'lum xato";
+      setDownloadError(friendlyError(msg));
+    }
+  };
+
+  // ── Step 2b: Send to Telegram — uses cachedBlob directly, NEVER calls /api/write-referat ──
 
   const handleSendTelegram = async () => {
-    if (!result || inFlight.current || telegramSent) return;
+    if (!cachedBlob.current) {
+      setTelegramError("Avval referatni to'liq yarating.");
+      return;
+    }
+    if (!result || telegramSent || isSendingTG) return;
 
     const tgCtx = getTelegramContext();
     const telegramUserId = tgCtx.id || (typeof window !== "undefined" ? localStorage.getItem("telegram_user_id") : null);
     if (!telegramUserId) {
-      setError("Telegram ID topilmadi. Iltimos, Telegram orqali qayta kiring.");
+      setTelegramError("Telegram ID topilmadi. Iltimos, Telegram orqali qayta kiring.");
       return;
     }
 
-    inFlight.current = true;
+    setIsSendingTG(true);
     setSendingTelegram(true);
-    setError(null);
-
-    const t0 = Date.now();
-
-    // If blob not cached yet, show DOCX generation progress
-    const needsDocxFetch = !cachedBlob.current;
-    if (needsDocxFetch) {
-      generatingDocxRef.current = true;
-      setGeneratingDocx(true);
-      startDocxStageTimer();
-    }
+    setTelegramError(null);
 
     try {
-      const blob = await fetchDocxBlob();
-
-      if (needsDocxFetch) {
-        stopDocxStageTimer();
-        generatingDocxRef.current = false;
-        setGeneratingDocx(false);
-      }
-
-      // Blob → base64
-      const arrayBuffer = await blob.arrayBuffer();
+      // cachedBlob is guaranteed to exist — convert to base64 and send
+      const arrayBuffer = await cachedBlob.current.arrayBuffer();
       const bytes       = new Uint8Array(arrayBuffer);
-      // Use chunked approach to avoid call-stack overflow on large files
       const CHUNK = 8192;
       let binary  = "";
       for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -601,22 +618,13 @@ export default function WriteReferatPage() {
       if (!data.success) throw new Error(data.error || "Telegram yuborishda xatolik.");
 
       setTelegramSent(true);
-      if (!docxReady) {
-        setGenerationTime(Date.now() - t0);
-        setDocxReady(true);
-      }
       window.dispatchEvent(new CustomEvent("refetch-stats"));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Noma'lum xato";
-      if (needsDocxFetch && generatingDocxRef.current) {
-        stopDocxStageTimer();
-        generatingDocxRef.current = false;
-        setGeneratingDocx(false);
-      }
-      setError(friendlyError(msg));
+      setTelegramError(friendlyError(msg));
     } finally {
       setSendingTelegram(false);
-      inFlight.current = false;
+      setIsSendingTG(false);
     }
   };
 
@@ -869,6 +877,8 @@ export default function WriteReferatPage() {
     cachedBlob.current = null;
     setTopic("");
     setError(null);
+    setDownloadError(null);
+    setTelegramError(null);
     setEditingIdx(null);
     setNewItemText("");
     setGenerationTime(0);
@@ -893,9 +903,9 @@ export default function WriteReferatPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  // isAnyBusy: covers only the DOCX download + DOCX Telegram pair (they share cachedBlob).
-  // PPT, Study Pack, and Academic Pack are fully independent — they manage their own loading states.
-  const isAnyBusy = loading || generatingDocx || sendingTelegram;
+  // isAnyBusy: locks outline editing while outline or full-DOCX is being generated.
+  // isSendingTG runs only after docxReady, so it doesn't need to lock outline editing.
+  const isAnyBusy = loading || generatingDocx;
   const romanNumerals = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1493,16 +1503,30 @@ export default function WriteReferatPage() {
               </div>
             )}
 
-            {/* Error with Retry */}
-            {error && !generatingDocx && !sendingTelegram && (
+            {/* Download Error with Retry */}
+            {downloadError && !generatingDocx && (
               <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
-                <p className="text-red-400 text-xs leading-relaxed">⚠️ {error}</p>
+                <p className="text-red-400 text-xs leading-relaxed">⚠️ {downloadError}</p>
                 <button
                   type="button"
-                  onClick={() => { setError(null); handleDownloadDocx(); }}
+                  onClick={() => { setDownloadError(null); handleDownloadDocx(); }}
                   className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold underline underline-offset-2 transition-colors"
                 >
-                  Qayta urinib ko'ring →
+                  📥 Qayta yuklab ko'ring →
+                </button>
+              </div>
+            )}
+
+            {/* Telegram Error with Retry */}
+            {telegramError && !sendingTelegram && (
+              <div className="rounded-2xl bg-red-500/10 border border-red-500/30 px-4 py-3 space-y-2">
+                <p className="text-red-400 text-xs leading-relaxed">⚠️ {telegramError}</p>
+                <button
+                  type="button"
+                  onClick={() => { setTelegramError(null); handleSendTelegram(); }}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold underline underline-offset-2 transition-colors"
+                >
+                  📨 Qayta yuborib ko'ring →
                 </button>
               </div>
             )}
@@ -1582,52 +1606,67 @@ export default function WriteReferatPage() {
               </div>
             )}
 
-            {/* ── Primary Actions: DOCX + Telegram ── */}
-            {/* Hidden only while DOCX/Telegram is in-flight (they share cachedBlob). */}
-            {/* PPT and Study Pack are always visible — they are fully independent. */}
-            {!generatingDocx && !sendingTelegram && (
-              <div className="space-y-2 pt-1">
-                {/* Download DOCX */}
-                <button
-                  type="button"
-                  onClick={handleDownloadDocx}
-                  disabled={generatingDocx || sendingTelegram}
-                  className="w-full py-4 rounded-[20px] bg-white text-black font-bold text-center text-sm active:scale-95 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  📥 Word (.docx) yuklab olish
-                </button>
+            {/* ── Primary Actions ── */}
+            <div className="space-y-2 pt-1">
 
-                {/* Telegram */}
+              {/* GENERATE button — shown only before DOCX is ready */}
+              {!docxReady && (
                 <button
                   type="button"
-                  onClick={handleSendTelegram}
-                  disabled={generatingDocx || sendingTelegram || telegramSent}
-                  className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
-                    telegramSent
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-default"
-                      : "bg-[#243140] border-white/10 text-white hover:bg-slate-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleGenerateFullDocx}
+                  disabled={generatingDocx}
+                  className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md ${
+                    generatingDocx
+                      ? "bg-cyan-600/80 text-white cursor-wait opacity-80"
+                      : "bg-cyan-500 hover:bg-cyan-400 text-black active:scale-95 shadow-cyan-500/20"
                   }`}
                 >
-                  {telegramSent ? "✅ Telegramga yuborildi" : "📨 Telegramga yuborish"}
+                  {generatingDocx ? "⏳ Referat yaratilmoqda..." : "📋 To'liq Referat Yaratish"}
                 </button>
+              )}
 
-                {/* PPT — independent from DOCX/Telegram, uses its own generatingPPT guard */}
-                <button
-                  type="button"
-                  onClick={handleGeneratePPT}
-                  disabled={generatingPPT || pptReady}
-                  className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
-                    pptReady
-                      ? "bg-violet-500/10 border-violet-500/30 text-violet-400 cursor-default"
-                      : generatingPPT
-                      ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white border-transparent opacity-70 cursor-wait"
-                      : "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white active:scale-95 border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
-                  }`}
-                >
-                  {pptReady ? "✅ PPT Slaydlar Tayyorlandi" : generatingPPT ? "⏳ Slaydlar yaratilmoqda..." : "📊 PPT Tayyorlash ⭐"}
-                </button>
-              </div>
-            )}
+              {/* DOWNLOAD + TELEGRAM — shown only after DOCX is ready (blob cached) */}
+              {docxReady && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleDownloadDocx}
+                    className="w-full py-4 rounded-[20px] bg-white text-black font-bold text-center text-sm active:scale-95 transition-all shadow-md"
+                  >
+                    📥 Word (.docx) yuklab olish
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSendTelegram}
+                    disabled={isSendingTG || telegramSent}
+                    className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                      telegramSent
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-default"
+                        : "bg-[#243140] border-white/10 text-white hover:bg-slate-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    }`}
+                  >
+                    {telegramSent ? "✅ Telegramga yuborildi" : isSendingTG ? "⏳ Yuborilmoqda..." : "📨 Telegramga yuborish"}
+                  </button>
+                </>
+              )}
+
+              {/* PPT — always visible after outline, independent from DOCX flow */}
+              <button
+                type="button"
+                onClick={handleGeneratePPT}
+                disabled={generatingPPT || pptReady}
+                className={`w-full py-4 rounded-[20px] font-bold text-center text-sm transition-all shadow-md border ${
+                  pptReady
+                    ? "bg-violet-500/10 border-violet-500/30 text-violet-400 cursor-default"
+                    : generatingPPT
+                    ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white border-transparent opacity-70 cursor-wait"
+                    : "bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white active:scale-95 border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                }`}
+              >
+                {pptReady ? "✅ PPT Slaydlar Tayyorlandi" : generatingPPT ? "⏳ Slaydlar yaratilmoqda..." : "📊 PPT Tayyorlash ⭐"}
+              </button>
+            </div>
 
             {/* ── Study Pack — always visible when docxReady ── */}
             {/* Each button is independent: own loading, own error, own retry. */}
@@ -1719,8 +1758,8 @@ export default function WriteReferatPage() {
               </button>
             </div>
 
-            {/* Reset — available once DOCX/Telegram and Academic Pack complete */}
-            {!generatingDocx && !sendingTelegram && !packRunning && (
+            {/* Reset — available when no AI/DOCX fetch or Academic Pack is running */}
+            {!generatingDocx && !isSendingTG && !packRunning && (
               <button
                 type="button"
                 onClick={handleReset}
